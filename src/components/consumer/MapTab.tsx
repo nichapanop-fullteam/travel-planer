@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Clock, Route, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, LocateFixed, Minus, Plus, Route, SlidersHorizontal, Wallet } from "lucide-react";
 import type { Day, FeedTrip } from "@/types";
 import { ActivityTimeline } from "@/components/plan/ActivityTimeline";
+import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { categoryBgVar, categoryColorVar, categoryIcon } from "@/lib/category-styles";
 import { getDayRouteEstimate, getDayTotalCost, formatDuration, formatTHB } from "@/lib/trip-utils";
 
@@ -94,27 +95,22 @@ function DecorativeRouteMap({ day }: { day: Day }) {
   });
 
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl"
-      style={{ background: "linear-gradient(140deg, #c8dfca 0%, #b4cec4 45%, #c2d5ce 100%)", minHeight: 260 }}
-    >
-      <svg className="absolute inset-0 h-full w-full" style={{ opacity: 0.25 }}>
-        <defs>
-          <pattern id="pluno-route-grid" width="22" height="22" patternUnits="userSpaceOnUse">
-            <path d="M22 0L0 0 0 22" fill="none" stroke="#2a7d50" strokeWidth="0.7" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#pluno-route-grid)" />
-      </svg>
+    <div className="relative overflow-hidden rounded-2xl border border-[var(--color-border)]/40" style={{ minHeight: 280 }}>
+      <FakeMapBackground />
+
+      <button className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow">
+        <SlidersHorizontal size={12} style={{ color: "var(--color-primary)" }} />
+        All Places
+      </button>
 
       <svg className="absolute inset-0 h-full w-full">
         <polyline
           points={positions.map((p) => `${p.x}%,${p.y}%`).join(" ")}
           fill="none"
-          stroke="#1f5b45"
-          strokeWidth="2"
-          strokeDasharray="6 5"
-          opacity="0.6"
+          stroke="var(--color-primary)"
+          strokeWidth="2.5"
+          strokeDasharray="7 6"
+          strokeLinecap="round"
         />
       </svg>
 
@@ -129,12 +125,12 @@ function DecorativeRouteMap({ day }: { day: Day }) {
           >
             <div className="flex items-center gap-2">
               <div
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                style={{ backgroundColor: categoryColorVar[activity.category] }}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ring-4"
+                style={{ backgroundColor: "var(--color-primary)", ["--tw-ring-color" as string]: "rgba(42,158,100,0.2)" }}
               >
                 {i + 1}
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-white/95 py-1 pl-1 pr-3 shadow">
+              <div className="flex items-center gap-1.5 rounded-full bg-white py-1 pl-1 pr-3 shadow">
                 <div
                   className="flex h-6 w-6 items-center justify-center rounded-full"
                   style={{ backgroundColor: categoryBgVar[activity.category] }}
@@ -150,6 +146,20 @@ function DecorativeRouteMap({ day }: { day: Day }) {
           </div>
         );
       })}
+
+      <div className="absolute bottom-3 right-3 flex flex-col overflow-hidden rounded-xl bg-white shadow">
+        <button className="flex h-8 w-8 items-center justify-center hover:bg-[var(--color-surface)]">
+          <Plus size={14} />
+        </button>
+        <div className="h-px bg-[var(--color-border)]/40" />
+        <button className="flex h-8 w-8 items-center justify-center hover:bg-[var(--color-surface)]">
+          <Minus size={14} />
+        </button>
+        <div className="h-px bg-[var(--color-border)]/40" />
+        <button className="flex h-8 w-8 items-center justify-center hover:bg-[var(--color-surface)]">
+          <LocateFixed size={13} style={{ color: "var(--color-primary)" }} />
+        </button>
+      </div>
     </div>
   );
 }
