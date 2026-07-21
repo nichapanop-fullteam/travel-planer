@@ -51,3 +51,38 @@ export interface Trip {
   days: Day[];
   budgetLimit?: number; // optional cap set by organizer
 }
+
+// ─── Consumer / public feed (Home + Trip Detail) ───
+// A separate shape from Trip (organizer): a FeedTrip has no assigned customer,
+// it's a public itinerary published by a creator that other travelers browse,
+// save, and remix. Reuses Day/Activity so the same Itinerary/Budget UI works for both.
+
+export type FeedCategory =
+  | "beach"
+  | "mountain"
+  | "city"
+  | "culture"
+  | "nature"
+  | "food"
+  | "adventure";
+
+export interface Creator {
+  name: string;
+  handle: string;
+  avatar: string; // emoji avatar
+}
+
+export interface FeedTrip {
+  id: string;
+  title: string;
+  destination: string;
+  coverImageUrl: string;
+  category: FeedCategory;
+  tags: string[];
+  rating: number;
+  creator: Creator;
+  saves: number;
+  remixes: number;
+  description: string;
+  days: Day[]; // price and duration are derived from this — see lib/trip-utils.ts
+}
