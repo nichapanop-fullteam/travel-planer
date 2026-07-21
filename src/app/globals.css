@@ -1,24 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fffaf3;
-  --foreground: #241c14;
+  --background: #bedfcb;
+  --foreground: #1e1e1e;
 
-  --color-primary: #0f6e63;
+  --color-primary: #2a9e64;
   --color-primary-foreground: #ffffff;
-  --color-accent: #e08b2f;
-  --color-accent-foreground: #241c14;
+  --color-secondary-green: #4cac71;
+  --color-deep-green: #1f5b45;
+  --color-accent-mint: #7ea891;
+  --color-accent-orange: #db8a45;
+  --color-neutral-gray: #a3a0a0;
 
-  --color-surface: #ffffff;
-  --color-border: #e8ddc9;
-  --color-muted: #8a7f6d;
+  --color-surface: #edf4f0;
+  --color-border: #a3a0a0;
+  --color-muted: #7c8782;
 
-  --color-cat-transport: #3b6fb0;
-  --color-cat-food: #d9622b;
-  --color-cat-hotel: #6a4fa0;
-  --color-cat-sightseeing: #0f6e63;
-  --color-cat-activity: #b0552f;
-  --color-cat-other: #6b7280;
+  --color-cat-transport: var(--color-accent-mint);
+  --color-cat-food: var(--color-accent-orange);
+  --color-cat-hotel: var(--color-deep-green);
+  --color-cat-sightseeing: var(--color-primary);
+  --color-cat-activity: var(--color-secondary-green);
+  --color-cat-other: var(--color-neutral-gray);
 }
 
 @theme inline {
@@ -26,16 +29,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #16130f;
-    --foreground: #f4ede0;
-    --color-surface: #201c16;
-    --color-border: #3a3327;
-    --color-muted: #a89c85;
-  }
 }
 
 body {

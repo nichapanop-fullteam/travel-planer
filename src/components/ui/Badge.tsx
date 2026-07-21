@@ -8,17 +8,18 @@ const statusLabel: Record<TripStatus, string> = {
   completed: "จบทริปแล้ว",
 };
 
-const statusClasses: Record<TripStatus, string> = {
-  draft: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
-  shared: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  confirmed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-  completed: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+const statusStyle: Record<TripStatus, { background: string; color: string }> = {
+  draft: { background: "var(--color-neutral-gray)", color: "#ffffff" },
+  shared: { background: "var(--color-accent-orange)", color: "#ffffff" },
+  confirmed: { background: "var(--color-primary)", color: "#ffffff" },
+  completed: { background: "var(--color-deep-green)", color: "#ffffff" },
 };
 
 export function StatusBadge({ status }: { status: TripStatus }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClasses[status]}`}
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+      style={statusStyle[status]}
     >
       {statusLabel[status]}
     </span>
