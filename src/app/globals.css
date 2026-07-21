@@ -9,19 +9,28 @@
   --color-secondary-green: #4cac71;
   --color-deep-green: #1f5b45;
   --color-accent-mint: #7ea891;
-  --color-accent-orange: #db8a45;
+  --color-accent-orange: #e89a5f;
   --color-neutral-gray: #a3a0a0;
 
   --color-surface: #edf4f0;
   --color-border: #a3a0a0;
   --color-muted: #7c8782;
 
-  --color-cat-transport: var(--color-accent-mint);
+  /* Activity category colors — from Pluno App UI design (theme.css / TripDetailView ACTIVITY_CONFIG) */
+  --color-cat-transport: #6b7fd4;
   --color-cat-food: var(--color-accent-orange);
-  --color-cat-hotel: var(--color-deep-green);
+  --color-cat-hotel: #5b9bd5;
   --color-cat-sightseeing: var(--color-primary);
   --color-cat-activity: var(--color-secondary-green);
   --color-cat-other: var(--color-neutral-gray);
+
+  /* Soft tint backgrounds for category icon chips / pills */
+  --color-cat-transport-bg: color-mix(in srgb, var(--color-cat-transport) 12%, transparent);
+  --color-cat-food-bg: color-mix(in srgb, var(--color-cat-food) 12%, transparent);
+  --color-cat-hotel-bg: color-mix(in srgb, var(--color-cat-hotel) 12%, transparent);
+  --color-cat-sightseeing-bg: color-mix(in srgb, var(--color-cat-sightseeing) 12%, transparent);
+  --color-cat-activity-bg: color-mix(in srgb, var(--color-cat-activity) 12%, transparent);
+  --color-cat-other-bg: color-mix(in srgb, var(--color-cat-other) 12%, transparent);
 }
 
 @theme inline {
