@@ -16,6 +16,32 @@ export function getTripDurationLabel(trip: HasDays): string {
   return `${trip.days.length} วัน`;
 }
 
+// "N วัน M คืน" — days/nights, both derived from the same days list.
+export function getTripDaysNightsLabel(trip: HasDays): string {
+  const days = trip.days.length;
+  const nights = Math.max(days - 1, 0);
+  return `${days} วัน ${nights} คืน`;
+}
+
+export function getTripDateRange(trip: HasDays): string {
+  if (trip.days.length === 0) return "";
+  return formatDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date);
+}
+
+// Rough per-day distance/time placeholders — NOT real routing data, just a
+// stand-in until an actual map/directions provider is wired up (see MapPanel).
+export function getDayRouteEstimate(day: Day): { distanceKm: number; minutes: number } {
+  const stops = Math.max(day.activities.length - 1, 0);
+  return { distanceKm: Math.round(stops * 3.1 * 10) / 10, minutes: stops * 55 };
+}
+
+export function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 export function getTripCostByCategory(trip: HasDays): Partial<Record<ActivityCategory, number>> {
   const totals: Partial<Record<ActivityCategory, number>> = {};
   for (const day of trip.days) {

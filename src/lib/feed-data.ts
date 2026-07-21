@@ -11,6 +11,12 @@ export const mockFeedTrips: FeedTrip[] = [
     tags: ["ทะเล", "โรแมนติก", "ถ่ายรูปสวย"],
     rating: 4.8,
     creator: { name: "Nina Papadopoulos", handle: "@ninatravels", avatar: "🏛️" },
+    members: [
+      { name: "Nina", avatar: "🏛️" },
+      { name: "Mew", avatar: "🙋‍♀️" },
+      { name: "Pong", avatar: "🙋‍♂️" },
+      { name: "Jane", avatar: "👩" },
+    ],
     saves: 1560,
     remixes: 132,
     description:
@@ -48,6 +54,11 @@ export const mockFeedTrips: FeedTrip[] = [
     tags: ["เมือง", "ซากุระ", "ช้อปปิ้ง"],
     rating: 4.7,
     creator: { name: "Yuki Tanaka", handle: "@yukiexplores", avatar: "🌸" },
+    members: [
+      { name: "Yuki", avatar: "🌸" },
+      { name: "Bill", avatar: "🙋‍♂️" },
+      { name: "May", avatar: "👩" },
+    ],
     saves: 2140,
     remixes: 198,
     description:
@@ -85,6 +96,10 @@ export const mockFeedTrips: FeedTrip[] = [
     tags: ["ภูเขา", "ธรรมชาติ", "รถไฟ"],
     rating: 4.9,
     creator: { name: "Marco Steiner", handle: "@marcoalpine", avatar: "🏔️" },
+    members: [
+      { name: "Marco", avatar: "🏔️" },
+      { name: "Aom", avatar: "👩" },
+    ],
     saves: 1890,
     remixes: 156,
     description:
@@ -122,6 +137,11 @@ export const mockFeedTrips: FeedTrip[] = [
     tags: ["วัฒนธรรม", "วัด", "โคมไฟ"],
     rating: 4.6,
     creator: { name: "Aiko Sato", handle: "@aikojourney", avatar: "⛩️" },
+    members: [
+      { name: "Aiko", avatar: "⛩️" },
+      { name: "Ken", avatar: "🙋‍♂️" },
+      { name: "Fah", avatar: "👩" },
+    ],
     saves: 1320,
     remixes: 104,
     description:

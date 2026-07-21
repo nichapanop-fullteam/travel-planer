@@ -72,6 +72,11 @@ export interface Creator {
   avatar: string; // emoji avatar
 }
 
+export interface Member {
+  name: string;
+  avatar: string; // emoji avatar
+}
+
 export interface FeedTrip {
   id: string;
   title: string;
@@ -81,8 +86,9 @@ export interface FeedTrip {
   tags: string[];
   rating: number;
   creator: Creator;
+  members: Member[]; // co-travelers on this trip, shown on the group Trip Detail page
   saves: number;
   remixes: number;
   description: string;
-  days: Day[]; // price and duration are derived from this — see lib/trip-utils.ts
+  days: Day[]; // price/duration/date-range are derived from this — see lib/trip-utils.ts
 }
