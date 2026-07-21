@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+> 👋 **เพิ่งเข้าโปรเจกต์นี้ครั้งแรก?** อ่าน [CONTRIBUTING.md](./CONTRIBUTING.md) ก่อน — มีทั้งวิธี setup, โครงสร้างโปรเจกต์, ใครแก้ไฟล์ไหน, และวิธีใช้ Git แบบ step-by-step
+
 ## Getting Started
 
 First, run the development server:
