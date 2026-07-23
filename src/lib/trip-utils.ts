@@ -1,4 +1,4 @@
-import type { ActivityCategory, Day } from "@/types";
+import type { ActivityCategory, Day, Location } from "@/types";
 
 // Accepts anything with a `days` list (Trip or FeedTrip) — price/duration are
 // always derived from the itinerary itself, never stored as separate fields.
@@ -58,6 +58,15 @@ export function formatTHB(amount: number): string {
     currency: "THB",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+// Prefers coordinates when a location has them; falls back to a name search
+// query otherwise (all mock locations today are name-only).
+export function getGoogleMapsUrl(location: Location): string {
+  const query = location.lat != null && location.lng != null
+    ? `${location.lat},${location.lng}`
+    : location.name;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {

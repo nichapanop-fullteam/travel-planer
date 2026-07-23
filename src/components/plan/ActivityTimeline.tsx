@@ -1,7 +1,7 @@
 import { MapPin } from "lucide-react";
 import type { Activity, Day } from "@/types";
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
-import { formatTHB } from "@/lib/trip-utils";
+import { formatTHB, getGoogleMapsUrl } from "@/lib/trip-utils";
 
 // Timeline layout adapted from the Pluno App UI design (TripDetailView.ActivityRow)
 export function ActivityTimeline({ day, showCost = false }: { day: Day; showCost?: boolean }) {
@@ -58,10 +58,16 @@ function ActivityRow({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{activity.title}</p>
             {activity.location && (
-              <div className="mt-0.5 flex items-center gap-1">
+              <a
+                href={getGoogleMapsUrl(activity.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 flex items-center gap-1 hover:underline"
+              >
                 <MapPin size={10} className="text-[var(--color-muted)]" />
                 <span className="truncate text-xs text-[var(--color-muted)]">{activity.location.name}</span>
-              </div>
+              </a>
             )}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
