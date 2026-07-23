@@ -37,15 +37,37 @@ npm run dev
 
 ---
 
-## 4. โครงสร้างโปรเจกต์ (อยู่ตรงไหน แก้อะไร)
+## 4. ทดสอบ Responsive เวลา dev
+
+เวลาทำหน้าใหม่หรือแก้ layout ให้เปิดดูที่ขนาดจอเล็กด้วยเสมอ ไม่ใช่ดูแค่จอเดสก์ท็อป เพราะโปรเจกต์นี้จะมีคนใช้งานผ่านมือถือด้วย
+
+วิธีเช็คง่ายๆ ตอน dev:
+
+- เปิด Chrome DevTools (คลิกขวา → Inspect หรือกด `Cmd+Option+I`) แล้วกดไอคอนมือถือ/แท็บเล็ต (`Cmd+Shift+M`) มุมซ้ายบนของแผง DevTools เพื่อสลับไปดูขนาดจอมือถือ/แท็บเล็ต
+- หรือลองลากขอบหน้าต่างเบราว์เซอร์ให้แคบลงดูว่า layout พังไหม (การ์ด/ตารางล้น, ปุ่มถูกตัด, ตัวอักษรทับกัน)
+
+เขียน class ให้ responsive ด้วย Tailwind breakpoint prefix (`sm:` `md:` `lg:` `xl:`) เช่น
+
+```tsx
+<div className="flex flex-col gap-4 md:flex-row md:gap-6">
+```
+
+ความหมาย: ค่าเริ่มต้น (ไม่มี prefix) = มือถือ/จอเล็กก่อนเสมอ (mobile-first) แล้วค่อยเพิ่ม `md:` `lg:` ทับตอนจอใหญ่ขึ้น
+
+**กติกา:** ก่อนจะบอกว่าหน้าเสร็จ/พร้อมเปิด PR ให้ลองย่อจอเช็คอย่างน้อย 1 ครั้งว่าไม่มีอะไรพังที่ขนาดจอมือถือ (~375px)
+
+---
+
+## 5. โครงสร้างโปรเจกต์ (อยู่ตรงไหน แก้อะไร)
 
 ```
 src/
-├─ app/                     ← แต่ละโฟลเดอร์ = 1 หน้าเว็บ (Next.js "App Router")
-│  ├─ page.tsx              ← หน้าแรก (เด้งไป /dashboard)
-│  ├─ dashboard/page.tsx    ← หน้ารวมทริปทั้งหมด
-│  ├─ plan/[tripId]/page.tsx← หน้าสร้าง/แก้แผนทริป (Plan Builder)
-│  └─ share/[tripId]/page.tsx← หน้าแชร์แผนให้ลูกค้าดู (อ่านอย่างเดียว)
+├─ app/                        ← แต่ละโฟลเดอร์ = 1 หน้าเว็บ (Next.js "App Router")
+│  ├─ page.tsx                 ← หน้าแรก (เด้งไป /main)
+│  ├─ main/page.tsx            ← หน้าฟีดหลัก (Home feed)
+│  ├─ trip-detail/[id]/page.tsx← หน้ารายละเอียดทริป (แผนที่, กิจกรรม, group chat)
+│  ├─ plan/[tripId]/page.tsx   ← หน้าสร้าง/แก้แผนทริป (Plan Builder — organizer)
+│  └─ share/[tripId]/page.tsx  ← หน้าแชร์แผนให้ลูกค้าดู (อ่านอย่างเดียว)
 │
 ├─ components/
 │  ├─ ui/                   ← ชิ้นส่วน UI พื้นฐาน ใช้ได้ทุกหน้า (Button, Card, Badge)
@@ -65,7 +87,7 @@ src/
 
 ---
 
-## 5. ข้อมูล (State) อยู่ตรงไหน — สำคัญมาก
+## 6. ข้อมูล (State) อยู่ตรงไหน — สำคัญมาก
 
 โปรเจกต์นี้ **ยังไม่มี backend/ฐานข้อมูลจริง** ข้อมูลทั้งหมดตอนนี้เป็น "ของปลอม" (mock data) เพื่อให้ทำ prototype ได้เร็ว โครงสร้างมี 2 ชั้น:
 
@@ -79,18 +101,18 @@ src/
 
 ---
 
-## 6. ใครแก้ไฟล์ไหน (ลดโอกาสชนกัน)
+## 7. ใครแก้ไฟล์ไหน (ลดโอกาสชนกัน)
 
 | คน | โฟลเดอร์หลัก |
 |---|---|
 | A — Plan Builder | `src/app/plan/` |
 | B — Map + Budget | `src/components/plan/BudgetPanel.tsx`, `MapPanel.tsx` |
-| C — Dashboard + Share | `src/app/dashboard/`, `src/app/share/` |
+| C — Main + Trip Detail + Share | `src/app/main/`, `src/app/trip-detail/`, `src/app/share/` |
 | ทุกคนร่วมกัน (แก้ได้ แต่บอกในทีมก่อน) | `src/types/`, `src/lib/`, `src/components/ui/` |
 
 ---
 
-## 7. Tailwind CSS ใช้ยังไงในโปรเจกต์นี้
+## 8. Tailwind CSS ใช้ยังไงในโปรเจกต์นี้
 
 โปรเจกต์นี้ไม่มีไฟล์ CSS แยกทีละหน้า — ใส่สไตล์ผ่าน `className` ตรงๆ ในโค้ด เช่น
 
@@ -103,7 +125,7 @@ src/
 
 อ้างอิง: [Tailwind CSS Docs](https://tailwindcss.com/docs) — โดยเฉพาะหน้า [Utility-First Fundamentals](https://tailwindcss.com/docs/styling-with-utility-classes) ถ้าไม่คุ้นกับแนวคิดนี้
 
-## 8. Next.js ใช้ยังไงในโปรเจกต์นี้
+## 9. Next.js ใช้ยังไงในโปรเจกต์นี้
 
 - ทุกโฟลเดอร์ใน `src/app/` ที่มี `page.tsx` = 1 หน้าเว็บ 1 URL (เรียกว่า **App Router**)
 - โฟลเดอร์ที่ชื่อมี `[ ]` เช่น `plan/[tripId]/` = หน้าที่ URL เปลี่ยนได้ตามพารามิเตอร์ (เช่น `/plan/trip-osaka-4d3n`)
@@ -113,7 +135,7 @@ src/
 
 ---
 
-## 9. วิธีใช้ Git แบบ step-by-step (สำหรับคนไม่เคยใช้)
+## 10. วิธีใช้ Git แบบ step-by-step (สำหรับคนไม่เคยใช้)
 
 > ## 🚫 กฎเหล็ก: ห้าม push ลง `main` โดยตรงเด็ดขาด
 >
@@ -175,7 +197,7 @@ git push -u origin feature/ชื่องานที่ทำ
 
 ---
 
-## 10. ติดปัญหา?
+## 11. ติดปัญหา?
 
 - `npm install` แล้ว error เรื่อง node version → เช็ค `node -v` ต้อง 20 ขึ้นไป (ดูข้อ 1)
 - หน้าเว็บพัง/ขาว → เปิด terminal ที่รัน `npm run dev` ดู error message สีแดง มักบอกชื่อไฟล์+บรรทัดที่ผิด
