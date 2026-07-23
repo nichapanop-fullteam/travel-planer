@@ -14,7 +14,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   if (!trip) notFound();
 
   return (
-    <ConsumerShell>
+    <ConsumerShell activeGroupId={trip.id}>
       <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
         <TripDetailHeader trip={trip} />
 

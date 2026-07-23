@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, UserPlus } from "lucide-react";
+import { ChevronLeft, Luggage, UserPlus } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { getTripDaysNightsLabel, getTripDateRange } from "@/lib/trip-utils";
 
@@ -25,6 +25,12 @@ export function TripDetailHeader({ trip }: { trip: FeedTrip }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          <Luggage size={16} className="text-white" />
+        </span>
         <div className="flex -space-x-2">
           {visibleMembers.map((m) => (
             <span
