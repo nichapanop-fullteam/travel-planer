@@ -15,14 +15,16 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <ConsumerShell activeGroupId={trip.id}>
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
-        <TripDetailHeader trip={trip} />
+      <div className="min-h-screen bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
+          <TripDetailHeader trip={trip} />
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
-          <TripDetailTabs trip={trip} />
-          <div className="flex flex-col gap-5">
-            <GroupChatPanel members={trip.members} />
-            <TripInfoPanel trip={trip} />
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
+            <TripDetailTabs trip={trip} />
+            <div className="flex flex-col gap-5">
+              <GroupChatPanel members={trip.members} />
+              <TripInfoPanel trip={trip} />
+            </div>
           </div>
         </div>
       </div>

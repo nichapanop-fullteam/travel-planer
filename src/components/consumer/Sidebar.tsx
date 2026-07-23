@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { Home, Plus, Users } from "lucide-react";
-import { mockFeedTrips } from "@/lib/feed-data";
 
 type NavKey = "home";
+
+// Groups are a friend-group nickname for a trip, distinct from the trip's own title —
+// hence the separate name here rather than reusing FeedTrip.title.
+const SIDEBAR_GROUPS = [{ tripId: "feed-luangprabang-3d", name: "ไปหลวงพระบางกันจ้า" }];
 
 // Sidebar nav — only "หน้าหลัก" (Home) links anywhere real right now; "New Trip" and
 // "Create Group" are visual placeholders (see CONTRIBUTING.md for what's real vs. visual).
 // Groups list links to real trip-detail pages, so those are fully wired.
 export function Sidebar({ active, activeGroupId }: { active?: NavKey; activeGroupId?: string }) {
-  const groups = mockFeedTrips.slice(0, 3);
+  const groups = SIDEBAR_GROUPS;
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)]/40 bg-white p-4">
@@ -37,18 +40,18 @@ export function Sidebar({ active, activeGroupId }: { active?: NavKey; activeGrou
           Groups
         </p>
         <div className="flex flex-col gap-1 overflow-y-auto">
-          {groups.map((trip) => (
+          {groups.map((group) => (
             <Link
-              key={trip.id}
-              href={`/trip-detail/${trip.id}`}
+              key={group.tripId}
+              href={`/trip-detail/${group.tripId}`}
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                activeGroupId === trip.id
+                activeGroupId === group.tripId
                   ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
                   : "text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
               }`}
             >
               <Users size={16} className="shrink-0" />
-              <span className="truncate">{trip.title}</span>
+              <span className="truncate">{group.name}</span>
             </Link>
           ))}
           <span
