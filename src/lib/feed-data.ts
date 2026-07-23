@@ -168,6 +168,69 @@ export const mockFeedTrips: FeedTrip[] = [
       },
     ],
   },
+  // "Chill but Alive" — 30+/night-owl profile: lounge cocktails + sunset cruise + the
+  // after-hours-bowling secret, not club-hopping. Proposed template attributes for
+  // future audience matching (no schema field yet): pace: relaxed ·
+  // nightlife_style: lounge_cocktail (not club) · late_night_alt: bowling_alley
+  {
+    id: "feed-luangprabang-3d",
+    title: "หลวงพระบาง",
+    destination: "หลวงพระบาง, ลาว",
+    coverImageUrl:
+      "https://images.unsplash.com/photo-1686120552846-7caf1a345876?auto=format&fit=crop&w=1200&q=80",
+    category: "culture",
+    tags: ["มรดกโลก UNESCO", "ค็อกเทลบาร์", "โบว์ลิ่งดึกสุด"],
+    rating: 4.7,
+    creator: { name: "Bounthanh Vilay", handle: "@bounthanhtrips", avatar: "🏮" },
+    members: [
+      { name: "Nok", avatar: "🙋‍♀️" },
+      { name: "DJ", avatar: "🙋‍♂️" },
+      { name: "Frank", avatar: "🧔" },
+      { name: "Ploy", avatar: "👩" },
+    ],
+    saves: 890,
+    remixes: 64,
+    description:
+      "3 วัน 2 คืนสายชิลแต่มีชีวิตชีวา สำหรับกลุ่มเพื่อนวัย 30+ ที่อยากเที่ยวกลางคืนแบบไม่ต้องเป็นคลับ — ค็อกเทลบาร์บรรยากาศวินเทจ ตลาดกลางคืนริมวัด ล่องเรือ sunset dinner cruise ปิดท้ายทุกคืนด้วยของลับที่นักท่องเที่ยวทั่วไปไม่รู้: โบว์ลิ่งหลวงพระบาง ที่เดียวในเมืองเก่าที่เปิดยันตี 2 ครึ่ง (ตัดพิธีตักบาตรเช้าตรู่ออกโดยตั้งใจ เพราะสวนทางกับธีมนอนดึก — เสนอเป็น optional add-on ได้ถ้ากลุ่มอยากลองทั้งคู่)",
+    days: [
+      {
+        id: "d1",
+        dayNumber: 1,
+        date: "2026-11-20",
+        activities: [
+          { id: "a1", time: "13:00", title: "เช็คอินโรงแรมบูติกเมืองเก่า", category: "hotel", location: { name: "Old Town" }, cost: 3200 },
+          { id: "a2", time: "15:00", title: "เดินชมวัดเซียงทอง + ปั่นจักรยานเลียบเมืองเก่า", category: "sightseeing", location: { name: "Wat Xieng Thong" }, cost: 0 },
+          { id: "a3", time: "17:30", title: "ขึ้นภูสีชมพระอาทิตย์ตกริมโขง", category: "sightseeing", location: { name: "Mount Phousi" }, cost: 400 },
+          { id: "a4", time: "19:30", title: "เดินตลาดกลางคืน ชิมสตรีทฟู้ดลาว", category: "food", location: { name: "Luang Prabang Night Market" }, cost: 1000 },
+          { id: "a5", time: "21:30", title: "ค็อกเทลบรรยากาศวินเทจที่ Icon Klub", category: "food", location: { name: "Icon Klub" }, cost: 2400 },
+          { id: "a6", time: "23:30", title: "ต่อดึกที่โบว์ลิ่งหลวงพระบาง (เปิดถึงตี 2 ครึ่ง)", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, notes: "ของลับหลังบาร์ปิด — คนท้องถิ่นก็มาเล่น", cost: 1600 },
+        ],
+      },
+      {
+        id: "d2",
+        dayNumber: 2,
+        date: "2026-11-21",
+        activities: [
+          { id: "a7", time: "08:00", title: "ทริปครึ่งวันน้ำตกกวางซี ว่ายน้ำสระสีฟ้า + ศูนย์ช่วยเหลือหมี", category: "activity", location: { name: "Kuang Si Falls" }, cost: 3600 },
+          { id: "a8", time: "13:30", title: "สปาสมุนไพรลาวแบบดั้งเดิม", category: "activity", location: { name: "Luang Prabang" }, cost: 2200 },
+          { id: "a9", time: "17:00", title: "ล่องเรือ Sunset Mekong Dinner Cruise อาหารลาว 7 คอร์ส", category: "food", location: { name: "Mekong River" }, cost: 5200 },
+          { id: "a10", time: "21:00", title: "บาร์เร้กเก้ Lao Lao Garden มี BBQ", category: "food", location: { name: "Lao Lao Garden" }, cost: 1800 },
+          { id: "a11", time: "23:00", title: "ต่อโบว์ลิ่งหลวงพระบางอีกรอบ คืนดึกสุดของทริป", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, cost: 1200 },
+        ],
+      },
+      {
+        id: "d3",
+        dayNumber: 3,
+        date: "2026-11-22",
+        activities: [
+          { id: "a12", time: "09:00", title: "คาเฟ่ริมถนน จิบกาแฟลาว (เช้าแบบไม่รีบ)", category: "food", location: { name: "Luang Prabang" }, cost: 500 },
+          { id: "a13", time: "10:30", title: "เดินตลาดเช้าซื้อของฝากรอบสุดท้าย", category: "other", location: { name: "Luang Prabang Morning Market" }, cost: 1200 },
+          { id: "a14", time: "12:00", title: "(ถ้าเวลาเหลือ) ล่องเรือถ้ำปากอู", category: "activity", location: { name: "Pak Ou Caves" }, cost: 2800 },
+          { id: "a15", time: "14:00", title: "เดินทางสู่สนามบิน", category: "transport", location: { name: "Luang Prabang Airport" }, cost: 400 },
+        ],
+      },
+    ],
+  },
 ];
 
 export function getFeedTripById(id: string): FeedTrip | undefined {
