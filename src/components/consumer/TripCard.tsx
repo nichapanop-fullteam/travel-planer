@@ -7,7 +7,7 @@ import { getTripDurationLabel, getTripTotalCost, formatTHB } from "@/lib/trip-ut
 export function TripCard({ trip }: { trip: FeedTrip }) {
   return (
     <Link
-      href={`/trip/${trip.id}`}
+      href={`/trip-detail/${trip.id}`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-[var(--color-border)]/40 bg-white shadow-sm transition-shadow hover:shadow-md"
     >
       <div className="relative aspect-[4/3] overflow-hidden">

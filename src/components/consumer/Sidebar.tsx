@@ -14,7 +14,7 @@ import {
 type NavKey = "home" | "search" | "trips" | "saved" | "community" | "messages";
 
 const MAIN_NAV: { key: NavKey; label: string; icon: typeof Home; href?: string }[] = [
-  { key: "home", label: "หน้าหลัก", icon: Home, href: "/dashboard" },
+  { key: "home", label: "หน้าหลัก", icon: Home, href: "/main" },
   { key: "search", label: "ค้นหา", icon: Search },
   { key: "trips", label: "ทริป", icon: MapIcon },
   { key: "saved", label: "บุ๊คมาร์ก", icon: Bookmark },

@@ -21,7 +21,7 @@ export default async function PlanPage({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
-        <Link href="/dashboard" className="text-sm text-[var(--color-muted)] hover:underline">
+        <Link href="/main" className="text-sm text-[var(--color-muted)] hover:underline">
           ← ทริปทั้งหมด
         </Link>
         <Button variant="secondary">แชร์ให้ลูกค้า</Button>

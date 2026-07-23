@@ -11,7 +11,7 @@ export function TripDetailHeader({ trip }: { trip: FeedTrip }) {
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3">
         <Link
-          href="/dashboard"
+          href="/main"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)]/50 bg-white"
         >
           <ChevronLeft size={16} />
