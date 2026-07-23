@@ -1,17 +1,14 @@
 import Link from "next/link";
 import { Home, Plus, Users } from "lucide-react";
+import { myGroups } from "@/lib/groups";
 
 type NavKey = "home";
-
-// Groups are a friend-group nickname for a trip, distinct from the trip's own title —
-// hence the separate name here rather than reusing FeedTrip.title.
-const SIDEBAR_GROUPS = [{ tripId: "feed-luangprabang-3d", name: "ไปหลวงพระบางกันจ้า" }];
 
 // Sidebar nav — only "หน้าหลัก" (Home) links anywhere real right now; "New Trip" and
 // "Create Group" are visual placeholders (see CONTRIBUTING.md for what's real vs. visual).
 // Groups list links to real trip-detail pages, so those are fully wired.
 export function Sidebar({ active, activeGroupId }: { active?: NavKey; activeGroupId?: string }) {
-  const groups = SIDEBAR_GROUPS;
+  const groups = myGroups;
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)]/40 bg-white p-4">

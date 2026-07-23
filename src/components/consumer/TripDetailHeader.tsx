@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ChevronLeft, Luggage, UserPlus } from "lucide-react";
+import { Bookmark, ChevronLeft, Luggage, UserPlus } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { getTripDaysNightsLabel, getTripDateRange } from "@/lib/trip-utils";
 
-export function TripDetailHeader({ trip }: { trip: FeedTrip }) {
+export function TripDetailHeader({ trip, isJoined }: { trip: FeedTrip; isJoined: boolean }) {
   const overflowCount = Math.max(trip.members.length - 4, 0);
   const visibleMembers = trip.members.slice(0, 4);
 
@@ -31,26 +31,35 @@ export function TripDetailHeader({ trip }: { trip: FeedTrip }) {
         >
           <Luggage size={16} className="text-white" />
         </span>
-        <div className="flex -space-x-2">
-          {visibleMembers.map((m) => (
-            <span
-              key={m.name}
-              title={m.name}
-              className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[var(--color-surface)] text-sm"
-            >
-              {m.avatar}
-            </span>
-          ))}
-          {overflowCount > 0 && (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[var(--color-border)]/40 text-[11px] font-semibold">
-              +{overflowCount}
-            </span>
-          )}
-        </div>
-        <button className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)]/60 px-3.5 py-2 text-xs font-semibold">
-          <UserPlus size={14} />
-          Invite
-        </button>
+        {isJoined ? (
+          <>
+            <div className="flex -space-x-2">
+              {visibleMembers.map((m) => (
+                <span
+                  key={m.name}
+                  title={m.name}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[var(--color-surface)] text-sm"
+                >
+                  {m.avatar}
+                </span>
+              ))}
+              {overflowCount > 0 && (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[var(--color-border)]/40 text-[11px] font-semibold">
+                  +{overflowCount}
+                </span>
+              )}
+            </div>
+            <button className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)]/60 px-3.5 py-2 text-xs font-semibold">
+              <UserPlus size={14} />
+              Invite
+            </button>
+          </>
+        ) : (
+          <button className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)]/60 px-3.5 py-2 text-xs font-semibold">
+            <Bookmark size={14} />
+            Save
+          </button>
+        )}
       </div>
     </div>
   );
