@@ -17,6 +17,15 @@
   --color-border: #a3a0a0;
   --color-muted: #7c8782;
 
+  /* Create Trip (step 1) form — chip/tag selection states */
+  --color-sel-bg: #eaf3ee;
+  --color-sel-border: #aacaba;
+  --color-border-chip: #e3d4ae;
+  --color-border-tag: #e6d9b8;
+  --color-danger: #c0392b;
+  --color-danger-bg: #fdeceb;
+  --color-danger-border: #f2c5c0;
+
   /* Activity category colors — from Pluno App UI design (theme.css / TripDetailView ACTIVITY_CONFIG) */
   --color-cat-transport: #6b7fd4;
   --color-cat-food: var(--color-accent-orange);

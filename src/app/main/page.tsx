@@ -70,8 +70,9 @@ function Hero() {
 function ActionCards() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div
-        className="relative flex items-center gap-4 rounded-2xl p-5 text-white shadow-md"
+      <Link
+        href="/create-trip"
+        className="relative flex items-center gap-4 rounded-2xl p-5 text-white shadow-md transition-transform hover:-translate-y-0.5"
         style={{ backgroundColor: "var(--color-deep-green)" }}
       >
         <span
@@ -88,7 +89,7 @@ function ActionCards() {
           <p className="text-sm font-bold">สร้างทริปใหม่</p>
           <p className="text-xs text-white/80">ไม่ต้องเริ่มจากศูนย์ ให้ Pluno สร้างให้</p>
         </div>
-      </div>
+      </Link>
 
       <div className="flex items-center gap-4 rounded-2xl bg-white p-5 shadow-sm">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/10">

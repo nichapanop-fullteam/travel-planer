@@ -92,3 +92,23 @@ export interface FeedTrip {
   description: string;
   days: Day[]; // price/duration/date-range are derived from this — see lib/trip-utils.ts
 }
+
+// ─── Create Trip (Step 1 form) ───
+// Captured before any itinerary exists — just the traveler's request/preferences.
+// Saved to localStorage for now (see lib/trip-drafts.ts); no backend/API yet.
+
+export type TripCreationMode = "ai" | "self";
+
+export interface TripDraft {
+  id: string;
+  createdAt: string; // ISO timestamp
+  mode: TripCreationMode;
+  destination: string;
+  duration: string; // free text for now, e.g. "3 วัน 2 คืน" — no date picker yet
+  guests: string; // free text for now, e.g. "ผู้ใหญ่, 1 คน"
+  styles: string[];
+  pace: string | null;
+  budget: string | null; // preset key ("Economy" | "Comfort" | "Premium" | "Luxury" | "custom")
+  customBudget: string; // only meaningful when budget === "custom"
+  conditions: string[];
+}
