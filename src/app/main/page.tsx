@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Bookmark, Landmark, Link2, Moon, Search, Shuffle, Sparkles, Star } from "lucide-react";
 import { HomeNavbar } from "@/components/consumer/HomeNavbar";
 import { creatorPlans, recommendDestinations, topDestinations } from "@/lib/home-content";
+import { formatTHB } from "@/lib/trip-utils";
 
 // Public discovery home — redesigned per Pluno Guide UI reference.
 // Uses its own top navbar (HomeNavbar) instead of the shared ConsumerShell
@@ -38,22 +39,24 @@ function Hero() {
         <h1 className="text-3xl font-extrabold leading-tight text-white drop-shadow-sm sm:text-4xl">
           ยังไม่มีแพลนทริป ?
           <br />
-          ให้ <span style={{ color: "var(--color-secondary-green)" }}>pluno</span> ช่วยจัดเลย
+          ให้ Pluno ช่วยจัดเลย
         </h1>
         <p className="text-sm text-white/90 sm:text-base">
           สร้างแพลนเที่ยวทั้งทริปในไม่กี่นาที ปรับเองได้ตามใจคุณทุกจุด
         </p>
 
-        <div className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-full bg-white p-2 pl-5 shadow-lg">
-          <Search size={18} className="shrink-0 text-[var(--color-muted)]" />
-          <input
-            type="text"
-            placeholder="ค้นหาทริป หรือสถานที่เที่ยว.."
-            disabled
-            className="w-full bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
-          />
+        <div className="mt-4 flex w-full max-w-xl items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 rounded-full bg-white px-5 py-3 shadow-lg">
+            <Search size={18} className="shrink-0" style={{ color: "var(--color-accent-orange)" }} />
+            <input
+              type="text"
+              placeholder="ค้นหาทริป หรือสถานที่เที่ยว.."
+              disabled
+              className="w-full bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
+            />
+          </div>
           <button
-            className="shrink-0 rounded-full px-6 py-2.5 text-sm font-semibold text-white"
+            className="shrink-0 rounded-full px-7 py-3 text-sm font-semibold text-white shadow-lg"
             style={{ backgroundColor: "var(--color-accent-orange)" }}
           >
             ค้นหา
@@ -66,7 +69,7 @@ function Hero() {
 
 function ActionCards() {
   return (
-    <div className="-mt-16 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div
         className="relative flex items-center gap-4 rounded-2xl p-5 text-white shadow-md"
         style={{ backgroundColor: "var(--color-deep-green)" }}
@@ -129,33 +132,44 @@ function RecommendDestinationSection() {
       <SectionHeader title="Recommend Destination" />
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {recommendDestinations.map((dest) => (
-          <div key={dest.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
-            <div className="aspect-[4/3] overflow-hidden">
+          <div
+            key={dest.id}
+            className="overflow-hidden rounded-3xl border border-[var(--color-border)]/30 bg-white shadow-sm"
+          >
+            <div className="aspect-[16/10] overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={dest.imageUrl} alt={dest.title} className="h-full w-full object-cover" />
             </div>
-            <div className="flex flex-col gap-2 p-4">
+            <div className="relative -mt-6 flex flex-col gap-2 bg-white p-4 shadow-[0_-6px_12px_-6px_rgba(0,0,0,0.08)]">
               <p className="text-sm font-bold">{dest.title}</p>
               <p className="truncate text-xs text-[var(--color-muted)]">{dest.subtitle}</p>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {dest.tags.map((tag, i) => {
                   const Icon = RECOMMEND_TAG_ICONS[i % RECOMMEND_TAG_ICONS.length];
                   return (
-                    <span key={tag} className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                    <span
+                      key={tag}
+                      className="flex items-center gap-1 rounded-full border border-[var(--color-border)]/50 px-2 py-0.5 text-xs text-[var(--color-muted)]"
+                    >
                       <Icon size={12} style={{ color: "var(--color-primary)" }} />
                       {tag}
                     </span>
                   );
                 })}
               </div>
-              <div className="mt-1 flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1 font-semibold text-[var(--color-accent-orange)]">
-                  <Star size={13} fill="currentColor" />
-                  {dest.rating}
-                </span>
-                <span className="flex items-center gap-1 text-[var(--color-muted)]">
-                  <Bookmark size={13} />
-                  {dest.saves}
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1 font-semibold text-[var(--color-accent-orange)]">
+                    <Star size={13} fill="currentColor" />
+                    {dest.rating}
+                  </span>
+                  <span className="flex items-center gap-1 text-[var(--color-muted)]">
+                    <Bookmark size={13} />
+                    {dest.saves}
+                  </span>
+                </div>
+                <span className="font-bold" style={{ color: "var(--color-primary)" }}>
+                  {formatTHB(dest.priceFrom)}
                 </span>
               </div>
             </div>
@@ -172,7 +186,7 @@ function TopDestinationSection() {
       <SectionHeader title="TOP Destination" />
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {topDestinations.map((dest) => (
-          <div key={dest.id} className="relative aspect-[3/4] overflow-hidden rounded-2xl">
+          <div key={dest.id} className="relative aspect-[16/7] overflow-hidden rounded-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={dest.imageUrl} alt={dest.label} className="h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />

@@ -10,6 +10,7 @@ export interface RecommendDestination {
   tags: string[];
   rating: number;
   saves: string; // pre-formatted, e.g. "2.1k"
+  priceFrom: number; // THB, per person — shown as "เริ่มต้น ฿x,xxx"
 }
 
 export const recommendDestinations: RecommendDestination[] = [
@@ -17,28 +18,28 @@ export const recommendDestinations: RecommendDestination[] = [
     id: "rec-luangprabang",
     title: "หลวงพระบาง 3 วัน 2 คืน",
     subtitle: "วัดเชียงทอง · น้ำตกกวางสี · ตลาดมืด · ทำตัก",
-    imageUrl:
-      "https://images.unsplash.com/photo-1686120552846-7caf1a345876?auto=format&fit=crop&w=800&q=80",
+    imageUrl: "/images/luang-prabang.jpg",
     tags: ["ธรรมชาติ", "ไนท์ไลฟ์", "วัฒนธรรม"],
     rating: 4.9,
     saves: "2.1k",
+    priceFrom: 6900,
   },
   {
     id: "rec-tokyo",
     title: "เที่ยวญี่ปุ่น โตเกียว 5 วัน",
     subtitle: "ชิบูย่า · ชินจูกุ · อาคิฮาบาระ · อาซากุสะ",
-    imageUrl:
-      "https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?auto=format&fit=crop&w=800&q=80",
+    imageUrl: "/images/tokyo.jpg",
     tags: ["ธรรมชาติ", "ไนท์ไลฟ์", "วัฒนธรรม"],
     rating: 4.7,
     saves: "1.4k",
+    priceFrom: 24900,
   },
   {
     id: "rec-chengdu",
     title: "เฉิงตู 5 วัน ดินแดนแห่งรสชาติ",
     subtitle: "หมีแพนด้า · อาหารเสฉวน · วัดโบราณ",
-    imageUrl:
-      "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=800&q=80",
+    priceFrom: 19500,
+    imageUrl: "/images/chengdu.jpg",
     tags: ["ธรรมชาติ", "ไนท์ไลฟ์", "วัฒนธรรม"],
     rating: 4.8,
     saves: "3.6k",
@@ -94,8 +95,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "Maynippongirls",
     creatorAvatar: "🌸",
     title: "เที่ยวโอซาก้า-เกียวโต 7 วัน งบเบาๆ",
-    imageUrl:
-      "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=600&q=80",
+    imageUrl: "/images/plan-osaka.jpg",
     likes: "12k",
     comments: "3k",
   },
@@ -104,8 +104,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "TravelWithTawn",
     creatorAvatar: "🎒",
     title: "เที่ยวปักกิ่ง-กำแพงเมืองจีน 5 วัน สุดคุ้ม",
-    imageUrl:
-      "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=600&q=80",
+    imageUrl: "/images/plan-beijing.jpg",
     likes: "12k",
     comments: "3k",
   },
@@ -114,8 +113,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "FoodieNomad",
     creatorAvatar: "🍜",
     title: "เที่ยวโซล-เกาะเชจู 4 วัน สโลว์ไลฟ์",
-    imageUrl:
-      "https://images.unsplash.com/photo-1517154421773-0529f29ea451?auto=format&fit=crop&w=600&q=80",
+    imageUrl: "/images/plan-seoul.jpg",
     likes: "18.2k",
     comments: "3.6k",
   },
@@ -124,8 +122,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "FoodieNomad",
     creatorAvatar: "🍜",
     title: "เที่ยวลอนดอน 6 วัน เก็บครบทุกไฮไลท์",
-    imageUrl:
-      "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80",
+    imageUrl: "/images/plan-london.jpg",
     likes: "22.9k",
     comments: "4.7k",
   },
