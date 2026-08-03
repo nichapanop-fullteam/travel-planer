@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
@@ -21,6 +22,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { HomeNavbar } from "@/components/consumer/HomeNavbar";
+import { BookingBar } from "@/components/consumer/BookingBar";
 import { saveTripDraft } from "@/lib/trip-drafts";
 import type { TripCreationMode, TripDraft } from "@/types";
 
@@ -62,9 +64,12 @@ const COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส�
 const MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
 
 export default function CreateTripPage() {
-  const [mode, setMode] = useState<TripCreationMode>("ai");
+  const searchParams = useSearchParams();
 
-  const [destination, setDestination] = useState("");
+  const [mode, setMode] = useState<TripCreationMode>(
+    searchParams.get("mode") === "self" ? "self" : "ai"
+  );
+  const [destination, setDestination] = useState(searchParams.get("destination") ?? "");
   const [duration, setDuration] = useState("");
   const [guests, setGuests] = useState("");
 
@@ -442,70 +447,33 @@ function Hero({
         </button>
       </div>
 
-      <div className="relative flex w-full max-w-4xl flex-col gap-3 rounded-3xl bg-white/20 p-3 shadow-lg backdrop-blur-md sm:flex-row">
-        <BookingField
-          icon={MapPin}
-          label="Destination"
-          value={destination}
-          placeholder="ไปที่ไหนดี?"
-          onChange={onDestinationChange}
-          hasError={destinationHasError}
-        />
-        <BookingField
-          icon={CalendarDays}
-          label="Date"
-          value={duration}
-          placeholder="กี่วัน?"
-          onChange={onDurationChange}
-        />
-        <BookingField
-          icon={Users}
-          label="Guest"
-          value={guests}
-          placeholder="กี่คน?"
-          onChange={onGuestsChange}
-        />
-      </div>
+      <BookingBar
+        fields={[
+          {
+            icon: MapPin,
+            label: "Destination",
+            value: destination,
+            placeholder: "City, country",
+            onChange: onDestinationChange,
+            hasError: destinationHasError,
+          },
+          {
+            icon: CalendarDays,
+            label: "Date",
+            value: duration,
+            placeholder: "วันเดินทางไป - วันกลับ",
+            onChange: onDurationChange,
+          },
+          {
+            icon: Users,
+            label: "Guest",
+            value: guests,
+            placeholder: "ประเภท และจำนวนคน",
+            onChange: onGuestsChange,
+          },
+        ]}
+      />
     </div>
-  );
-}
-
-function BookingField({
-  icon: Icon,
-  label,
-  value,
-  placeholder,
-  onChange,
-  hasError,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  placeholder: string;
-  onChange: (v: string) => void;
-  hasError?: boolean;
-}) {
-  return (
-    <label
-      className="flex flex-1 items-center gap-3 rounded-2xl border bg-white px-5 py-3.5 text-left transition-colors focus-within:border-[var(--color-brand-green)]"
-      style={{ borderColor: hasError ? "var(--color-danger)" : "var(--color-border-tag)" }}
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-sel-bg)]">
-        <Icon size={18} style={{ color: "var(--color-brand-green)" }} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col items-start">
-        <span className="text-xs font-bold" style={{ color: "var(--color-brand-green)" }}>
-          {label}
-        </span>
-        <input
-          type="text"
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-transparent text-base font-semibold text-[var(--foreground)] placeholder:font-medium placeholder:text-[var(--color-muted)] focus:outline-none"
-        />
-      </span>
-    </label>
   );
 }
 

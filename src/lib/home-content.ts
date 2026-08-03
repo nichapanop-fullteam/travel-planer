@@ -84,7 +84,8 @@ export interface CreatorPlan {
   creatorName: string;
   creatorAvatar: string; // emoji avatar
   title: string;
-  imageUrl: string;
+  videoUrl?: string; // preferred — falls back to imageUrl when a creator post has no clip
+  imageUrl?: string;
   likes: string; // pre-formatted, e.g. "12k"
   comments: string;
 }
@@ -95,7 +96,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "Maynippongirls",
     creatorAvatar: "🌸",
     title: "เที่ยวโอซาก้า-เกียวโต 7 วัน งบเบาๆ",
-    imageUrl: "/images/plan-osaka.jpg",
+    videoUrl: "/videos/plan-osaka.mp4",
     likes: "12k",
     comments: "3k",
   },
@@ -104,7 +105,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "TravelWithTawn",
     creatorAvatar: "🎒",
     title: "เที่ยวปักกิ่ง-กำแพงเมืองจีน 5 วัน สุดคุ้ม",
-    imageUrl: "/images/plan-beijing.jpg",
+    videoUrl: "/videos/plan-beijing.mp4",
     likes: "12k",
     comments: "3k",
   },
@@ -113,7 +114,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "FoodieNomad",
     creatorAvatar: "🍜",
     title: "เที่ยวโซล-เกาะเชจู 4 วัน สโลว์ไลฟ์",
-    imageUrl: "/images/plan-seoul.jpg",
+    videoUrl: "/videos/plan-seoul.mp4",
     likes: "18.2k",
     comments: "3.6k",
   },
@@ -122,7 +123,7 @@ export const creatorPlans: CreatorPlan[] = [
     creatorName: "FoodieNomad",
     creatorAvatar: "🍜",
     title: "เที่ยวลอนดอน 6 วัน เก็บครบทุกไฮไลท์",
-    imageUrl: "/images/plan-london.jpg",
+    videoUrl: "/videos/plan-london.mp4",
     likes: "22.9k",
     comments: "4.7k",
   },

@@ -51,7 +51,7 @@ export function HomeNavbar() {
         <img
           src="/images/profile-avatar.jpg"
           alt="โปรไฟล์ผู้ใช้"
-          className="h-9 w-9 rounded-full object-cover ring-2 ring-white"
+          className="h-9 w-9 rounded-full object-cover"
         />
       </div>
     </div>
