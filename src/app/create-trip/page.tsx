@@ -361,7 +361,7 @@ function CreateTripForm() {
           <div className="flex flex-col-reverse items-center gap-4 border-t border-[var(--color-border)]/40 px-6 py-5 sm:flex-row sm:justify-between sm:px-8">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-8 rounded-full" style={{ backgroundColor: "#f5a623" }} />
+                <span className="h-2 w-8 rounded-full" style={{ backgroundColor: "var(--color-accent-orange)" }} />
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#d5cdb8" }} />
               </div>
               <span className="text-sm text-[var(--color-muted)]">1 จาก 2</span>
@@ -489,13 +489,13 @@ function ModeToggle({
 }) {
   return (
     <div
-      className="inline-flex items-center gap-2 rounded-full px-3 py-3 sm:gap-3 sm:px-4"
+      className="flex items-center gap-2 rounded-full px-3 py-3 sm:gap-3 sm:px-4"
       style={{ backgroundColor: "var(--color-page-cream)" }}
     >
       <button
         type="button"
         onClick={() => setMode("ai")}
-        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-3.5 text-sm font-bold transition-colors sm:text-base"
+        className="inline-flex flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
         style={
           mode === "ai"
             ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
@@ -513,7 +513,7 @@ function ModeToggle({
       <button
         type="button"
         onClick={() => setMode("self")}
-        className="inline-flex items-center justify-center whitespace-nowrap rounded-full px-5 py-3.5 text-sm font-bold transition-colors sm:text-base"
+        className="inline-flex flex-1 items-center justify-center rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
         style={
           mode === "self"
             ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
