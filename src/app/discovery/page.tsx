@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, MapPin, Sparkles, SlidersHorizontal, Hand } from "lucide-react";
@@ -10,6 +10,14 @@ import { PlaceCard } from "@/components/consumer/PlaceCard";
 import { findDestinationGuide, type DestinationGuide } from "@/lib/discovery-content";
 
 export default function DiscoveryPage() {
+  return (
+    <Suspense fallback={null}>
+      <DiscoveryResults />
+    </Suspense>
+  );
+}
+
+function DiscoveryResults() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const guide = findDestinationGuide(query);

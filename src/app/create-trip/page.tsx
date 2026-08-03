@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -64,6 +64,14 @@ const COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส�
 const MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
 
 export default function CreateTripPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateTripForm />
+    </Suspense>
+  );
+}
+
+function CreateTripForm() {
   const searchParams = useSearchParams();
 
   const [mode, setMode] = useState<TripCreationMode>(
