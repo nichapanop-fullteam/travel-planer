@@ -16,6 +16,7 @@
   --color-surface: #edf4f0;
   --color-border: #a3a0a0;
   --color-muted: #7c8782;
+  --color-page-cream: #f3ecdd;
 
   /* Create Trip (step 1) form — chip/tag selection states */
   --color-sel-bg: #eaf3ee;
@@ -48,14 +49,15 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
+  --font-thai: var(--font-thai);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), var(--font-thai), Arial, Helvetica, sans-serif;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display), Arial, Helvetica, sans-serif;
+  font-family: var(--font-display), var(--font-thai), Arial, Helvetica, sans-serif;
 }

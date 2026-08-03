@@ -2,12 +2,13 @@
 
 import { Suspense, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   Building2,
   CalendarDays,
+  ChevronLeft,
   Compass,
   Coffee,
   Landmark,
@@ -21,9 +22,10 @@ import {
   UtensilsCrossed,
   MapPin,
 } from "lucide-react";
-import { HomeNavbar } from "@/components/consumer/HomeNavbar";
 import { BookingBar } from "@/components/consumer/BookingBar";
+import { Divider } from "@/components/ui/Divider";
 import { saveTripDraft } from "@/lib/trip-drafts";
+import { generateTripFromDraft, saveGeneratedTrip } from "@/lib/generated-trips";
 import type { TripCreationMode, TripDraft } from "@/types";
 
 interface StyleOption {
@@ -72,26 +74,34 @@ export default function CreateTripPage() {
 }
 
 function CreateTripForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  const destinationParam = searchParams.get("destination") ?? "";
+  // Coming from the Luang Prabang search/discovery page — prefill the whole
+  // form with the reference preferences instead of leaving it blank.
+  const prefillDefaults = destinationParam.includes("หลวงพระบาง");
 
   const [mode, setMode] = useState<TripCreationMode>(
     searchParams.get("mode") === "self" ? "self" : "ai"
   );
-  const [destination, setDestination] = useState(searchParams.get("destination") ?? "");
-  const [duration, setDuration] = useState("");
-  const [guests, setGuests] = useState("");
+  const [destination, setDestination] = useState(destinationParam);
+  const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
+  const [guests, setGuests] = useState(prefillDefaults ? "ผู้ใหญ่, 1 คน" : "");
 
   const [extraStyles, setExtraStyles] = useState<StyleOption[]>([]);
-  const [styles, setStyles] = useState<string[]>([]);
-  const [pace, setPace] = useState<string | null>(null);
-  const [budget, setBudget] = useState<string | null>(null);
+  const [styles, setStyles] = useState<string[]>(
+    prefillDefaults ? ["วัฒนธรรม", "อาหาร", "ไนท์ไลฟ์"] : []
+  );
+  const [pace, setPace] = useState<string | null>(prefillDefaults ? "Chill" : null);
+  const [budget, setBudget] = useState<string | null>(prefillDefaults ? "Premium" : null);
   const [customBudget, setCustomBudget] = useState("");
   const [extraConds, setExtraConds] = useState<string[]>([]);
-  const [conditions, setConditions] = useState<string[]>([]);
+  const [conditions, setConditions] = useState<string[]>(
+    prefillDefaults ? ["มีรถส่วนตัว", "เดินเยอะไม่ได้"] : []
+  );
 
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [savedDraft, setSavedDraft] = useState<TripDraft | null>(null);
-  const [showSummary, setShowSummary] = useState(false);
 
   const customBudgetInputRef = useRef<HTMLInputElement>(null);
 
@@ -160,28 +170,28 @@ function CreateTripForm() {
         conditions: finalConditions,
       };
       saveTripDraft(draft);
-      setSavedDraft(draft);
-      setStatus("idle");
-      setShowSummary(true);
+      const generatedTrip = generateTripFromDraft(draft);
+      saveGeneratedTrip(generatedTrip);
+      router.push(`/generated-plan/${generatedTrip.id}`);
     }, 1200);
   }
 
   return (
-    <div className="min-h-screen bg-[var(--color-surface)]">
-      <Hero
-        mode={mode}
-        setMode={setMode}
-        destination={destination}
-        onDestinationChange={handleDestinationChange}
-        duration={duration}
-        onDurationChange={setDuration}
-        guests={guests}
-        onGuestsChange={setGuests}
-        destinationHasError={status === "error"}
-      />
+    <div className="min-h-screen px-4 py-6 sm:px-8 sm:py-10" style={{ backgroundColor: "var(--color-page-cream)" }}>
+      <div className="mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-white shadow-xl">
+        <Hero
+          destination={destination}
+          onDestinationChange={handleDestinationChange}
+          duration={duration}
+          onDurationChange={setDuration}
+          guests={guests}
+          onGuestsChange={setGuests}
+          destinationHasError={status === "error"}
+        />
 
-      <div className="mx-auto max-w-7xl px-6 pb-16 sm:px-10">
-        <div className="relative overflow-hidden rounded-b-3xl bg-white shadow-sm">
+        <ModeToggle mode={mode} setMode={setMode} />
+
+        <div className="relative">
           {status === "error" && (
             <div className="mx-6 mt-6 rounded-2xl border px-4 py-3 text-sm sm:mx-8" style={{ backgroundColor: "var(--color-danger-bg)", borderColor: "var(--color-danger-border)", color: "var(--color-danger)" }}>
               <strong>กรอกไม่ครบ</strong> — กรุณาระบุปลายทางก่อนสร้างแพลน
@@ -377,7 +387,7 @@ function CreateTripForm() {
           </div>
 
           {status === "loading" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-b-3xl bg-white/85 backdrop-blur-sm">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white/85 backdrop-blur-sm">
               <div
                 className="h-11 w-11 animate-spin rounded-full border-4"
                 style={{ borderColor: "var(--color-sel-bg)", borderTopColor: "var(--color-brand-green)" }}
@@ -389,17 +399,11 @@ function CreateTripForm() {
           )}
         </div>
       </div>
-
-      {showSummary && savedDraft && (
-        <SummarySheet draft={savedDraft} onClose={() => setShowSummary(false)} />
-      )}
     </div>
   );
 }
 
 function Hero({
-  mode,
-  setMode,
   destination,
   onDestinationChange,
   duration,
@@ -408,8 +412,6 @@ function Hero({
   onGuestsChange,
   destinationHasError,
 }: {
-  mode: TripCreationMode;
-  setMode: (m: TripCreationMode) => void;
   destination: string;
   onDestinationChange: (v: string) => void;
   duration: string;
@@ -418,44 +420,35 @@ function Hero({
   onGuestsChange: (v: string) => void;
   destinationHasError: boolean;
 }) {
+  const router = useRouter();
+
   return (
-    <div className="relative flex min-h-[380px] flex-col items-center justify-center gap-6 overflow-hidden px-6 py-10 text-center sm:min-h-[420px]">
+    <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-8 text-center sm:min-h-[300px]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/hero-mountain.jpg"
         alt=""
         className="absolute inset-0 h-full w-full object-cover"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/15 to-black/45" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/40" />
 
-      <HomeNavbar />
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="absolute left-6 top-6 flex items-center gap-1.5 text-sm font-medium text-white drop-shadow-sm sm:left-8 sm:top-8"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/25 backdrop-blur-sm">
+          <ChevronLeft size={16} />
+        </span>
+        ย้อนกลับ
+      </button>
 
-      <h1 className="relative text-3xl font-extrabold text-white drop-shadow-sm sm:text-4xl">
+      <h1 className="relative text-2xl font-extrabold text-white drop-shadow-sm sm:text-3xl">
         สร้างทริปของคุณ
       </h1>
 
-      <div className="relative flex items-center gap-1 rounded-full bg-black/25 p-1.5 shadow-lg backdrop-blur-sm">
-        <button
-          type="button"
-          onClick={() => setMode("ai")}
-          className={`rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
-            mode === "ai" ? "bg-white text-[var(--foreground)]" : "text-white/85 hover:bg-white/10"
-          }`}
-        >
-          Pluno สร้างให้
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("self")}
-          className={`rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
-            mode === "self" ? "bg-white text-[var(--foreground)]" : "text-white/85 hover:bg-white/10"
-          }`}
-        >
-          สร้างด้วยตัวเอง
-        </button>
-      </div>
-
       <BookingBar
+        showSearchButton={false}
         fields={[
           {
             icon: MapPin,
@@ -481,6 +474,52 @@ function Hero({
           },
         ]}
       />
+    </div>
+  );
+}
+
+function ModeToggle({
+  mode,
+  setMode,
+}: {
+  mode: TripCreationMode;
+  setMode: (m: TripCreationMode) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4"
+      style={{ backgroundColor: "var(--color-page-cream)" }}
+    >
+      <button
+        type="button"
+        onClick={() => setMode("ai")}
+        className="inline-flex flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
+        style={
+          mode === "ai"
+            ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
+            : { color: "var(--foreground)" }
+        }
+      >
+        Pluno จัดแพลนให้
+        <span
+          className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          AI
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setMode("self")}
+        className="inline-flex flex-1 items-center justify-center rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
+        style={
+          mode === "self"
+            ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
+            : { color: "var(--foreground)" }
+        }
+      >
+        สร้างด้วยตัวเอง
+      </button>
     </div>
   );
 }
@@ -511,10 +550,6 @@ function FormRow({
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
-}
-
-function Divider() {
-  return <div className="h-px bg-[var(--color-border)]/40" />;
 }
 
 function Chip({
@@ -559,58 +594,5 @@ function Tag({ label, isOn, onClick }: { label: string; isOn: boolean; onClick: 
     >
       {label}
     </button>
-  );
-}
-
-function SummarySheet({ draft, onClose }: { draft: TripDraft; onClose: () => void }) {
-  const budgetLabel =
-    draft.budget === "custom"
-      ? draft.customBudget
-        ? `฿${draft.customBudget}`
-        : "ระบุเอง (ยังไม่กรอก)"
-      : draft.budget || "—";
-
-  const rows: [string, string][] = [
-    ["โหมด", draft.mode === "ai" ? "Pluno สร้างให้" : "สร้างด้วยตัวเอง"],
-    ["ปลายทาง", draft.destination || "—"],
-    ["ระยะเวลา", draft.duration || "—"],
-    ["ผู้ร่วมทริป", draft.guests || "—"],
-    ["สไตล์", draft.styles.length ? draft.styles.join(", ") : "—"],
-    ["ความเข้มข้น", draft.pace || "—"],
-    ["งบ/คน/วัน", budgetLabel],
-    ["เงื่อนไข", draft.conditions.length ? draft.conditions.join(", ") : "—"],
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-3xl bg-white p-7 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-xl font-bold">บันทึกแพลนไว้แล้ว</h3>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
-          ข้อมูลนี้ถูกเก็บไว้ในเครื่อง (ยังไม่เชื่อมกับระบบสร้างแผนจริง)
-        </p>
-        <dl className="mt-5 grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5 text-sm">
-          {rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-[var(--color-muted)]">{k}</dt>
-              <dd className="font-semibold">{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-6 w-full rounded-2xl py-3 text-sm font-semibold text-white"
-          style={{ backgroundColor: "var(--color-brand-green)" }}
-        >
-          เข้าใจแล้ว
-        </button>
-      </div>
-    </div>
   );
 }

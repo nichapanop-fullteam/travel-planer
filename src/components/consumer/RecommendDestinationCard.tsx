@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { Bookmark, Star } from "lucide-react";
 import type { RecommendDestination } from "@/lib/home-content";
 import { formatTHB } from "@/lib/trip-utils";
 
 export function RecommendDestinationCard({ dest }: { dest: RecommendDestination }) {
-  return (
-    <div className="overflow-hidden rounded-3xl bg-white shadow-md">
+  const content = (
+    <>
       <div className="aspect-[3/2] overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={dest.imageUrl} alt={dest.title} className="h-full w-full object-cover" />
@@ -39,6 +40,19 @@ export function RecommendDestinationCard({ dest }: { dest: RecommendDestination 
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
+
+  if (dest.href) {
+    return (
+      <Link
+        href={dest.href}
+        className="block overflow-hidden rounded-3xl bg-white shadow-md transition-transform hover:-translate-y-0.5"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className="overflow-hidden rounded-3xl bg-white shadow-md">{content}</div>;
 }

@@ -11,6 +11,7 @@ export interface RecommendDestination {
   rating: number;
   saves: string; // pre-formatted, e.g. "2.1k"
   priceFrom: number; // THB, per person — shown as "เริ่มต้น ฿x,xxx"
+  href?: string; // when set, the card links straight to a detail page
 }
 
 export const recommendDestinations: RecommendDestination[] = [
@@ -23,6 +24,7 @@ export const recommendDestinations: RecommendDestination[] = [
     rating: 4.9,
     saves: "2.1k",
     priceFrom: 6900,
+    href: "/generated-plan/demo-luang-prabang",
   },
   {
     id: "rec-tokyo",

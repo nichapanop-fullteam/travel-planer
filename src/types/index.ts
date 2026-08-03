@@ -20,6 +20,8 @@ export interface Activity {
   location?: Location;
   notes?: string;
   cost: number; // THB, per group
+  travelNote?: string; // e.g. "เดิน ~8 นาที" — how to get here from the previous stop
+  icon?: string; // key into ACTIVITY_ICON_OVERRIDE (generated-plan) — overrides the category default icon
 }
 
 export interface Day {
@@ -111,4 +113,26 @@ export interface TripDraft {
   budget: string | null; // preset key ("Economy" | "Comfort" | "Premium" | "Luxury" | "custom")
   customBudget: string; // only meaningful when budget === "custom"
   conditions: string[];
+}
+
+// ─── Generated Plan (Step 2 — AI output) ───
+// The itinerary Pluno generates from a TripDraft, shown on /generated-plan/[id]
+// for review before the traveler confirms it. Saved to localStorage for now
+// (see lib/generated-trips.ts); no backend/API yet.
+
+export type GeneratedTripStatus = "generated" | "confirmed";
+
+export interface GeneratedTrip {
+  id: string;
+  draftId: string; // links back to the TripDraft it was generated from
+  createdAt: string; // ISO timestamp
+  destination: string;
+  coverImageUrl: string;
+  durationLabel: string; // "3 วัน 2 คืน"
+  paceLabel: string; // "Chill เที่ยวสบาย"
+  budgetLabel: string; // "฿3,000 / วัน"
+  conditionsLabel: string; // "มีรถส่วนตัว, เดินเยอะไม่ได้"
+  styles: string[];
+  status: GeneratedTripStatus;
+  days: Day[];
 }

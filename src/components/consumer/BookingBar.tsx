@@ -17,9 +17,11 @@ export interface BookingFieldConfig {
 export function BookingBar({
   fields,
   onSearch,
+  showSearchButton = true,
 }: {
   fields: BookingFieldConfig[];
   onSearch?: () => void;
+  showSearchButton?: boolean;
 }) {
   return (
     <div className="relative flex w-full max-w-5xl items-center gap-2 rounded-[28px] bg-white/20 p-2 shadow-lg backdrop-blur-md">
@@ -28,14 +30,16 @@ export function BookingBar({
           <BookingField key={field.label} field={field} isLast={i === fields.length - 1} />
         ))}
       </div>
-      <button
-        type="button"
-        onClick={onSearch}
-        className="shrink-0 rounded-[20px] px-8 py-4 text-base font-bold text-white shadow-md transition-transform hover:-translate-y-0.5"
-        style={{ backgroundColor: "var(--color-accent-orange)" }}
-      >
-        ค้นหา
-      </button>
+      {showSearchButton && (
+        <button
+          type="button"
+          onClick={onSearch}
+          className="shrink-0 rounded-[20px] px-8 py-4 text-base font-bold text-white shadow-md transition-transform hover:-translate-y-0.5"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          ค้นหา
+        </button>
+      )}
     </div>
   );
 }
