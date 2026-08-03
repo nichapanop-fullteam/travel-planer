@@ -189,7 +189,9 @@ function CreateTripForm() {
           destinationHasError={status === "error"}
         />
 
-        <ModeToggle mode={mode} setMode={setMode} />
+        <div className="px-6 py-4 sm:px-8">
+          <ModeToggle mode={mode} setMode={setMode} />
+        </div>
 
         <div className="relative">
           {status === "error" && (
@@ -487,13 +489,13 @@ function ModeToggle({
 }) {
   return (
     <div
-      className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4"
+      className="inline-flex items-center gap-2 rounded-full px-3 py-3 sm:gap-3 sm:px-4"
       style={{ backgroundColor: "var(--color-page-cream)" }}
     >
       <button
         type="button"
         onClick={() => setMode("ai")}
-        className="inline-flex flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
+        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-3.5 text-sm font-bold transition-colors sm:text-base"
         style={
           mode === "ai"
             ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
@@ -511,7 +513,7 @@ function ModeToggle({
       <button
         type="button"
         onClick={() => setMode("self")}
-        className="inline-flex flex-1 items-center justify-center rounded-full py-3.5 text-sm font-bold transition-colors sm:text-base"
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-full px-5 py-3.5 text-sm font-bold transition-colors sm:text-base"
         style={
           mode === "self"
             ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
