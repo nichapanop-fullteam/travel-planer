@@ -58,6 +58,7 @@ import {
   formatTHB,
   getDayRouteEstimate,
   getDayTotalCost,
+  getGoogleMapsUrl,
   getTripTotalCost,
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
@@ -435,14 +436,16 @@ function ActivityMiniRow({ activity, index }: { activity: Activity; index: numbe
             >
               รายละเอียดสถานที่
             </button>
-            <button
-              type="button"
+            <a
+              href={getGoogleMapsUrl(activity.location ?? { name: activity.title })}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-semibold text-white"
               style={{ backgroundColor: "var(--color-brand-green)" }}
             >
               <Navigation size={12} />
               นำทาง
-            </button>
+            </a>
           </div>
         </div>
       )}
@@ -746,14 +749,16 @@ function PlacePopup({
           >
             รายละเอียดสถานที่
           </button>
-          <button
-            type="button"
+          <a
+            href={getGoogleMapsUrl(activity.location ?? { name: activity.title })}
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-semibold text-white"
             style={{ backgroundColor: "var(--color-brand-green)" }}
           >
             <Navigation size={12} />
             นำทาง
-          </button>
+          </a>
         </div>
       </div>
     </div>
