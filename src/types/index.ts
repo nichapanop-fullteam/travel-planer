@@ -10,6 +10,8 @@ export interface Location {
   name: string;
   lat?: number;
   lng?: number;
+  rating?: number; // shown on the map pin's detail popup
+  imageUrl?: string; // shown on the map pin's detail popup
 }
 
 export interface Activity {

@@ -78,11 +78,11 @@ function luangPrabangDays(): Day[] {
       dayNumber: 1,
       date: "2026-11-20",
       activities: [
-        { id: "ga1", time: "14:00", title: "เช็คอินโรงแรม", category: "hotel", location: { name: "Old Town, Luang Prabang" }, cost: 0, travelNote: "จากสนามบิน ~15 นาที" },
-        { id: "ga2", time: "15:00", title: "วัดเชียงทอง (Wat Xieng Thong)", category: "sightseeing", location: { name: "Wat Xieng Thong" }, cost: 100, travelNote: "เดิน ~8 นาที", icon: "anchor" },
+        { id: "ga1", time: "14:00", title: "เช็คอินโรงแรม", category: "hotel", location: { name: "Xieng Thong Retreat Hotel", rating: 5.0, imageUrl: "/images/luang-prabang.jpg" }, cost: 0, travelNote: "จากสนามบิน ~15 นาที" },
+        { id: "ga2", time: "15:00", title: "วัดเชียงทอง (Wat Xieng Thong)", category: "sightseeing", location: { name: "Wat Xieng Thong", rating: 4.8, imageUrl: "/images/wat-xieng-thong.png" }, cost: 100, travelNote: "เดิน ~8 นาที", icon: "anchor" },
         { id: "ga3", time: "16:30", title: "ปั่นจักรยานเลียบเมืองเก่า", category: "activity", location: { name: "Old Town" }, cost: 100, travelNote: "อยู่ย่านเดียวกัน", icon: "bike" },
         { id: "ga4", time: "17:30", title: "ขึ้นภูสี (Mount Phousi) ชมพระอาทิตย์ตก", category: "sightseeing", location: { name: "Mount Phousi" }, cost: 100, travelNote: "เดิน ~10 นาที", icon: "mountain" },
-        { id: "ga5", time: "19:00", title: "ตลาดกลางคืน (Night Market)", category: "food", location: { name: "Luang Prabang Night Market" }, cost: 250, travelNote: "เดิน ~5 นาที", icon: "ticket" },
+        { id: "ga5", time: "19:00", title: "ตลาดกลางคืน (Night Market)", category: "food", location: { name: "Luang Prabang Night Market", rating: 4.6, imageUrl: "/images/night-market.png" }, cost: 250, travelNote: "เดิน ~5 นาที", icon: "ticket" },
         { id: "ga6", time: "21:30", title: "บาร์ค็อกเทล Icon Klub", category: "food", location: { name: "Icon Klub" }, cost: 900, travelNote: "เดิน ~6 นาที", icon: "beer" },
         { id: "ga7", time: "00:00", title: "โบว์ลิ่งหลวงพระบาง", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, cost: 400, travelNote: "ตุ๊กตุ๊ก ~10 นาที", icon: "pulse" },
       ],
@@ -94,7 +94,7 @@ function luangPrabangDays(): Day[] {
       activities: [
         { id: "ga8", time: "08:00", title: "น้ำตกกวางสี", category: "activity", location: { name: "Kuang Si Falls" }, cost: 900, travelNote: "จากโรงแรม ~15 นาที" },
         { id: "ga9", time: "12:00", title: "สปาสมุนไพรลาว", category: "activity", location: { name: "Luang Prabang" }, cost: 550, travelNote: "เดิน ~10 นาที" },
-        { id: "ga10", time: "17:00", title: "ล่องเรือแม่น้ำโขงยามเย็น", category: "food", location: { name: "Mekong River" }, cost: 1300, travelNote: "เดิน ~10 นาที" },
+        { id: "ga10", time: "17:00", title: "ล่องเรือแม่น้ำโขงยามเย็น", category: "food", location: { name: "Mekong River", rating: 4.7, imageUrl: "/images/mekong-boat.png" }, cost: 1300, travelNote: "เดิน ~10 นาที" },
         { id: "ga11", time: "20:00", title: "Lao Lao Garden", category: "food", location: { name: "Lao Lao Garden" }, cost: 450, travelNote: "เดิน ~10 นาที" },
       ],
     },

@@ -10,6 +10,7 @@ import {
   Asterisk,
   Beer,
   Bike,
+  Bookmark,
   CalendarDays,
   Clock,
   Compass,
@@ -25,6 +26,7 @@ import {
   Plus,
   RefreshCcw,
   Share2,
+  Star,
   Ticket,
   Wallet,
   X,
@@ -382,26 +384,68 @@ function DaySummaryCard({ day }: { day: Day }) {
 }
 
 function ActivityMiniRow({ activity, index }: { activity: Activity; index: number }) {
+  const [expanded, setExpanded] = useState(false);
   const Icon = (activity.icon && ACTIVITY_ICON_OVERRIDE[activity.icon]) || categoryIcon[activity.category];
   const color = categoryColorVar[activity.category];
+  const name = activity.location?.name ?? activity.title;
+  const rating = activity.location?.rating ?? 4.7;
+  const imageUrl = activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
+
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-white p-3.5">
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-        style={{ backgroundColor: "var(--color-brand-green)" }}
+    <div className="overflow-hidden rounded-xl bg-white">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-3 p-3.5 text-left"
       >
-        {index}
-      </span>
-      <Icon size={15} style={{ color }} className="shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{activity.title}</p>
-        <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-          <span className="font-semibold" style={{ color: "var(--color-accent-orange)" }}>
-            {activity.time}
-          </span>
-          {activity.travelNote && <> · {activity.travelNote}</>}
-        </p>
-      </div>
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+          style={{ backgroundColor: "var(--color-brand-green)" }}
+        >
+          {index}
+        </span>
+        <Icon size={15} style={{ color }} className="shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{activity.title}</p>
+          <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+            <span className="font-semibold" style={{ color: "var(--color-accent-orange)" }}>
+              {activity.time}
+            </span>
+            {activity.travelNote && <> · {activity.travelNote}</>}
+          </p>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-2 px-3.5 pb-3.5">
+          <div className="h-28 w-full overflow-hidden rounded-xl">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+          <p className="text-sm font-bold">{name}</p>
+          <p className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+            <Star size={12} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+            {rating.toFixed(1)}
+            {activity.travelNote && <> · {activity.travelNote}</>}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="flex-1 rounded-full border border-[var(--color-border)]/40 py-2 text-xs font-semibold"
+            >
+              รายละเอียดสถานที่
+            </button>
+            <button
+              type="button"
+              className="flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-semibold text-white"
+              style={{ backgroundColor: "var(--color-brand-green)" }}
+            >
+              <Navigation size={12} />
+              นำทาง
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -600,6 +644,9 @@ const MAP_PIN_POSITIONS = [
 ];
 
 function TripMapPanel({ day }: { day: Day }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = day.activities.find((a) => a.id === selectedId);
+
   return (
     <div className="relative min-h-[320px] overflow-hidden rounded-2xl border border-[var(--color-border)]/25">
       <FakeMapBackground />
@@ -612,13 +659,24 @@ function TripMapPanel({ day }: { day: Day }) {
         All Places
       </button>
 
-      {day.activities.map((a, i) => (
+      {day.activities.map((a, i) => {
+        const pos = MAP_PIN_POSITIONS[i % MAP_PIN_POSITIONS.length];
+        const isSelected = selectedId === a.id;
+        const openBelow = parseFloat(pos.y) < 45;
+        return (
         <div
           key={a.id}
-          className="absolute -translate-x-1/2 -translate-y-1/2"
-          style={{ left: MAP_PIN_POSITIONS[i % MAP_PIN_POSITIONS.length].x, top: MAP_PIN_POSITIONS[i % MAP_PIN_POSITIONS.length].y }}
+          className={`absolute -translate-x-1/2 -translate-y-1/2 ${isSelected ? "z-20" : "z-0"}`}
+          style={{ left: pos.x, top: pos.y }}
         >
-          <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 shadow-md">
+          {selected && isSelected && (
+            <PlacePopup activity={selected} onClose={() => setSelectedId(null)} openBelow={openBelow} />
+          )}
+          <button
+            type="button"
+            onClick={() => setSelectedId((prev) => (prev === a.id ? null : a.id))}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-2.5 py-1 shadow-md"
+          >
             <span
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
               style={{ backgroundColor: "var(--color-brand-green)" }}
@@ -626,9 +684,10 @@ function TripMapPanel({ day }: { day: Day }) {
               {i + 1}
             </span>
             <span className="text-[11px] font-semibold">{a.location?.name ?? a.title}</span>
-          </div>
+          </button>
         </div>
-      ))}
+        );
+      })}
 
       <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
         <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
@@ -637,6 +696,65 @@ function TripMapPanel({ day }: { day: Day }) {
         <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
           <Minus size={14} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function PlacePopup({
+  activity,
+  onClose,
+  openBelow,
+}: {
+  activity: Activity;
+  onClose: () => void;
+  openBelow?: boolean;
+}) {
+  const name = activity.location?.name ?? activity.title;
+  const rating = activity.location?.rating ?? 4.7;
+  const imageUrl = activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
+
+  return (
+    <div
+      className={`absolute left-1/2 z-20 w-64 -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl ${
+        openBelow ? "top-full mt-2" : "bottom-full mb-2"
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="relative h-28 w-full">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-md"
+        >
+          <Bookmark size={13} style={{ color: "var(--color-brand-green)" }} />
+        </button>
+      </div>
+      <div className="flex flex-col gap-2 p-3">
+        <p className="truncate text-sm font-bold">{name}</p>
+        <p className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+          <Star size={12} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+          {rating.toFixed(1)}
+          {activity.travelNote && <> · {activity.travelNote}</>}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-full border border-[var(--color-border)]/40 py-2 text-xs font-semibold"
+          >
+            รายละเอียดสถานที่
+          </button>
+          <button
+            type="button"
+            className="flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-semibold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            <Navigation size={12} />
+            นำทาง
+          </button>
+        </div>
       </div>
     </div>
   );
