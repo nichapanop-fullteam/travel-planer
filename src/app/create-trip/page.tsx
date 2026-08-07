@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -23,10 +23,14 @@ import {
   MapPin,
 } from "lucide-react";
 import { BookingBar } from "@/components/consumer/BookingBar";
+import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
+import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
+import { buildGuestsLabel, GuestPickerDialog } from "@/components/consumer/GuestPickerDialog";
 import { Divider } from "@/components/ui/Divider";
+import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { saveTripDraft } from "@/lib/trip-drafts";
 import { generateTripFromDraft, saveGeneratedTrip } from "@/lib/generated-trips";
-import type { TripCreationMode, TripDraft } from "@/types";
+import type { Destination, TripCreationMode, TripDraft } from "@/types";
 
 interface StyleOption {
   tag: string;
@@ -86,8 +90,11 @@ function CreateTripForm() {
     searchParams.get("mode") === "self" ? "self" : "ai"
   );
   const [destination, setDestination] = useState(destinationParam);
+  const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
-  const [guests, setGuests] = useState(prefillDefaults ? "ผู้ใหญ่, 1 คน" : "");
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
+  const [guests, setGuests] = useState(prefillDefaults ? buildGuestsLabel(1, 0) : "");
 
   const [extraStyles, setExtraStyles] = useState<StyleOption[]>([]);
   const [styles, setStyles] = useState<string[]>(
@@ -102,8 +109,36 @@ function CreateTripForm() {
   );
 
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [destDialogOpen, setDestDialogOpen] = useState(false);
+  const [dateDialogOpen, setDateDialogOpen] = useState(false);
+  const [guestDialogOpen, setGuestDialogOpen] = useState(false);
+  const [hasHydratedSearch, setHasHydratedSearch] = useState(false);
 
   const customBudgetInputRef = useRef<HTMLInputElement>(null);
+
+  // Prefill the Destination/Date/Guest bar from the last search the user ran
+  // on this page, unless a deep link (destinationParam) already specifies one.
+  useEffect(() => {
+    if (!destinationParam) {
+      const last = getLastCreateTripSearch();
+      if (last) {
+        setDestination(last.destination);
+        setDestinationPlace(last.destinationPlace);
+        setDuration(last.duration);
+        setGuests(last.guests);
+        setAdults(last.adults);
+        setChildren(last.children);
+      }
+    }
+    setHasHydratedSearch(true);
+    // Only ever run on mount — this is a one-time hydration from storage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedSearch) return;
+    saveLastCreateTripSearch({ destination, destinationPlace, duration, guests, adults, children });
+  }, [hasHydratedSearch, destination, destinationPlace, duration, guests, adults, children]);
 
   const allStyleOptions = [...STYLE_OPTIONS, ...extraStyles];
   const remainingStyleOptions = MORE_STYLE_OPTIONS.filter(
@@ -161,6 +196,7 @@ function CreateTripForm() {
         createdAt: new Date().toISOString(),
         mode,
         destination: destination.trim(),
+        destinationPlace,
         duration: duration.trim(),
         guests: guests.trim(),
         styles: finalStyles,
@@ -181,12 +217,46 @@ function CreateTripForm() {
       <div className="mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-white shadow-xl">
         <Hero
           destination={destination}
-          onDestinationChange={handleDestinationChange}
+          onDestinationFieldClick={() => setDestDialogOpen(true)}
           duration={duration}
           onDurationChange={setDuration}
+          onDateFieldClick={() => setDateDialogOpen(true)}
           guests={guests}
           onGuestsChange={setGuests}
+          onGuestFieldClick={() => setGuestDialogOpen(true)}
           destinationHasError={status === "error"}
+        />
+
+        <DestinationPickerDialog
+          isOpen={destDialogOpen}
+          onClose={() => setDestDialogOpen(false)}
+          onConfirm={(result) => {
+            handleDestinationChange(result.label);
+            setDestinationPlace(result.destination);
+            setDestDialogOpen(false);
+          }}
+        />
+
+        <DatePickerDialog
+          isOpen={dateDialogOpen}
+          onClose={() => setDateDialogOpen(false)}
+          onConfirm={(result) => {
+            setDuration(result.label);
+            setDateDialogOpen(false);
+          }}
+        />
+
+        <GuestPickerDialog
+          isOpen={guestDialogOpen}
+          initialAdults={adults}
+          initialChildren={children}
+          onClose={() => setGuestDialogOpen(false)}
+          onConfirm={(result) => {
+            setAdults(result.adults);
+            setChildren(result.children);
+            setGuests(result.label);
+            setGuestDialogOpen(false);
+          }}
         />
 
         <div className="px-6 py-4 sm:px-8">
@@ -209,7 +279,6 @@ function CreateTripForm() {
             <FormRow
               label="สไตล์การเที่ยว"
               hint="เลือกได้หลายอย่าง"
-              dimmed={mode === "self"}
             >
               <div className="flex flex-wrap items-center gap-3">
                 {allStyleOptions.map((opt) => (
@@ -256,7 +325,7 @@ function CreateTripForm() {
 
             <Divider />
 
-            <FormRow label="ความเข้มข้นของทริป" centerLabel dimmed={mode === "self"}>
+            <FormRow label="ความเข้มข้นของทริป" centerLabel>
               <div className="flex flex-wrap items-center gap-2.5">
                 {PACE_OPTIONS.map((p) => (
                   <Tag key={p} label={p} isOn={pace === p} onClick={() => setPace((prev) => (prev === p ? null : p))} />
@@ -264,75 +333,79 @@ function CreateTripForm() {
               </div>
             </FormRow>
 
-            <Divider />
+            {mode === "ai" && (
+              <>
+                <Divider />
 
-            <FormRow label="งบต่อคน / วัน">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {BUDGET_OPTIONS.map((b) => (
-                  <button
-                    key={b.key}
-                    type="button"
-                    onClick={() => selectBudget(b.key)}
-                    className={`flex flex-col items-start gap-1.5 rounded-2xl border p-4 text-left shadow-sm transition-transform hover:-translate-y-0.5 ${
-                      budget === b.key ? "" : "border-[var(--color-border)] bg-white"
-                    }`}
-                    style={
-                      budget === b.key
-                        ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" }
-                        : undefined
-                    }
-                  >
-                    <span
-                      className="text-sm font-bold"
-                      style={budget === b.key ? { color: "var(--color-brand-green)" } : undefined}
+                <FormRow label="งบต่อคน / วัน">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                    {BUDGET_OPTIONS.map((b) => (
+                      <button
+                        key={b.key}
+                        type="button"
+                        onClick={() => selectBudget(b.key)}
+                        className={`flex flex-col items-start gap-1.5 rounded-2xl border p-4 text-left shadow-sm transition-transform hover:-translate-y-0.5 ${
+                          budget === b.key ? "" : "border-[var(--color-border)] bg-white"
+                        }`}
+                        style={
+                          budget === b.key
+                            ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="text-sm font-bold"
+                          style={budget === b.key ? { color: "var(--color-brand-green)" } : undefined}
+                        >
+                          {b.label}
+                        </span>
+                        <span
+                          className="text-sm text-[var(--color-muted)]"
+                          style={budget === b.key ? { color: "var(--color-brand-green)" } : undefined}
+                        >
+                          {b.value}
+                        </span>
+                      </button>
+                    ))}
+                    <div
+                      onClick={selectCustomBudget}
+                      className="flex cursor-text flex-col items-start gap-1.5 rounded-2xl border p-4 shadow-sm"
+                      style={
+                        budget === "custom"
+                          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" }
+                          : { borderColor: "var(--color-border)" }
+                      }
                     >
-                      {b.label}
-                    </span>
-                    <span
-                      className="text-sm text-[var(--color-muted)]"
-                      style={budget === b.key ? { color: "var(--color-brand-green)" } : undefined}
-                    >
-                      {b.value}
-                    </span>
-                  </button>
-                ))}
-                <div
-                  onClick={selectCustomBudget}
-                  className="flex cursor-text flex-col items-start gap-1.5 rounded-2xl border p-4 shadow-sm"
-                  style={
-                    budget === "custom"
-                      ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" }
-                      : { borderColor: "var(--color-border)" }
-                  }
-                >
-                  <span
-                    className="text-sm font-bold"
-                    style={budget === "custom" ? { color: "var(--color-brand-green)" } : undefined}
-                  >
-                    ระบุเอง
-                  </span>
-                  <span
-                    className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5"
-                    style={{ backgroundColor: budget === "custom" ? "rgba(255,255,255,0.7)" : "var(--color-surface)" }}
-                  >
-                    <span className="text-sm text-[var(--color-muted)]">฿</span>
-                    <input
-                      ref={customBudgetInputRef}
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="2,500"
-                      value={customBudget}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        setCustomBudget(e.target.value);
-                        if (e.target.value) setBudget("custom");
-                      }}
-                      className="w-full bg-transparent text-sm text-[var(--foreground)] focus:outline-none"
-                    />
-                  </span>
-                </div>
-              </div>
-            </FormRow>
+                      <span
+                        className="text-sm font-bold"
+                        style={budget === "custom" ? { color: "var(--color-brand-green)" } : undefined}
+                      >
+                        ระบุเอง
+                      </span>
+                      <span
+                        className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5"
+                        style={{ backgroundColor: budget === "custom" ? "rgba(255,255,255,0.7)" : "var(--color-surface)" }}
+                      >
+                        <span className="text-sm text-[var(--color-muted)]">฿</span>
+                        <input
+                          ref={customBudgetInputRef}
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="2,500"
+                          value={customBudget}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            setCustomBudget(e.target.value);
+                            if (e.target.value) setBudget("custom");
+                          }}
+                          className="w-full bg-transparent text-sm text-[var(--foreground)] focus:outline-none"
+                        />
+                      </span>
+                    </div>
+                  </div>
+                </FormRow>
+              </>
+            )}
 
             <Divider />
 
@@ -407,19 +480,23 @@ function CreateTripForm() {
 
 function Hero({
   destination,
-  onDestinationChange,
+  onDestinationFieldClick,
   duration,
   onDurationChange,
+  onDateFieldClick,
   guests,
   onGuestsChange,
+  onGuestFieldClick,
   destinationHasError,
 }: {
   destination: string;
-  onDestinationChange: (v: string) => void;
+  onDestinationFieldClick: () => void;
   duration: string;
   onDurationChange: (v: string) => void;
+  onDateFieldClick: () => void;
   guests: string;
   onGuestsChange: (v: string) => void;
+  onGuestFieldClick: () => void;
   destinationHasError: boolean;
 }) {
   const router = useRouter();
@@ -457,7 +534,8 @@ function Hero({
             label: "Destination",
             value: destination,
             placeholder: "City, country",
-            onChange: onDestinationChange,
+            onFieldClick: onDestinationFieldClick,
+            readOnly: true,
             hasError: destinationHasError,
           },
           {
@@ -466,6 +544,8 @@ function Hero({
             value: duration,
             placeholder: "วันเดินทางไป - วันกลับ",
             onChange: onDurationChange,
+            onFieldClick: onDateFieldClick,
+            readOnly: true,
           },
           {
             icon: Users,
@@ -473,6 +553,8 @@ function Hero({
             value: guests,
             placeholder: "ประเภท และจำนวนคน",
             onChange: onGuestsChange,
+            onFieldClick: onGuestFieldClick,
+            readOnly: true,
           },
         ]}
       />

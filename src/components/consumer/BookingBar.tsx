@@ -10,6 +10,8 @@ export interface BookingFieldConfig {
   placeholder: string;
   value?: string;
   onChange?: (value: string) => void;
+  onFieldClick?: () => void;
+  readOnly?: boolean;
   hasError?: boolean;
   disabled?: boolean;
 }
@@ -50,7 +52,11 @@ function BookingField({ field, isLast }: { field: BookingFieldConfig; isLast: bo
     <>
       <label
         className="flex flex-1 items-center gap-3 px-6 py-4 text-left"
-        style={{ backgroundColor: field.hasError ? "var(--color-danger-bg)" : undefined }}
+        style={{
+          backgroundColor: field.hasError ? "var(--color-danger-bg)" : undefined,
+          cursor: field.onFieldClick ? "pointer" : undefined,
+        }}
+        onClick={field.onFieldClick}
       >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-sel-bg)]">
           <Icon size={18} style={{ color: field.hasError ? "var(--color-danger)" : "var(--color-brand-green)" }} />
@@ -67,8 +73,11 @@ function BookingField({ field, isLast }: { field: BookingFieldConfig; isLast: bo
             value={field.value}
             placeholder={field.placeholder}
             disabled={field.disabled}
+            readOnly={field.readOnly}
             onChange={(e) => field.onChange?.(e.target.value)}
-            className="w-full bg-transparent text-base font-semibold text-[var(--foreground)] placeholder:font-medium placeholder:text-[var(--color-muted)] focus:outline-none"
+            className={`w-full bg-transparent text-base font-semibold text-[var(--foreground)] placeholder:font-medium placeholder:text-[var(--color-muted)] focus:outline-none ${
+              field.readOnly ? "cursor-pointer" : ""
+            }`}
           />
         </span>
       </label>

@@ -136,6 +136,7 @@ export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
     draftId: draft.id,
     createdAt: new Date().toISOString(),
     destination: draft.destination,
+    destinationPlace: draft.destinationPlace,
     coverImageUrl: luangPrabang ? "/images/luang-prabang-aerial.png" : "/images/hero-mountain.jpg",
     durationLabel: draft.duration || "ยังไม่ระบุ",
     paceLabel: paceLabel(draft),

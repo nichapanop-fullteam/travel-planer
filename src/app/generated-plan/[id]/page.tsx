@@ -62,6 +62,8 @@ import {
   getTripTotalCost,
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
+import { RecommendedPlaces } from "@/components/plan/RecommendedPlaces";
+import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
 import { Sidebar } from "@/components/consumer/Sidebar";
 import { Divider } from "@/components/ui/Divider";
 
@@ -113,6 +115,18 @@ export default function GeneratedPlanPage() {
     confirmGeneratedTrip(trip!.id);
     setTrip({ ...trip!, status: "confirmed" });
     setTab("plan");
+  }
+
+  function handleAddActivity(dayId: string, activity: Activity) {
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const updated: GeneratedTrip = {
+        ...prev,
+        days: prev.days.map((d) => (d.id === dayId ? { ...d, activities: [...d.activities, activity] } : d)),
+      };
+      saveGeneratedTrip(updated);
+      return updated;
+    });
   }
 
   function handleRegenerate() {
@@ -177,7 +191,7 @@ export default function GeneratedPlanPage() {
           <PlanTabs tab={tab} setTab={setTab} />
 
           {tab === "overview" && <OverviewTab trip={trip} />}
-          {tab === "plan" && <PlanTab trip={trip} />}
+          {tab === "plan" && <PlanTab trip={trip} onAddActivity={handleAddActivity} />}
           {tab === "budget" && <BudgetTab trip={trip} />}
           {tab === "chat" && <ChatTab />}
         </div>
@@ -188,10 +202,10 @@ export default function GeneratedPlanPage() {
 
 function Hero({ trip, onMenuClick }: { trip: GeneratedTrip; onMenuClick: () => void }) {
   const pills = [
-    { icon: CalendarDays, label: trip.durationLabel },
-    { icon: Footprints, label: trip.paceLabel },
-    { icon: Wallet, label: trip.budgetLabel },
-    { icon: Asterisk, label: trip.conditionsLabel },
+    { key: "duration", icon: CalendarDays, label: trip.durationLabel },
+    { key: "pace", icon: Footprints, label: trip.paceLabel },
+    { key: "budget", icon: Wallet, label: trip.budgetLabel },
+    { key: "conditions", icon: Asterisk, label: trip.conditionsLabel },
   ];
 
   return (
@@ -215,7 +229,7 @@ function Hero({ trip, onMenuClick }: { trip: GeneratedTrip; onMenuClick: () => v
       <div className="relative flex flex-wrap items-center justify-center gap-2">
         {pills.map((p) => (
           <span
-            key={p.label}
+            key={p.key}
             className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
           >
             <p.icon size={14} style={{ color: "var(--color-brand-green)" }} />
@@ -453,11 +467,25 @@ function ActivityMiniRow({ activity, index }: { activity: Activity; index: numbe
   );
 }
 
-function PlanTab({ trip }: { trip: GeneratedTrip }) {
+function PlanTab({
+  trip,
+  onAddActivity,
+}: {
+  trip: GeneratedTrip;
+  onAddActivity: (dayId: string, activity: Activity) => void;
+}) {
   const [dayIndex, setDayIndex] = useState(0);
   const [tripMode, setTripMode] = useState(false);
   const day = trip.days[dayIndex];
   const route = getDayRouteEstimate(day);
+  const recommendationCenter = trip.destinationPlace
+    ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
+    : DEFAULT_RECOMMENDATION_CENTER;
+  const existingPlaceIds = new Set(
+    day.activities
+      .map((a) => a.location?.googlePlaceId)
+      .filter((id): id is string => Boolean(id))
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -493,6 +521,13 @@ function PlanTab({ trip }: { trip: GeneratedTrip }) {
       </div>
 
       <div className="flex flex-col gap-5 rounded-3xl p-5" style={{ backgroundColor: "#FAF8F5" }}>
+        <RecommendedPlaces
+          center={recommendationCenter}
+          existingPlaceIds={existingPlaceIds}
+          activityCount={day.activities.length}
+          onAdd={(activity) => onAddActivity(day.id, activity)}
+        />
+
         <div
           className="flex items-center gap-2 overflow-x-auto rounded-2xl p-2"
           style={{ backgroundColor: "#F6F0E5" }}
