@@ -117,6 +117,21 @@ export interface TripDraft {
   budget: string | null; // preset key ("Economy" | "Comfort" | "Premium" | "Luxury" | "custom")
   customBudget: string; // only meaningful when budget === "custom"
   conditions: string[];
+  accommodation?: {
+    status: "booked" | "unbooked";
+    booked?: {
+      attachmentName?: string; // display name only — file bytes aren't persisted (client-side storage)
+      bookingLink: string;
+      hotelName: string;
+    };
+    unbooked?: {
+      styles: string[];
+      styleRecommend: boolean; // "แนะนำให้เลย" — let Pluno pick the style
+      grades: string[];
+      gradeRecommend: boolean;
+      note: string;
+    };
+  };
 }
 
 // A city/region picked as a trip's destination (Create Trip → Destination
@@ -126,11 +141,15 @@ export interface TripDraft {
 // placeId/coordinates instead of re-geocoding a display string.
 export interface Destination {
   placeId?: string; // absent for quick-pick popular-destination entries that weren't geocoded live
+  externalRef?: string; // id passed to the external Places API (/places/details) to hydrate the fields below
   name: string;
   country: string;
   countryCode?: string;
   latitude: number;
   longitude: number;
+  address?: string; // hydrated from /places/details once a destination is picked
+  rating?: number;
+  imageUrl?: string;
 }
 
 // ─── Generated Plan (Step 2 — AI output) ───
@@ -179,8 +198,8 @@ export interface PlaceRecommendation {
   score?: number; // recommendationScore() result at generation time
 }
 
-// A place the user picked via Places Autocomplete (DestinationSearch),
-// before Pluno-specific scheduling info (time/cost/category) is attached.
+// A place the user picked via Places Autocomplete, before Pluno-specific
+// scheduling info (time/cost/category) is attached.
 export interface SelectedPlace {
   googlePlaceId: string;
   name: string;

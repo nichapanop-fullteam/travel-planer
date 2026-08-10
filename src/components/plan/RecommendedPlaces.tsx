@@ -1,25 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Camera,
-  Check,
-  ChevronDown,
-  Clock,
-  Globe,
-  Hotel,
-  MapPin,
-  Phone,
-  Plus,
-  Star,
-  UtensilsCrossed,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Camera, Check, ChevronDown, Hotel, MapPin, Plus, Star, UtensilsCrossed, X, type LucideIcon } from "lucide-react";
 import { fetchPlaceRecommendations, type RecommendedPlace } from "@/lib/place-recommendations";
 import type { Activity, ActivityCategory, PlaceCategory } from "@/types";
-
-const THAI_WEEKDAY_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 interface CategorySection {
   key: PlaceCategory;
@@ -202,16 +186,7 @@ function CategoryRow({
   );
 }
 
-// Google's weekdayDescriptions come back Sunday-first for the "th"/default
-// locale this app uses — good enough to line up with getDay() for a
-// "today's hours" highlight without a full day-name parser.
-function todayIndex(): number {
-  return new Date().getDay();
-}
-
 function PlaceDetailDialog({ place, onClose }: { place: RecommendedPlace; onClose: () => void }) {
-  const [hoursExpanded, setHoursExpanded] = useState(false);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div
@@ -242,20 +217,6 @@ function PlaceDetailDialog({ place, onClose }: { place: RecommendedPlace; onClos
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Star size={14} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
               <span className="font-bold">{place.rating.toFixed(1)}</span>
-              {place.userRatingCount !== undefined && (
-                <span className="text-[var(--color-muted)]">({place.userRatingCount.toLocaleString()})</span>
-              )}
-              {place.googleMapsUri && (
-                <a
-                  href={place.googleMapsUri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold underline"
-                  style={{ color: "var(--color-brand-green)" }}
-                >
-                  Google
-                </a>
-              )}
             </div>
           )}
 
@@ -264,69 +225,6 @@ function PlaceDetailDialog({ place, onClose }: { place: RecommendedPlace; onClos
               <MapPin size={14} className="mt-0.5 shrink-0" />
               <span>{place.address}</span>
             </div>
-          )}
-
-          {place.openingHours && place.openingHours.length === 7 && (
-            <div className="flex flex-col gap-1.5 text-sm">
-              <div className="flex items-start gap-2 text-[var(--color-muted)]">
-                <Clock size={14} className="mt-0.5 shrink-0" />
-                <span>{place.openingHours[todayIndex()]}</span>
-              </div>
-              <div className="ml-[22px] flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  {THAI_WEEKDAY_SHORT.map((label, i) => (
-                    <span
-                      key={label + i}
-                      className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold"
-                      style={
-                        i === todayIndex()
-                          ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
-                          : { color: "var(--color-muted)" }
-                      }
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setHoursExpanded((v) => !v)}
-                  className="text-xs font-semibold underline"
-                  style={{ color: "var(--color-brand-green)" }}
-                >
-                  {hoursExpanded ? "ซ่อนเวลา" : "ดูเวลาทั้งหมด"}
-                </button>
-              </div>
-              {hoursExpanded && (
-                <ul className="ml-[22px] flex flex-col gap-0.5 text-xs text-[var(--color-muted)]">
-                  {place.openingHours.map((line, i) => (
-                    <li key={i} className={i === todayIndex() ? "font-semibold text-[var(--foreground)]" : undefined}>
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {place.phoneNumber && (
-            <a href={`tel:${place.phoneNumber}`} className="flex items-center gap-2 text-sm" style={{ color: "var(--color-brand-green)" }}>
-              <Phone size={14} className="shrink-0" />
-              {place.phoneNumber}
-            </a>
-          )}
-
-          {place.websiteUri && (
-            <a
-              href={place.websiteUri}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 truncate text-sm"
-              style={{ color: "var(--color-brand-green)" }}
-            >
-              <Globe size={14} className="shrink-0" />
-              <span className="truncate">{place.websiteUri}</span>
-            </a>
           )}
         </div>
       </div>

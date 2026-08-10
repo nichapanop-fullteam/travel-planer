@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Search } from "lucide-react";
-import { loadPlacesLibrary } from "@/lib/googleMaps";
+import {
+  fetchAutocompleteSuggestions,
+  fetchExternalPlaceDetails,
+  type AutocompleteSuggestion,
+} from "@/lib/external-places-api";
 import type { Destination } from "@/types";
 
-const REQUESTED_FIELDS = ["id", "displayName", "formattedAddress", "location", "addressComponents"];
-
 const DEBOUNCE_MS = 350;
-const MIN_QUERY_LENGTH = 2;
+const MIN_QUERY_LENGTH = 1; // the API itself accepts 1-2 chars
 
 interface SuggestionItem {
   key: string;
@@ -17,37 +19,37 @@ interface SuggestionItem {
   resolve: () => Promise<Destination | null>;
 }
 
-function addressComponent(
-  components: google.maps.places.AddressComponent[] | null | undefined,
-  type: string
-): google.maps.places.AddressComponent | undefined {
-  return components?.find((c) => c.types.includes(type)) ?? undefined;
-}
+// /places/autocomplete only returns description/mainText/externalRef — no
+// coordinates — so resolving a real suggestion means a follow-up
+// /places/details call using the same session token, mirroring Google's
+// own Autocomplete-session + Place Details billing pattern.
+function toResolver(suggestion: AutocompleteSuggestion, sessionToken: string): () => Promise<Destination | null> {
+  return async () => {
+    const details = await fetchExternalPlaceDetails(suggestion.externalRef, sessionToken);
+    if (!details) return null;
 
-function toDestination(place: google.maps.places.Place): Destination | null {
-  if (!place.id || !place.location) return null;
-  const countryComponent = addressComponent(place.addressComponents, "country");
-  const cityComponent =
-    addressComponent(place.addressComponents, "locality") ??
-    addressComponent(place.addressComponents, "administrative_area_1");
-
-  return {
-    placeId: place.id,
-    name: cityComponent?.longText ?? place.displayName ?? "",
-    country: countryComponent?.longText ?? "",
-    countryCode: countryComponent?.shortText ?? undefined,
-    latitude: place.location.lat(),
-    longitude: place.location.lng(),
+    return {
+      placeId: suggestion.externalRef,
+      externalRef: suggestion.externalRef,
+      // `description` is what POST /trips wants for `destination` — using
+      // it as `name` (with `country` left blank) makes the picker dialog's
+      // own label logic fall back to showing it verbatim.
+      name: suggestion.description,
+      country: "",
+      latitude: details.lat,
+      longitude: details.lng,
+      address: details.address,
+      rating: details.rating,
+      imageUrl: details.imageUrl,
+    };
   };
 }
 
-// Google's Autocomplete only matches query text against place names/addresses
-// literally — searching a country ("Japan") never surfaces unrelated cities
-// like Tokyo, and Text Search has no notion of "top cities in a country"
-// either (it resolves named entities, not open-ended/analytical queries).
-// So when the top prediction is a country, we fall back to a small curated
-// list of that country's well-known destinations, scoped to the markets
-// Pluno's demo/mock data already covers.
+// The autocomplete API matches query text against place names literally —
+// searching a country ("Japan") returns the country itself as one result,
+// never its well-known cities. So when the query itself names a country we
+// already know, we append a small curated list of that country's
+// destinations, scoped to the markets Pluno's demo/mock data covers.
 const COUNTRY_CITY_FALLBACK: Record<string, Destination[]> = {
   japan: [
     { name: "โตเกียว", country: "ญี่ปุ่น", countryCode: "JP", latitude: 35.6762, longitude: 139.6503 },
@@ -91,8 +93,8 @@ const COUNTRY_CITY_FALLBACK: Record<string, Destination[]> = {
   ],
 };
 
-function countryCityFallback(countryName: string): SuggestionItem[] {
-  const cities = COUNTRY_CITY_FALLBACK[countryName.trim().toLowerCase()] ?? [];
+function countryCityFallback(query: string): SuggestionItem[] {
+  const cities = COUNTRY_CITY_FALLBACK[query.trim().toLowerCase()] ?? [];
   return cities.map((city) => ({
     key: `fallback:${city.name}`,
     primaryText: city.name,
@@ -104,36 +106,24 @@ function countryCityFallback(countryName: string): SuggestionItem[] {
 export function DestinationSearch({
   onSelect,
   placeholder,
-  includedPrimaryTypes,
 }: {
   onSelect: (destination: Destination) => void;
   placeholder?: string;
-  // Restrict autocomplete predictions to a Places "type collection", e.g.
-  // ["(regions)"] for cities/provinces/countries.
-  includedPrimaryTypes?: string[];
 }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [noResults, setNoResults] = useState(false);
 
-  const placesLibraryRef = useRef<google.maps.PlacesLibrary | null>(null);
-  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+  // One UUID per search session — reused across every keystroke's
+  // autocomplete call and the eventual details call on selection, then
+  // rotated for the next search. Mirrors Google's own session-token model,
+  // which is what makes the pricing on the API side work as intended.
+  const sessionTokenRef = useRef(crypto.randomUUID());
   const debounceRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadPlacesLibrary().then((lib) => {
-      if (cancelled) return;
-      placesLibraryRef.current = lib;
-      sessionTokenRef.current = new lib.AutocompleteSessionToken();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -152,51 +142,35 @@ export function DestinationSearch({
     if (trimmed.length < MIN_QUERY_LENGTH) {
       setSuggestions([]);
       setIsLoading(false);
+      setNoResults(false);
       return;
     }
 
     setIsLoading(true);
     debounceRef.current = window.setTimeout(async () => {
       const requestId = ++requestIdRef.current;
-      const placesLibrary = placesLibraryRef.current;
-      if (!placesLibrary) return;
-
-      const { suggestions: rawSuggestions } = await placesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-        input: trimmed,
-        includedPrimaryTypes,
-        language: "th",
-        sessionToken: sessionTokenRef.current ?? undefined,
-      });
-
-      const predictionItems: SuggestionItem[] = rawSuggestions
-        .map((s) => s.placePrediction)
-        .filter((p): p is google.maps.places.PlacePrediction => p !== null)
-        .map((prediction) => ({
-          key: `prediction:${prediction.placeId}`,
-          primaryText: prediction.mainText?.text ?? prediction.text.text,
-          secondaryText: prediction.secondaryText?.text ?? "",
-          resolve: async () => {
-            const { place } = await prediction.toPlace().fetchFields({ fields: REQUESTED_FIELDS });
-            return toDestination(place);
-          },
-        }));
-
-      const topPrediction = rawSuggestions[0]?.placePrediction;
-      const cityFallback = topPrediction?.types.includes("country")
-        ? countryCityFallback(topPrediction.mainText?.text ?? topPrediction.text.text)
-        : [];
+      const results = await fetchAutocompleteSuggestions(trimmed, sessionTokenRef.current);
 
       if (requestId !== requestIdRef.current) return; // superseded by a newer keystroke
 
-      setSuggestions([...predictionItems, ...cityFallback]);
+      const resultItems: SuggestionItem[] = results.map((suggestion) => ({
+        key: `place:${suggestion.externalRef}`,
+        primaryText: suggestion.mainText,
+        secondaryText: suggestion.secondaryText ?? "",
+        resolve: toResolver(suggestion, sessionTokenRef.current),
+      }));
+      const fallbackItems = countryCityFallback(trimmed);
+
+      setSuggestions([...resultItems, ...fallbackItems]);
       setIsLoading(false);
+      setNoResults(resultItems.length === 0 && fallbackItems.length === 0);
       setIsOpen(true);
     }, DEBOUNCE_MS);
 
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [query, includedPrimaryTypes]);
+  }, [query]);
 
   async function handleSelect(item: SuggestionItem) {
     const destination = await item.resolve();
@@ -207,10 +181,9 @@ export function DestinationSearch({
     setSuggestions([]);
     setIsOpen(false);
 
-    // A session concludes once fetchFields is called for a selection —
+    // The session concludes once a details call is made for a selection —
     // start a fresh token for the next search.
-    const placesLibrary = placesLibraryRef.current;
-    if (placesLibrary) sessionTokenRef.current = new placesLibrary.AutocompleteSessionToken();
+    sessionTokenRef.current = crypto.randomUUID();
   }
 
   return (
@@ -227,13 +200,16 @@ export function DestinationSearch({
         />
       </div>
 
-      {isOpen && (suggestions.length > 0 || isLoading) && (
+      {isOpen && (suggestions.length > 0 || isLoading || noResults) && (
         <div
           className="absolute inset-x-0 top-[calc(100%+8px)] z-10 max-h-72 overflow-y-auto rounded-2xl border bg-white py-2 shadow-lg"
           style={{ borderColor: "var(--color-border)" }}
         >
           {isLoading && suggestions.length === 0 && (
             <p className="px-4 py-2 text-sm text-[var(--color-muted)]">กำลังค้นหา...</p>
+          )}
+          {!isLoading && noResults && (
+            <p className="px-4 py-2 text-sm text-[var(--color-muted)]">ไม่พบสถานที่ที่ค้นหา</p>
           )}
           {suggestions.map((item) => (
             <button

@@ -3,23 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 const EXTERNAL_PLACES_API_BASE_URL =
   process.env.EXTERNAL_PLACES_API_BASE_URL ?? "https://zips-wrinkle-rigid.ngrok-free.dev";
 
-// Proxies the external Places Search API so the browser never needs a
-// Google Maps API key for this feature — the ngrok backend holds its own
-// key and does the Google call server-side. Called as
-// GET /api/places/search?q=...&limit=...
-// Param validation (q required/≤200 chars, limit 1-20) and error shapes
-// (400/502/503) are enforced upstream — we just forward them through.
+// Proxies the external Places Autocomplete API — the destination-only,
+// no-DB-write, cheap-per-keystroke sibling of /places/search (see
+// src/app/api/places/search/route.ts, which returns POIs and upserts into
+// the places table on every call — wrong tool for a typeahead). Called as
+// GET /api/places/autocomplete?q=...&sessionToken=...
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q");
-  const limit = request.nextUrl.searchParams.get("limit");
+  const sessionToken = request.nextUrl.searchParams.get("sessionToken");
 
   if (!q) {
     return NextResponse.json({ error: "Missing required query param: q" }, { status: 400 });
   }
 
-  const url = new URL("/places/search", EXTERNAL_PLACES_API_BASE_URL);
+  const url = new URL("/places/autocomplete", EXTERNAL_PLACES_API_BASE_URL);
   url.searchParams.set("q", q);
-  if (limit) url.searchParams.set("limit", limit);
+  if (sessionToken) url.searchParams.set("sessionToken", sessionToken);
 
   const response = await fetch(url, {
     headers: { "ngrok-skip-browser-warning": "true" },
@@ -34,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(JSON.parse(text), { status: response.status });
   } catch {
     return NextResponse.json(
-      { error: "Places Search request failed", detail: text.slice(0, 500) },
+      { error: "Places Autocomplete request failed", detail: text.slice(0, 500) },
       { status: 502 }
     );
   }

@@ -8,7 +8,14 @@ function readAll(): GeneratedTrip[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as GeneratedTrip[]) : [];
+    if (!raw) return [];
+    const trips = JSON.parse(raw) as GeneratedTrip[];
+    // Self-heal any duplicate ids left over from before the double-submit
+    // guard on the Create Trip page — keeps the first (most recent) copy.
+    const seen = new Set<string>();
+    const deduped = trips.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+    if (deduped.length !== trips.length) writeAll(deduped);
+    return deduped;
   } catch {
     return [];
   }

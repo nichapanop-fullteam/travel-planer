@@ -9,11 +9,6 @@ export interface DestinationPickerResult {
   destination?: Destination;
 }
 
-// Restrict Places Autocomplete to cities/provinces/countries — keeps hotels,
-// restaurants, and other POIs out of destination search. Defined as a module
-// constant so DestinationSearch's effect doesn't see a new array identity on every render.
-const DESTINATION_TYPES = ["(regions)"];
-
 // Shown before the user types anything. Coordinates/country are hand-entered
 // since these are well-known cities — no live geocode call needed just to
 // render a quick-pick list (Trip Detail is what hits the Places API for
@@ -61,11 +56,7 @@ export function DestinationPickerDialog({
       >
         <p className="mb-3 text-sm font-bold">ปลายทางที่อยากไป</p>
 
-        <DestinationSearch
-          onSelect={handlePlaceSelect}
-          placeholder="ค้นหาเมือง หรือประเทศ"
-          includedPrimaryTypes={DESTINATION_TYPES}
-        />
+        <DestinationSearch onSelect={handlePlaceSelect} placeholder="ค้นหาเมือง หรือประเทศ" />
 
         <p className="mb-2 mt-5 text-xs font-semibold text-[var(--color-muted)]">ปลายทางยอดนิยม</p>
         <div className="flex flex-wrap gap-2.5">
