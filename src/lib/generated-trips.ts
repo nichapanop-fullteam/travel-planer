@@ -1,4 +1,12 @@
 import type { Day, GeneratedTrip, TripDraft } from "@/types";
+import type { GeneratePlanResponse } from "./generate-plan-api";
+import type { BackendTrip } from "./trips-api";
+import {
+  BUDGET_KEY_TO_TIER,
+  CONDITION_TO_CONSTRAINT,
+  PACE_TO_INTENSITY,
+  STYLE_TAG_TO_ENUM,
+} from "./generate-plan-mapping";
 
 const STORAGE_KEY = "pluno.generatedTrips";
 
@@ -21,8 +29,44 @@ function readAll(): GeneratedTrip[] {
   }
 }
 
+function isQuotaExceededError(error: unknown): error is DOMException {
+  return (
+    error instanceof DOMException &&
+    (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED")
+  );
+}
+
+// Locally-uploaded photos (raw base64 data URLs, see AddActivityDialog's
+// "เพิ่มรูป") are the usual cause of blowing past localStorage's per-origin
+// quota once a few trips carry a few images each — external URLs (place
+// photos, or trip-media-api uploads once a trip has been saved server-side)
+// are just short strings and aren't the problem, so only data: URLs are cut.
+function stripHeavyImages(trips: GeneratedTrip[]): GeneratedTrip[] {
+  return trips.map((trip) => ({
+    ...trip,
+    days: trip.days.map((day) => ({
+      ...day,
+      activities: day.activities.map((activity) =>
+        activity.images?.some((img) => img.startsWith("data:"))
+          ? { ...activity, images: undefined }
+          : activity
+      ),
+    })),
+  }));
+}
+
 function writeAll(trips: GeneratedTrip[]): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trips));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trips));
+  } catch (error) {
+    if (!isQuotaExceededError(error)) throw error;
+    console.warn("localStorage เต็ม — ตัดรูปที่แนบไว้ในเครื่องออกแล้วลองบันทึกอีกครั้ง");
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stripHeavyImages(trips)));
+    } catch (retryError) {
+      console.error("บันทึกทริปไม่สำเร็จแม้ตัดรูปออกแล้ว", retryError);
+    }
+  }
 }
 
 export function getGeneratedTrip(id: string): GeneratedTrip | undefined {
@@ -41,6 +85,23 @@ export function saveGeneratedTrip(trip: GeneratedTrip): void {
 
 export function confirmGeneratedTrip(id: string): void {
   writeAll(readAll().map((t) => (t.id === id ? { ...t, status: "confirmed" as const } : t)));
+}
+
+// Partial update for the "แก้ไขทริป" edit flows on the trip detail page —
+// name/destination/dates/pace/budget/conditions/accommodation/itinerary
+// edits all go through this rather than a full saveGeneratedTrip() rewrite.
+export function updateGeneratedTrip(id: string, patch: Partial<GeneratedTrip>): void {
+  writeAll(readAll().map((t) => (t.id === id ? { ...t, ...patch } : t)));
+}
+
+// Swaps a trip's storage entry onto its new (backend-assigned) id — used
+// once after the first successful createTripOnServer, since the local copy
+// was keyed by a client-generated UUID up to that point (see
+// reconcileTripWithServer in trips-create-api.ts). A plain updateGeneratedTrip
+// can't do this: it looks the row up by the *old* id but `next.id` no longer
+// matches it, so the row would keep its stale id forever.
+export function replaceGeneratedTripId(oldId: string, next: GeneratedTrip): void {
+  writeAll(readAll().map((t) => (t.id === oldId ? next : t)));
 }
 
 const BUDGET_PRESET_LABEL: Record<string, string> = {
@@ -133,6 +194,45 @@ function genericDays(destination: string): Day[] {
   ];
 }
 
+function parseDurationDays(durationLabel: string): number {
+  const match = durationLabel.match(/(\d+)\s*วัน/);
+  const days = match ? Number(match[1]) : NaN;
+  return Number.isFinite(days) && days > 0 ? days : 1;
+}
+
+function emptyDays(durationLabel: string, startDate?: string): Day[] {
+  const dayCount = parseDurationDays(durationLabel);
+  const parsedStart = startDate ? new Date(`${startDate.slice(0, 10)}T00:00:00Z`).getTime() : NaN;
+  const start = Number.isFinite(parsedStart) ? parsedStart : Date.now();
+  return Array.from({ length: dayCount }, (_, i) => ({
+    id: crypto.randomUUID(),
+    dayNumber: i + 1,
+    date: new Date(start + i * 86_400_000).toISOString().slice(0, 10),
+    activities: [],
+  }));
+}
+
+// "สร้างด้วยตัวเอง" (self mode) Trip Shell — empty days only, no pre-baked
+// mock activities, so Step 3B (pick starting places) has real empty days to
+// fill instead of content the traveler didn't ask for.
+export function createEmptyTripShell(draft: TripDraft): GeneratedTrip {
+  return {
+    id: crypto.randomUUID(),
+    draftId: draft.id,
+    createdAt: new Date().toISOString(),
+    destination: draft.destination,
+    destinationPlace: draft.destinationPlace,
+    coverImageUrl: isLuangPrabang(draft.destination) ? "/images/luang-prabang-aerial.png" : "/images/hero-mountain.jpg",
+    durationLabel: draft.duration || "ยังไม่ระบุ",
+    paceLabel: paceLabel(draft),
+    budgetLabel: budgetLabel(draft),
+    conditionsLabel: conditionsLabel(draft),
+    styles: draft.styles,
+    status: "generated",
+    days: emptyDays(draft.duration, draft.startDate),
+  };
+}
+
 // Mock "AI generation" — real generation would call a backend; today it just
 // picks a hand-authored itinerary for known destinations (Luang Prabang) and
 // falls back to a bare-bones single-day template otherwise.
@@ -152,6 +252,126 @@ export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
     styles: draft.styles,
     status: "generated",
     days: luangPrabang ? luangPrabangDays() : genericDays(draft.destination),
+  };
+}
+
+// Real AI generation via POST /trips/plan/generate (see lib/generate-plan-api.ts).
+// The label fields (durationLabel/paceLabel/etc.) are still derived from the
+// draft, same as the mocked path above — the API's resolvedBrief has the
+// authoritative numbers it actually used, but this app doesn't have a
+// "resolved brief" UI yet, so the draft-derived labels stay the source of
+// truth for display for now.
+export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: GeneratePlanResponse): GeneratedTrip {
+  const { draft: apiDraft, generation } = response;
+  const days: Day[] = apiDraft.days.map((day) => ({
+    id: crypto.randomUUID(),
+    dayNumber: day.dayNumber,
+    date: day.date ?? "",
+    activities: day.items.map((item) => ({
+      id: crypto.randomUUID(),
+      time: item.startTime ?? "",
+      title: item.title ?? item.customName ?? "สถานที่แนะนำ",
+      category: item.category ?? "activity",
+      location: item.location
+        ? { ...item.location, googlePlaceId: item.placeId }
+        : item.placeId
+          ? { name: item.title ?? "สถานที่แนะนำ", googlePlaceId: item.placeId }
+          : undefined,
+      notes: item.notes,
+      cost: item.costAmount ?? 0,
+      travelNote:
+        item.travelTimeFromPrevMin != null
+          ? `~${item.travelTimeFromPrevMin} นาที${item.travelDistanceFromPrevKm != null ? ` · ${item.travelDistanceFromPrevKm} กม.` : ""}`
+          : undefined,
+    })),
+  }));
+  const firstActivityImage = days.flatMap((d) => d.activities).find((a) => a.location?.imageUrl)?.location
+    ?.imageUrl;
+  const nights = Math.max(response.resolvedBrief.durationDays - 1, 0);
+
+  return {
+    id: crypto.randomUUID(),
+    draftId: draft.id,
+    createdAt: new Date().toISOString(),
+    title: apiDraft.title,
+    destination: draft.destination,
+    destinationPlace: draft.destinationPlace,
+    coverImageUrl: firstActivityImage ?? "/images/hero-mountain.jpg",
+    durationLabel: `${response.resolvedBrief.durationDays} วัน ${nights} คืน`,
+    paceLabel: paceLabel(draft),
+    budgetLabel: budgetLabel(draft),
+    conditionsLabel: conditionsLabel(draft),
+    styles: draft.styles,
+    status: "generated",
+    days,
+    generationNotice: generation.resolvedWithoutErrors
+      ? undefined
+      : {
+          resolvedWithoutErrors: generation.resolvedWithoutErrors,
+          modelWarnings: generation.modelWarnings,
+          violations: generation.violations,
+        },
+  };
+}
+
+function invert(map: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(map).map(([k, v]) => [v, k]));
+}
+
+const ENUM_TO_STYLE_TAG = invert(STYLE_TAG_TO_ENUM);
+const INTENSITY_TO_PACE = invert(PACE_TO_INTENSITY);
+const TIER_TO_BUDGET_KEY = invert(BUDGET_KEY_TO_TIER);
+const CONSTRAINT_TO_CONDITION = invert(CONDITION_TO_CONSTRAINT);
+
+// Maps a trip fetched from GET /trips (real backend, no TripDraft behind it)
+// onto the same GeneratedTrip shape the rest of this app renders — lets
+// generated-plan/[id]/page.tsx show a trip it didn't create locally (e.g.
+// one saved via createTripOnServer, or created by another browser/session)
+// once lib/generated-trips.ts's own localStorage lookup comes up empty.
+//
+// `draftId` has no real draft behind it, so isSelfMode on the detail page
+// always resolves to false for these — a backend trip always renders as a
+// regular (non-"build it yourself") plan, regardless of its planMode.
+export function buildGeneratedTripFromBackendTrip(trip: BackendTrip): GeneratedTrip {
+  const { schedule, brief } = trip;
+  const nights = schedule.durationNights ?? Math.max((schedule.durationDays ?? trip.days.length) - 1, 0);
+  const durationDays = schedule.durationDays ?? trip.days.length;
+
+  const styles = [
+    ...(brief?.styles ?? []).map((s) => ENUM_TO_STYLE_TAG[s] ?? s),
+    ...(brief?.customStyles ?? []),
+  ];
+
+  const pace = brief?.intensity ? INTENSITY_TO_PACE[brief.intensity] : undefined;
+  const budgetKey = trip.budgetTier ? TIER_TO_BUDGET_KEY[trip.budgetTier] : undefined;
+
+  const conditions = [
+    ...(brief?.constraints ?? []).map((c) => CONSTRAINT_TO_CONDITION[c] ?? c),
+    ...(brief?.customConstraints ?? []),
+  ];
+
+  const firstActivityImage = trip.days.flatMap((d) => d.activities).find((a) => a.location?.imageUrl)?.location
+    ?.imageUrl;
+
+  return {
+    id: trip.id,
+    draftId: trip.id,
+    createdAt: trip.createdAt,
+    title: trip.title,
+    destination: trip.destination,
+    coverImageUrl: firstActivityImage ?? "/images/hero-mountain.jpg",
+    coverImage: trip.coverImage,
+    mediaSummary: trip.mediaSummary,
+    durationLabel: `${durationDays} วัน ${nights} คืน`,
+    paceLabel: pace ? `${pace} ${PACE_DESCRIPTION[pace] ?? ""}`.trim() : "ยังไม่ระบุ",
+    budgetLabel: budgetKey ? BUDGET_PRESET_LABEL[budgetKey] ?? budgetKey : "ยังไม่ระบุ",
+    conditionsLabel: conditions.length ? conditions.join(", ") : "ไม่มีเงื่อนไขพิเศษ",
+    styles,
+    status: trip.status === "confirmed" ? "confirmed" : "generated",
+    days: trip.days,
+    backendSynced: true,
+    backendDayIds: trip.days.map((d) => d.id),
+    backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
   };
 }
 

@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/Card";
 import { ActivityTimeline } from "@/components/plan/ActivityTimeline";
 import { getDayTotalCost, formatTHB } from "@/lib/trip-utils";
 
-// Day header style adapted from the Pluno App UI design (TripDetailView.ItineraryTab)
+// Day header style adapted from the PunGuide App UI design (TripDetailView.ItineraryTab)
 export function DayCard({ day, showCost = false }: { day: Day; showCost?: boolean }) {
   return (
     <Card className="overflow-hidden">

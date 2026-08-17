@@ -1,0 +1,1634 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Clock,
+  Download,
+  Flag,
+  Lock,
+  MapPin,
+  Menu,
+  Pencil,
+  Plus,
+  Search,
+  Share2,
+  Star,
+  Ticket,
+  Wallet,
+  X,
+} from "lucide-react";
+import type { Activity, Day, GeneratedTrip, TravelFromPrevious, TravelType, TripAccommodation } from "@/types";
+import {
+  fetchExternalPlaceSuggestionSections,
+  searchExternalPlaces,
+  type ExternalPlaceSuggestionSections,
+} from "@/lib/external-places-api";
+import { CATEGORY_LABEL_TH, enrichPlace, EXTERNAL_TO_ACTIVITY_CATEGORY, type EnrichedPlace } from "@/lib/place-mock-metadata";
+import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
+import { formatTHB } from "@/lib/trip-utils";
+import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
+
+// Matches the three carousels this tab always shows (แนะนำสถานที่ห้ามพลาด /
+// ร้านอาหารแนะนำ / ที่พักแนะนำ) — see docs for GET /places/suggest/sections,
+// built specifically for this "always exactly 3 sections" page. Replaces the
+// old flat /places/suggest + client-side category filter, which had no
+// per-category quota (could return e.g. 0 hotels) and was fetched 3x
+// independently (once per accordion below) for the same coordinates.
+const SECTION_LIMIT = 10; // per section (API default is 5) — within the 1-20 max
+const SEARCH_DEBOUNCE_MS = 350;
+const SEARCH_RESULT_LIMIT = 8;
+
+const sectionsCache = new Map<string, Promise<ExternalPlaceSuggestionSections>>();
+
+function fetchSectionsForCenter(center: { lat: number; lng: number }): Promise<ExternalPlaceSuggestionSections> {
+  const key = `${center.lat},${center.lng}`;
+  let promise = sectionsCache.get(key);
+  if (!promise) {
+    promise = fetchExternalPlaceSuggestionSections(center.lat, center.lng, { limit: SECTION_LIMIT });
+    sectionsCache.set(key, promise);
+  }
+  return promise;
+}
+
+function toActivity(place: EnrichedPlace, day: Day, title?: string, offset = 0): Activity {
+  return {
+    id: crypto.randomUUID(),
+    time: `${String(Math.min(9 + day.activities.length + offset, 22)).padStart(2, "0")}:00`,
+    title: title ?? place.name,
+    category: EXTERNAL_TO_ACTIVITY_CATEGORY[place.category],
+    location: {
+      name: place.name,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      imageUrl: place.imageUrl,
+      googlePlaceId: place.id,
+    },
+    cost: 0,
+  };
+}
+
+function dayDateLabel(day: Day): string {
+  const date = new Date(day.date);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", day: "2-digit", month: "short" }).format(date);
+}
+
+export function SelfPlanBuilderTab({
+  trip,
+  canEdit = true,
+  onToggleEditLock,
+  onAddActivityDirect,
+  onOpenAddActivity,
+  onEditActivity,
+  onSaveAccommodation,
+  onAddDay,
+  onGoToPlanTab,
+  onUpdateActivityTravel,
+}: {
+  trip: GeneratedTrip;
+  // Read-only until "แก้ไขแพลน" is pressed — see canEdit in
+  // generated-plan/[id]/page.tsx, which this tab defers to.
+  canEdit?: boolean;
+  onToggleEditLock?: () => void;
+  onAddActivityDirect: (dayId: string, activity: Activity) => void;
+  onOpenAddActivity: (dayId: string) => void;
+  onEditActivity: (dayId: string, activity: Activity) => void;
+  onSaveAccommodation: (accommodation: TripAccommodation) => void;
+  onAddDay: () => void;
+  onGoToPlanTab: () => void;
+  onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+}) {
+  const center = trip.destinationPlace
+    ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
+    : DEFAULT_RECOMMENDATION_CENTER;
+
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+
+  // Shared staging list — attractions, restaurants, and hotels all stage into
+  // this same list/checklist (rendered once, in the first accordion) instead
+  // of each section keeping its own separate staged panel; a single "เพิ่มลง
+  // แพลน" then opens the day picker for everything queued up so far.
+  const [stagedPlaces, setStagedPlaces] = useState<EnrichedPlace[]>([]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [dayPickerRequest, setDayPickerRequest] = useState<{
+    places: EnrichedPlace[];
+    initialCheckedIds: Set<string>;
+  } | null>(null);
+
+  function stagePlace(place: EnrichedPlace) {
+    setStagedPlaces((prev) => (prev.some((p) => p.id === place.id) ? prev : [...prev, place]));
+    setCheckedIds((prev) => new Set(prev).add(place.id));
+  }
+
+  function toggleChecked(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearChecked() {
+    setCheckedIds(new Set());
+  }
+
+  function openAddDialog() {
+    if (stagedPlaces.length === 0) return;
+    setDayPickerRequest({ places: stagedPlaces, initialCheckedIds: checkedIds });
+  }
+
+  // A staged place can be any mix of attraction/restaurant/hotel — a hotel
+  // pick also saves it as the trip's accommodation + a check-in activity,
+  // everything else becomes a plain activity on the chosen day.
+  function handleConfirmAdd(day: Day, chosenPlaces: EnrichedPlace[]) {
+    chosenPlaces.forEach((place, i) => {
+      if (place.category === "hotel") {
+        onSaveAccommodation({ name: place.name, imageUrl: place.imageUrl, amenities: [], description: place.priceLabel });
+        onAddActivityDirect(day.id, toActivity(place, day, `เช็คอิน ${place.name}`, i));
+      } else {
+        onAddActivityDirect(day.id, toActivity(place, day, undefined, i));
+      }
+    });
+    setAddedIds((prev) => new Set([...prev, ...chosenPlaces.map((p) => p.id)]));
+    setCheckedIds(new Set());
+    setDayPickerRequest(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold">จัดแพลนของคุณ</h2>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <Share2 size={14} />
+            แชร์
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <Download size={14} />
+            บันทึกรูป
+          </button>
+          {onToggleEditLock && <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />}
+        </div>
+      </div>
+
+      {/* Locked (view-only) mode hides every recommend/add-place tool below —
+          there's nothing to pick from a confirmed plan until "แก้ไขแพลน" is
+          tapped (see canEdit in generated-plan/[id]/page.tsx). */}
+      {canEdit && (
+        <>
+          <AddPlacesAccordion
+            title="เพิ่มสถานที่คุณอยากไป"
+            searchPlaceholder="เพิ่มสถานที่"
+            recommendedLabel="แนะนำสถานที่ห้ามพลาด"
+            categories={["attraction", "activity", "shopping"]}
+            center={center}
+            destinationName={trip.destination}
+            renderMeta={(place) => <p className="truncate text-xs text-[var(--color-muted)]">{place.priceLabel === "ฟรี" ? "ห้ามพลาด" : place.priceLabel}</p>}
+            addLabel="เพิ่มแผน"
+            addedIds={addedIds}
+            stagedPlaces={stagedPlaces}
+            checkedIds={checkedIds}
+            onStage={stagePlace}
+            onToggleChecked={toggleChecked}
+            onClearChecked={clearChecked}
+            onConfirmStaged={openAddDialog}
+            showStagedPanel
+            enableSearchStaging
+          />
+
+          <AddPlacesAccordion
+            title="ร้านอาหาร"
+            searchPlaceholder="เพิ่มร้านอาหาร"
+            recommendedLabel="ร้านอาหารแนะนำ"
+            categories={["restaurant", "cafe"]}
+            center={center}
+            destinationName={trip.destination}
+            variant="horizontal"
+            renderMeta={() => null}
+            addLabel="เพิ่ม"
+            addedIds={addedIds}
+            stagedPlaces={stagedPlaces}
+            checkedIds={checkedIds}
+            onStage={stagePlace}
+            onToggleChecked={toggleChecked}
+            onClearChecked={clearChecked}
+            onConfirmStaged={openAddDialog}
+            enableSearchStaging
+          />
+
+          <AccommodationAccordion
+            trip={trip}
+            center={center}
+            onSave={onSaveAccommodation}
+            addedIds={addedIds}
+            stagedPlaces={stagedPlaces}
+            onStage={stagePlace}
+          />
+        </>
+      )}
+
+      <ScheduleAccordion
+        trip={trip}
+        canEdit={canEdit}
+        onOpenAddActivity={onOpenAddActivity}
+        onEditActivity={onEditActivity}
+        onGoToPlanTab={onGoToPlanTab}
+        onUpdateActivityTravel={onUpdateActivityTravel}
+      />
+
+      {dayPickerRequest && (
+        <AddPlaceDialog
+          places={dayPickerRequest.places}
+          initialCheckedIds={dayPickerRequest.initialCheckedIds}
+          days={trip.days}
+          onAddDay={onAddDay}
+          onConfirm={handleConfirmAdd}
+          onClose={() => setDayPickerRequest(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Picks the one section bucket that covers this accordion's categories —
+// "hotel" -> accommodations, "restaurant"/"cafe" -> restaurants (the API
+// already folds cafe into that bucket), everything else (attraction/
+// activity/shopping, this tab's main "แนะนำสถานที่ห้ามพลาด" section) ->
+// attractions.
+function sectionKeyFor(categories: string[]): keyof ExternalPlaceSuggestionSections {
+  if (categories.includes("hotel")) return "accommodations";
+  if (categories.includes("restaurant") || categories.includes("cafe")) return "restaurants";
+  return "attractions";
+}
+
+function usePlaceSuggestions(center: { lat: number; lng: number }, categories: string[]) {
+  const [sections, setSections] = useState<ExternalPlaceSuggestionSections | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSectionsForCenter(center).then((result) => {
+      if (!cancelled) setSections(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center.lat, center.lng]);
+
+  return useMemo(() => {
+    if (!sections) return null;
+    return sections[sectionKeyFor(categories)].map((p) => enrichPlace(p, center));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sections, categories]);
+}
+
+function AddPlacesAccordion({
+  title,
+  searchPlaceholder,
+  recommendedLabel,
+  categories,
+  center,
+  destinationName,
+  renderMeta,
+  addLabel,
+  addedIds,
+  stagedPlaces,
+  checkedIds,
+  onStage,
+  onToggleChecked,
+  onClearChecked,
+  onConfirmStaged,
+  variant = "vertical",
+  enableSearchStaging = false,
+  showStagedPanel = false,
+}: {
+  title: string;
+  searchPlaceholder: string;
+  recommendedLabel: string;
+  categories: string[];
+  center: { lat: number; lng: number };
+  destinationName: string;
+  renderMeta: (place: EnrichedPlace) => React.ReactNode;
+  addLabel: string;
+  addedIds: Set<string>;
+  // Staging state is shared/lifted to SelfPlanBuilderTab so attractions,
+  // restaurants, and hotels all queue into the same list — see
+  // showStagedPanel below for which accordion actually renders it.
+  stagedPlaces: EnrichedPlace[];
+  checkedIds: Set<string>;
+  onStage: (place: EnrichedPlace) => void;
+  onToggleChecked: (id: string) => void;
+  onClearChecked: () => void;
+  onConfirmStaged: () => void;
+  variant?: "vertical" | "horizontal";
+  enableSearchStaging?: boolean;
+  // Only one accordion (the first, "เพิ่มสถานที่คุณอยากไป") actually renders
+  // the shared checklist panel — the others still stage into the same list,
+  // they just don't duplicate the panel UI.
+  showStagedPanel?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [query, setQuery] = useState("");
+  const places = usePlaceSuggestions(center, categories);
+
+  // Search-staging: typing debounce-searches the real POI API (not just the
+  // pre-fetched recommendation list) and shows matches in a dropdown; picking
+  // one stages it in the shared checklist so several searches (across every
+  // section) can be queued up before a single "เพิ่มลงแพลน" opens the day
+  // picker for all of them at once.
+  const [dropdownResults, setDropdownResults] = useState<EnrichedPlace[] | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const debounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!enableSearchStaging) return;
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setDropdownResults(null);
+      setDropdownOpen(false);
+      return;
+    }
+    debounceRef.current = window.setTimeout(() => {
+      searchExternalPlaces(trimmed, SEARCH_RESULT_LIMIT).then((results) => {
+        setDropdownResults(results.map((p) => enrichPlace(p, center)));
+        setDropdownOpen(true);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, enableSearchStaging]);
+
+  function pickDropdownResult(place: EnrichedPlace) {
+    setQuery(`${place.name} (${destinationName})`);
+    setDropdownOpen(false);
+    onStage(place);
+  }
+
+  // When search-staging is on, the search box drives the dropdown/API search
+  // instead of filtering this recommended carousel — so it stays showing the
+  // curated "ห้ามพลาด" set no matter what's typed.
+  const filtered = useMemo(() => {
+    if (!places) return null;
+    if (enableSearchStaging) return places;
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return places;
+    return places.filter((p) => p.name.toLowerCase().includes(trimmed));
+  }, [places, query, enableSearchStaging]);
+
+  // Cards in the recommended carousel: tapping "+" stages the place into the
+  // shared checklist (rendered once, see showStagedPanel) instead of opening
+  // the day-picker directly.
+  const recommendedSection = (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-1.5 text-sm font-bold">
+          <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
+          {recommendedLabel}
+        </p>
+        <Link
+          href={`/discovery?destination=${encodeURIComponent(destinationName)}`}
+          className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          สำรวจเพิ่มเติม
+          <ChevronRight size={11} className="ml-0.5 inline" />
+        </Link>
+      </div>
+
+      {filtered === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
+      {filtered !== null && filtered.length === 0 && (
+        <p className="py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
+      )}
+
+      <div className="flex gap-4 overflow-x-auto pb-1">
+        {filtered?.map((place) => {
+          const isStaged = stagedPlaces.some((p) => p.id === place.id);
+          const isAdded = addedIds.has(place.id) || isStaged;
+          const handleAdd = () => onStage(place);
+          return variant === "horizontal" ? (
+            <HorizontalPlaceCard key={place.id} place={place} isAdded={isAdded} addLabel={addLabel} onAdd={handleAdd} />
+          ) : (
+            <VerticalPlaceCard
+              key={place.id}
+              place={place}
+              isAdded={isAdded}
+              addLabel={addLabel}
+              renderMeta={renderMeta}
+              onAdd={handleAdd}
+            />
+          );
+        })}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4"
+      >
+        <h3 className="text-base font-bold sm:text-lg">{title}</h3>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
+          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-4 px-5 pb-5">
+          <div className="relative">
+            <div
+              className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <Search size={16} style={{ color: "var(--color-muted)" }} />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => dropdownResults && dropdownResults.length > 0 && setDropdownOpen(true)}
+                placeholder={searchPlaceholder}
+                className="w-full bg-transparent text-sm focus:outline-none"
+              />
+            </div>
+
+            {enableSearchStaging && dropdownOpen && dropdownResults && dropdownResults.length > 0 && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
+                <div className="absolute inset-x-0 top-full z-20 mt-2 flex flex-col overflow-hidden rounded-2xl border bg-white shadow-lg" style={{ borderColor: "var(--color-border)" }}>
+                  {dropdownResults.map((place) => (
+                    <button
+                      key={place.id}
+                      type="button"
+                      onClick={() => pickDropdownResult(place)}
+                      className="px-4 py-3 text-left text-sm hover:bg-[var(--color-surface)]"
+                    >
+                      {place.name} <span className="text-[var(--color-muted)]">({destinationName})</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {showStagedPanel && stagedPlaces.length > 0 && (
+            <div className="flex flex-col gap-3 rounded-2xl border p-4" style={{ borderColor: "var(--color-border)", backgroundColor: "white" }}>
+              <p className="text-xs font-semibold text-[var(--color-muted)]">เลือกสถานที่ เพื่อเพิ่มลงแพลนของคุณ</p>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {stagedPlaces.map((place) => (
+                  <PlaceCheckCard
+                    key={place.id}
+                    place={place}
+                    checked={checkedIds.has(place.id)}
+                    confirmed={addedIds.has(place.id)}
+                    onToggle={() => onToggleChecked(place.id)}
+                  />
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                    style={{ backgroundColor: "var(--color-accent-orange)" }}
+                  >
+                    {checkedIds.size}
+                  </span>
+                  {checkedIds.size > 0 ? "สถานที่ที่เลือก" : "ยังไม่ได้เลือกสถานที่"}
+                </span>
+                <div className="flex items-center gap-4">
+                  <button type="button" onClick={onClearChecked} className="text-xs font-semibold underline text-[var(--color-muted)]">
+                    ล้างที่เลือก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onConfirmStaged}
+                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white"
+                    style={{ backgroundColor: "var(--color-accent-orange)" }}
+                  >
+                    <Plus size={13} />
+                    เพิ่มลงแพลน
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!enableSearchStaging && recommendedSection}
+        </div>
+      )}
+    </div>
+
+    {enableSearchStaging && expanded && (
+      <div className="flex flex-col gap-4 overflow-hidden rounded-3xl px-5 py-5" style={{ backgroundColor: "#FAF8F5" }}>
+        {recommendedSection}
+      </div>
+    )}
+    </>
+  );
+}
+
+function Checkbox({
+  checked,
+  onClick,
+  color = "var(--color-brand-green)",
+}: {
+  checked: boolean;
+  onClick: () => void;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-pressed={checked}
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
+      style={checked ? { backgroundColor: color, borderColor: color } : { borderColor: "var(--color-border)" }}
+    >
+      {checked && <Check size={12} className="text-white" />}
+    </button>
+  );
+}
+
+// The "pick places" card used both in the staged checklist (เพิ่มสถานที่คุณ
+// อยากไป) and in AddPlaceDialog below — same look in both places so a place
+// reads the same whether it's still pending or already in the day-picker.
+// `confirmed` is for places already added to a day (via the staged
+// checklist's addedIds) — shown with a static checkmark instead of a
+// toggleable one, since un-adding there isn't supported.
+function PlaceCheckCard({
+  place,
+  checked,
+  confirmed = false,
+  onToggle,
+}: {
+  place: EnrichedPlace;
+  checked: boolean;
+  confirmed?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      role={confirmed ? undefined : "button"}
+      tabIndex={confirmed ? undefined : 0}
+      onClick={confirmed ? undefined : onToggle}
+      onKeyDown={confirmed ? undefined : (e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+      className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${confirmed ? "" : "cursor-pointer"}`}
+      style={
+        checked || confirmed
+          ? { backgroundColor: "var(--color-page-cream)", borderColor: "var(--color-accent-orange)" }
+          : { borderColor: "var(--color-border)" }
+      }
+    >
+      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <MapPin size={16} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
+        {place.rating !== undefined && (
+          <span className="absolute left-1 top-1 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
+            <Star size={8} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+            {place.rating.toFixed(1)}
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold">{place.name}</p>
+        <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
+      </div>
+      {confirmed ? (
+        <span
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          <Check size={14} className="text-white" />
+        </span>
+      ) : (
+        <Checkbox checked={checked} onClick={onToggle} color="var(--color-accent-orange)" />
+      )}
+    </div>
+  );
+}
+
+function AddButton({ isAdded, label, onClick }: { isAdded: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex shrink-0 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold transition-colors"
+      style={
+        isAdded
+          ? {
+              backgroundColor: "var(--color-sel-bg)",
+              color: "var(--color-brand-green)",
+              border: "1px solid var(--color-sel-border)",
+            }
+          : { backgroundColor: "var(--color-accent-orange)", color: "#fff" }
+      }
+    >
+      {isAdded ? <Check size={13} /> : <Plus size={13} />}
+      {isAdded ? "เพิ่มแล้ว" : label}
+    </button>
+  );
+}
+
+function VerticalPlaceCard({
+  place,
+  isAdded,
+  addLabel,
+  renderMeta,
+  onAdd,
+}: {
+  place: EnrichedPlace;
+  isAdded: boolean;
+  addLabel: string;
+  renderMeta: (place: EnrichedPlace) => React.ReactNode;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
+      <div className="relative h-32 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <MapPin size={22} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
+        {place.rating !== undefined && (
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-bold text-white">
+            <Star size={10} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+            {place.rating.toFixed(1)}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <p className="truncate text-sm font-bold">{place.name}</p>
+        {renderMeta(place)}
+        <div className="mt-auto flex justify-center">
+          <AddButton isAdded={isAdded} label={addLabel} onClick={onAdd} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Horizontal card — image left with a category-tag overlay, name/description/
+// rating-price-hours stacked in the middle, add button pinned to the right.
+// Matches the "ร้านอาหารแนะนำ" card spec, distinct from the vertical
+// image-on-top cards used for "แนะนำสถานที่ห้ามพลาด".
+function HorizontalPlaceCard({
+  place,
+  isAdded,
+  addLabel,
+  onAdd,
+}: {
+  place: EnrichedPlace;
+  isAdded: boolean;
+  addLabel: string;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex w-[22rem] shrink-0 items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
+      <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <MapPin size={20} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
+        <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+          {CATEGORY_LABEL_TH[place.category]}
+        </span>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="truncate text-sm font-bold">{place.name}</p>
+        <p className="line-clamp-2 text-xs text-[var(--color-muted)]">
+          {place.address}
+        </p>
+        <p className="flex flex-wrap items-center gap-1 text-[11px] text-[var(--color-muted)]">
+          <Star size={11} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+          {place.rating?.toFixed(1) ?? "—"}
+          <span>·</span>
+          <Wallet size={11} />
+          {place.priceLabel}
+          <span>·</span>
+          <Clock size={11} />
+          {place.openingHoursLabel}
+        </p>
+      </div>
+
+      <AddButton isAdded={isAdded} label={addLabel} onClick={onAdd} />
+    </div>
+  );
+}
+
+export function DayTab({ label, isActive, onClick }: { label: string; isActive: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 whitespace-nowrap rounded-xl px-5 py-2.5 text-sm font-bold transition-colors"
+      style={
+        isActive
+          ? { backgroundColor: "white", color: "var(--foreground)", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }
+          : { color: "var(--color-muted)" }
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+// Shown only on a confirmed trip (see canEdit in generated-plan/[id]/page.tsx)
+// — a confirmed plan opens read-only (no add/delete/"แก้ไขทริป", no
+// recommend-place sections) until this is tapped, so a finished trip doesn't
+// look editable by accident. Draft trips never render this — they're always
+// fully editable. Shared by page.tsx's OverviewTab/PlanTab and this file's
+// own header, so the toggle is reachable from every tab.
+export function EditLockToggle({ canEdit, onToggle }: { canEdit: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold"
+      style={
+        canEdit
+          ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
+          : { border: "1px solid var(--color-border)" }
+      }
+    >
+      {canEdit ? <Check size={14} /> : <Lock size={14} />}
+      {canEdit ? "เสร็จสิ้น" : "แก้ไขแพลน"}
+    </button>
+  );
+}
+
+// "เพิ่มสถานที่" modal — shown after tapping เพิ่มแผน/เพิ่ม on a recommendation
+// card (single place) or "เพิ่มลงแพลน" on the search-staging panel (multiple
+// places at once). Combines day-picking and final place selection into one
+// step, against this trip's real Day[]/dayId — replaces the old two-stage
+// bottom-sheet flow (day-only picker, then a separate staging confirm).
+function AddPlaceDialog({
+  places,
+  initialCheckedIds,
+  days,
+  onAddDay,
+  onConfirm,
+  onClose,
+}: {
+  places: EnrichedPlace[];
+  initialCheckedIds: Set<string>;
+  days: Day[];
+  onAddDay: () => void;
+  onConfirm: (day: Day, places: EnrichedPlace[]) => void;
+  onClose: () => void;
+}) {
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(days[0]?.id ?? null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(initialCheckedIds);
+  const prevDayCountRef = useRef(days.length);
+
+  // Jump to the newly-created day once "+เพิ่มวัน" resolves — trip.days only
+  // grows via the parent page's state update, so this reacts to that instead
+  // of trying to read the new id back from onAddDay() directly.
+  useEffect(() => {
+    if (days.length > prevDayCountRef.current) {
+      setSelectedDayId(days[days.length - 1].id);
+    }
+    prevDayCountRef.current = days.length;
+  }, [days]);
+
+  function toggleChecked(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleConfirm() {
+    const day = days.find((d) => d.id === selectedDayId);
+    const chosen = places.filter((p) => checkedIds.has(p.id));
+    if (!day || chosen.length === 0) return;
+    onConfirm(day, chosen);
+  }
+
+  const canConfirm = selectedDayId !== null && checkedIds.size > 0;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="flex max-h-[90vh] w-full max-w-2xl flex-col gap-5 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-bold">เพิ่มสถานที่</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: "var(--color-surface)" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-[var(--color-muted)]">เลือกวันที่ต้องการเพิ่มแพลน</p>
+            <div
+              className="flex items-center gap-1.5 overflow-x-auto rounded-2xl p-1.5"
+              style={{ backgroundColor: "var(--color-page-cream)" }}
+            >
+              <DayTab label="ทุกวัน" isActive={selectedDayId === null} onClick={() => setSelectedDayId(null)} />
+              {days.map((day) => (
+                <DayTab
+                  key={day.id}
+                  label={`วันที่ ${day.dayNumber}`}
+                  isActive={selectedDayId === day.id}
+                  onClick={() => setSelectedDayId(day.id)}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={onAddDay}
+                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold"
+                style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }}
+              >
+                <Plus size={14} />
+                เพิ่มวัน
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-[var(--color-muted)]">สถานที่ต้องการเพิ่ม</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {places.map((place) => (
+                <PlaceCheckCard
+                  key={place.id}
+                  place={place}
+                  checked={checkedIds.has(place.id)}
+                  onToggle={() => toggleChecked(place.id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-accent-orange)" }}
+              >
+                {checkedIds.size}
+              </span>
+              {checkedIds.size > 0 ? "สถานที่ที่เลือก" : "ยังไม่ได้เลือกสถานที่"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCheckedIds(new Set())}
+              className="text-sm font-semibold underline text-[var(--color-muted)]"
+            >
+              ล้างที่เลือก
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-full border py-3 text-sm font-bold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!canConfirm}
+              className="flex-1 rounded-full py-3 text-sm font-bold text-white transition-opacity disabled:opacity-40"
+              style={{ backgroundColor: "var(--color-accent-orange)" }}
+            >
+              เพิ่มสถานที่
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AccommodationAccordion({
+  trip,
+  center,
+  onSave,
+  addedIds,
+  stagedPlaces,
+  onStage,
+}: {
+  trip: GeneratedTrip;
+  center: { lat: number; lng: number };
+  onSave: (accommodation: TripAccommodation) => void;
+  // Hotels stage into the same shared list as attractions/restaurants — see
+  // SelfPlanBuilderTab's stagePlace/stagedPlaces — so this accordion only
+  // needs to read/write that shared state, not own a separate checklist.
+  addedIds: Set<string>;
+  stagedPlaces: EnrichedPlace[];
+  onStage: (place: EnrichedPlace) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [status, setStatus] = useState<"booked" | "unbooked" | null>(null);
+  const [hotelName, setHotelName] = useState(trip.accommodation?.name ?? "");
+  const [location, setLocation] = useState("");
+  const [checkInDate, setCheckInDate] = useState("");
+  const [checkOutDate, setCheckOutDate] = useState("");
+  const [checkInTime, setCheckInTime] = useState(trip.accommodation?.checkIn ?? "");
+  const [checkOutTime, setCheckOutTime] = useState(trip.accommodation?.checkOut ?? "");
+
+  const hotels = usePlaceSuggestions(center, ["hotel"]);
+
+  // Search box mirrors AddPlacesAccordion's — debounce-searches the POI API,
+  // picking a result (or tapping "+" on a recommended card) stages it into
+  // the shared checklist shown in "เพิ่มสถานที่คุณอยากไป" above.
+  const [query, setQuery] = useState("");
+  const [dropdownResults, setDropdownResults] = useState<EnrichedPlace[] | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const debounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setDropdownResults(null);
+      setDropdownOpen(false);
+      return;
+    }
+    debounceRef.current = window.setTimeout(() => {
+      searchExternalPlaces(trimmed, SEARCH_RESULT_LIMIT).then((results) => {
+        setDropdownResults(results.map((p) => enrichPlace(p, center)));
+        setDropdownOpen(true);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  function pickDropdownResult(place: EnrichedPlace) {
+    setQuery(place.name);
+    setDropdownOpen(false);
+    onStage(place);
+  }
+
+  function saveBookedHotel() {
+    if (!hotelName.trim()) return;
+    onSave({
+      name: hotelName.trim(),
+      checkIn: checkInTime || undefined,
+      checkOut: checkOutTime || undefined,
+      amenities: trip.accommodation?.amenities ?? [],
+      description: location.trim() || undefined,
+    });
+  }
+
+  return (
+    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4"
+      >
+        <h3 className="text-base font-bold sm:text-lg">โรงแรม หรือที่พักของคุณ</h3>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
+          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-4 px-5 pb-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <AccommodationStatusCard
+              icon={Ticket}
+              title="จองแล้ว"
+              subtitle="แนบไฟล์การจองหรือลิงก์"
+              isOn={status === "booked"}
+              onClick={() => setStatus((prev) => (prev === "booked" ? null : "booked"))}
+            />
+            <AccommodationStatusCard
+              icon={Search}
+              title="ยังไม่จอง"
+              subtitle="บอกสไตล์กับเราตรงๆ"
+              isOn={status === "unbooked"}
+              onClick={() => setStatus((prev) => (prev === "unbooked" ? null : "unbooked"))}
+            />
+          </div>
+
+          {status === "booked" && (
+            <div className="flex flex-col gap-4">
+              <LabeledInput label="ชื่อโรงแรม" value={hotelName} onChange={setHotelName} onBlur={saveBookedHotel} placeholder="ชื่อโรงแรม" />
+              <LabeledInput
+                label="ตำแหน่งที่อยู่ของที่พัก"
+                value={location}
+                onChange={setLocation}
+                onBlur={saveBookedHotel}
+                placeholder="ตำแหน่งที่อยู่ของที่พัก"
+              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-[var(--color-muted)]">วันที่เข้าพัก - วันที่ออก</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={checkInDate}
+                    onChange={(e) => setCheckInDate(e.target.value)}
+                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ borderColor: "var(--color-border)" }}
+                  />
+                  <span className="text-[var(--color-muted)]">-</span>
+                  <input
+                    type="date"
+                    value={checkOutDate}
+                    onChange={(e) => setCheckOutDate(e.target.value)}
+                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ borderColor: "var(--color-border)" }}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-[var(--color-muted)]">เวลา Check in - Check out</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={checkInTime}
+                    onChange={(e) => setCheckInTime(e.target.value)}
+                    onBlur={saveBookedHotel}
+                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ borderColor: "var(--color-border)" }}
+                  />
+                  <span className="text-[var(--color-muted)]">-</span>
+                  <input
+                    type="time"
+                    value={checkOutTime}
+                    onChange={(e) => setCheckOutTime(e.target.value)}
+                    onBlur={saveBookedHotel}
+                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ borderColor: "var(--color-border)" }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {status === "unbooked" && (
+            <div className="flex flex-col gap-4">
+              <div className="relative">
+                <div
+                  className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <Search size={16} style={{ color: "var(--color-muted)" }} />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => dropdownResults && dropdownResults.length > 0 && setDropdownOpen(true)}
+                    placeholder="เพิ่มที่พัก"
+                    className="w-full bg-transparent text-sm focus:outline-none"
+                  />
+                </div>
+
+                {dropdownOpen && dropdownResults && dropdownResults.length > 0 && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
+                    <div className="absolute inset-x-0 top-full z-20 mt-2 flex flex-col overflow-hidden rounded-2xl border bg-white shadow-lg" style={{ borderColor: "var(--color-border)" }}>
+                      {dropdownResults.map((place) => (
+                        <button
+                          key={place.id}
+                          type="button"
+                          onClick={() => pickDropdownResult(place)}
+                          className="px-4 py-3 text-left text-sm hover:bg-[var(--color-surface)]"
+                        >
+                          {place.name}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-1.5 text-sm font-bold">
+                  <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
+                  ที่พักแนะนำ
+                </p>
+              </div>
+
+              {hotels === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
+
+              <div className="flex gap-4 overflow-x-auto pb-1">
+                {hotels?.map((hotel) => {
+                  const isStaged = stagedPlaces.some((p) => p.id === hotel.id);
+                  const isAdded = addedIds.has(hotel.id) || isStaged;
+                  return (
+                    <div key={hotel.id} className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
+                      <div className="relative h-32 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+                        {hotel.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={hotel.imageUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center">
+                            <MapPin size={22} style={{ color: "var(--color-muted)" }} />
+                          </span>
+                        )}
+                        {hotel.rating !== undefined && (
+                          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-bold text-white">
+                            <Star size={10} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+                            {hotel.rating.toFixed(1)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2 p-3">
+                        <p className="truncate text-sm font-bold">{hotel.name}</p>
+                        <p className="truncate text-xs text-[var(--color-muted)]">{hotel.priceLabel}</p>
+                        <div className="mt-auto flex justify-center">
+                          <AddButton isAdded={isAdded} label="เพิ่ม" onClick={() => onStage(hotel)} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  onBlur,
+  placeholder,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  onBlur?: () => void;
+  placeholder: string;
+  icon?: typeof Pencil;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold text-[var(--color-muted)]">{label}</label>
+      <div className="flex items-center gap-2 rounded-xl border bg-white px-4 py-2.5" style={{ borderColor: "var(--color-border)" }}>
+        {Icon && <Icon size={14} style={{ color: "var(--color-muted)" }} />}
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          className="w-full bg-transparent text-sm focus:outline-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+function AccommodationStatusCard({
+  icon: Icon,
+  title,
+  subtitle,
+  isOn,
+  onClick,
+}: {
+  icon: typeof Ticket;
+  title: string;
+  subtitle: string;
+  isOn: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm transition-transform hover:-translate-y-0.5"
+      style={isOn ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" } : { borderColor: "var(--color-border)" }}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: isOn ? "rgba(255,255,255,0.7)" : "var(--color-surface)" }}
+      >
+        <Icon size={16} style={{ color: isOn ? "var(--color-brand-green)" : "var(--color-muted)" }} />
+      </span>
+      <span>
+        <span className="block text-sm font-bold" style={isOn ? { color: "var(--color-brand-green)" } : undefined}>
+          {title}
+        </span>
+        <span className="mt-0.5 block text-xs text-[var(--color-muted)]">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
+function ScheduleAccordion({
+  trip,
+  canEdit,
+  onOpenAddActivity,
+  onEditActivity,
+  onGoToPlanTab,
+  onUpdateActivityTravel,
+}: {
+  trip: GeneratedTrip;
+  canEdit: boolean;
+  onOpenAddActivity: (dayId: string) => void;
+  onEditActivity: (dayId: string, activity: Activity) => void;
+  onGoToPlanTab: () => void;
+  onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4"
+      >
+        <h3 className="text-base font-bold sm:text-lg">ตารางแพลน</h3>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
+          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-4 px-5 pb-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">
+              แพลนทั้งหมด <b style={{ color: "var(--color-brand-green)" }}>{trip.days.length}</b> วัน
+            </p>
+            <button
+              type="button"
+              onClick={onGoToPlanTab}
+              className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ดูแพลนรายวัน
+              <ChevronRight size={11} className="ml-0.5 inline" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {trip.days.map((day) => (
+              <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
+                <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: "var(--color-sel-bg)" }}>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold">วันที่ {day.dayNumber}</h4>
+                    <span
+                      className="flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      <MapPin size={10} />
+                      {day.activities.length} จุด
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
+                </div>
+                <div className="flex flex-col gap-1 p-3">
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenAddActivity(day.id)}
+                      className="mb-1 rounded-xl border-2 border-dashed py-2.5 text-xs font-bold"
+                      style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                    >
+                      + เพิ่มสถานที่
+                    </button>
+                  )}
+                  {day.activities.map((a, i) => {
+                    const next = day.activities[i + 1];
+                    return (
+                      <div key={a.id}>
+                        <ScheduleActivityRow
+                          activity={a}
+                          index={i}
+                          canEdit={canEdit}
+                          onEdit={() => onEditActivity(day.id, a)}
+                        />
+                        {next && (
+                          <TravelConnectorRow
+                            toActivity={next}
+                            canEdit={canEdit}
+                            onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Numbered (not category-icon) badge — the schedule reads as an ordered
+// stop-by-stop itinerary, so position in the day matters more here than
+// which category each stop belongs to.
+function ScheduleActivityRow({
+  activity,
+  index,
+  canEdit,
+  onEdit,
+}: {
+  activity: Activity;
+  index: number;
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <div
+      className="flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2"
+      style={{ backgroundColor: "#FBF9F5", borderColor: "#E7DECE" }}
+    >
+      <Menu size={13} strokeWidth={1.75} className="shrink-0" style={{ color: "#9A988F" }} />
+      <span
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+        style={{ backgroundColor: "var(--color-brand-green)" }}
+      >
+        {index + 1}
+      </span>
+      <p className="min-w-0 flex-1 truncate text-xs font-bold">{activity.title}</p>
+      {canEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
+        >
+          <Pencil size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Sits between two stop rows — a small dot (the timeline node hanging off
+// the numbered badges above/below it) plus a full-width dashed pill.
+// Empty state is a plain "+ เพิ่มการเดินทาง" prompt; once `toActivity` has a
+// travelFromPrevious leg attached, it instead shows every available piece of
+// travel information and reopens the same dialog to edit it.
+export function TravelConnectorRow({
+  toActivity,
+  canEdit,
+  onSave,
+}: {
+  toActivity: Activity;
+  canEdit: boolean;
+  onSave: (travel: TravelFromPrevious) => void;
+}) {
+  const [showDialog, setShowDialog] = useState(false);
+  const travel = toActivity.travelFromPrevious;
+  const TypeIcon = travel ? travelTypeIcon[travel.type] : null;
+  const travelLabel = travel
+    ? travel.type === "other" && travel.customType
+      ? travel.customType
+      : travelTypeLabel[travel.type]
+    : undefined;
+
+  // Read-only: nothing to add, so hide the placeholder prompt entirely; an
+  // already-attached leg still shows (travelers should be able to see how
+  // they get between stops) but as plain text, not a clickable edit target.
+  if (!canEdit && !travel) return null;
+
+  const content =
+    travel && TypeIcon && travelLabel ? (
+      <>
+        <TypeIcon size={11} className="shrink-0" />
+        <span>{travelLabel}</span>
+        {travel.durationMin !== undefined && <> · ~{travel.durationMin} นาที</>}
+        {travel.distanceKm !== undefined && <> · {travel.distanceKm} กม.</>}
+        {travel.costAmount !== undefined && travel.costAmount > 0 && <> · {formatTHB(travel.costAmount)}</>}
+        {travel.notes && <span className="min-w-0 truncate text-[var(--color-muted)]">· {travel.notes}</span>}
+      </>
+    ) : (
+      <>
+        <Plus size={11} className="shrink-0" />
+        เพิ่มการเดินทาง
+      </>
+    );
+
+  return (
+    <>
+      <div className="flex min-h-11 items-stretch gap-1.5 py-1">
+        <div className="relative w-3.5 shrink-0" aria-hidden="true">
+          <span
+            className="absolute bottom-1 left-1/2 top-0 -translate-x-1/2 border-l border-dashed"
+            style={{ borderColor: "var(--color-brand-green)" }}
+          />
+          <span
+            className="absolute bottom-0 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          />
+        </div>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => setShowDialog(true)}
+            aria-label={travel ? `แก้ไขการเดินทางไป ${toActivity.title}` : `เพิ่มการเดินทางไป ${toActivity.title}`}
+            className="my-auto flex min-h-7 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
+            style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            {content}
+          </button>
+        ) : (
+          <div
+            className="my-auto flex min-h-7 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-[10px] font-semibold"
+            style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            {content}
+          </div>
+        )}
+      </div>
+
+      {showDialog && (
+        <TravelLegDialog
+          destinationTitle={toActivity.title}
+          initial={travel}
+          onSave={(next) => {
+            onSave(next);
+            setShowDialog(false);
+          }}
+          onClose={() => setShowDialog(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// "เพิ่มการเดินทาง" — how the traveler gets from the previous stop to
+// `destinationTitle`. Saved onto the destination activity as
+// travelFromPrevious (see types/index.ts), matching the
+// travelTypeFromPrev/travelTimeFromPrevMin/etc. fields the backend accepts.
+function TravelLegDialog({
+  destinationTitle,
+  initial,
+  onSave,
+  onClose,
+}: {
+  destinationTitle: string;
+  initial?: TravelFromPrevious;
+  onSave: (travel: TravelFromPrevious) => void;
+  onClose: () => void;
+}) {
+  const [type, setType] = useState<TravelType>(initial?.type ?? "walk");
+  const [customType, setCustomType] = useState(initial?.customType ?? "");
+  const [durationMin, setDurationMin] = useState(initial?.durationMin?.toString() ?? "");
+  const [distanceKm, setDistanceKm] = useState(initial?.distanceKm?.toString() ?? "");
+  const [costAmount, setCostAmount] = useState(initial?.costAmount?.toString() ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+
+  function handleSave() {
+    onSave({
+      type,
+      customType: type === "other" ? customType.trim() || undefined : undefined,
+      durationMin: durationMin.trim() ? Number(durationMin) : undefined,
+      distanceKm: distanceKm.trim() ? Number(distanceKm) : undefined,
+      costAmount: costAmount.trim() ? Number(costAmount) : undefined,
+      costCurrency: costAmount.trim() ? "THB" : undefined,
+      notes: notes.trim() || undefined,
+    });
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg font-bold">เพิ่มการเดินทาง</h3>
+              <p className="truncate text-xs text-[var(--color-muted)]">ไปยัง {destinationTitle}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: "var(--color-surface)" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-[var(--color-muted)]">ประเภทการเดินทาง</label>
+            <div className="grid grid-cols-3 gap-2">
+              {TRAVEL_TYPE_OPTIONS.map((t) => {
+                const Icon = travelTypeIcon[t];
+                const isSelected = type === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setType(t)}
+                    className="flex flex-col items-center gap-1 rounded-xl border p-2.5 text-[11px] font-semibold transition-colors"
+                    style={
+                      isSelected
+                        ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
+                        : { borderColor: "var(--color-border)", color: "var(--foreground)" }
+                    }
+                  >
+                    <Icon size={16} />
+                    {travelTypeLabel[t]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {type === "other" && (
+            <LabeledInput label="ระบุประเภทการเดินทาง" value={customType} onChange={setCustomType} placeholder="เช่น สองแถว" />
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <LabeledInput label="ใช้เวลา (นาที)" value={durationMin} onChange={setDurationMin} placeholder="15" />
+            <LabeledInput label="ระยะทาง (กม.)" value={distanceKm} onChange={setDistanceKm} placeholder="1.2" />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ค่าใช้จ่าย (บาท)</label>
+            <div className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: "var(--color-border)" }}>
+              <input
+                type="text"
+                value={costAmount}
+                onChange={(e) => setCostAmount(e.target.value)}
+                placeholder="0"
+                className="w-full bg-transparent text-sm focus:outline-none"
+              />
+              <span className="shrink-0 text-xs font-semibold text-[var(--color-muted)]">THB</span>
+            </div>
+          </div>
+
+          <LabeledInput label="หมายเหตุ" value={notes} onChange={setNotes} placeholder="เช่น ขึ้นรถที่หน้าคาเฟ่" />
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-full border py-3 text-sm font-bold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="flex-1 rounded-full py-3 text-sm font-bold text-white"
+              style={{ backgroundColor: "var(--color-accent-orange)" }}
+            >
+              บันทึก
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

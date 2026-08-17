@@ -49,7 +49,7 @@ function toResolver(suggestion: AutocompleteSuggestion, sessionToken: string): (
 // searching a country ("Japan") returns the country itself as one result,
 // never its well-known cities. So when the query itself names a country we
 // already know, we append a small curated list of that country's
-// destinations, scoped to the markets Pluno's demo/mock data covers.
+// destinations, scoped to the markets PunGuide's demo/mock data covers.
 const COUNTRY_CITY_FALLBACK: Record<string, Destination[]> = {
   japan: [
     { name: "โตเกียว", country: "ญี่ปุ่น", countryCode: "JP", latitude: 35.6762, longitude: 139.6503 },

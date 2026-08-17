@@ -26,7 +26,7 @@ export function BookingBar({
   showSearchButton?: boolean;
 }) {
   return (
-    <div className="relative flex w-full max-w-5xl items-center gap-2 rounded-[28px] bg-white/20 p-2 shadow-lg backdrop-blur-md">
+    <div className="relative flex w-full max-w-5xl flex-col items-stretch gap-2 rounded-[28px] bg-white/20 p-2 shadow-lg backdrop-blur-md sm:flex-row sm:items-center">
       <div className="flex flex-1 flex-col overflow-hidden rounded-[22px] bg-white sm:flex-row sm:items-stretch">
         {fields.map((field, i) => (
           <BookingField key={field.label} field={field} isLast={i === fields.length - 1} />

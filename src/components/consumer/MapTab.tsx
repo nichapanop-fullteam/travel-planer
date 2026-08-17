@@ -89,7 +89,10 @@ function StatChip({ icon: Icon, value, label }: { icon: typeof Clock; value: str
 function DecorativeRouteMap({ day }: { day: Day }) {
   const stops = day.activities;
   const positions = stops.map((_, i) => {
-    const x = 12 + (i * 76) / Math.max(stops.length - 1, 1);
+    // Clamped well inside the edges — each marker is a whitespace-nowrap
+    // label centered on its point, so a pin placed too close to 0%/100%
+    // would get its label clipped by the map panel's overflow-hidden edge.
+    const x = Math.min(80, Math.max(20, 12 + (i * 76) / Math.max(stops.length - 1, 1)));
     const y = i % 2 === 0 ? 30 : 65;
     return { x, y };
   });

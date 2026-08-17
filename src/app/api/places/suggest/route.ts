@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const EXTERNAL_PLACES_API_BASE_URL =
-  process.env.EXTERNAL_PLACES_API_BASE_URL ?? "https://zips-wrinkle-rigid.ngrok-free.dev";
+const EXTERNAL_API_BASE_URL =
+  process.env.EXTERNAL_API_BASE_URL ?? "https://travel-planner-api-git-909858882015.asia-northeast3.run.app";
 
 // Proxies the external Places Suggest API — "what's popular near this
 // destination", used once a Destination has coordinates (from
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing required query params: lat, lng" }, { status: 400 });
   }
 
-  const url = new URL("/places/suggest", EXTERNAL_PLACES_API_BASE_URL);
+  const url = new URL("/places/suggest", EXTERNAL_API_BASE_URL);
   url.searchParams.set("lat", lat);
   url.searchParams.set("lng", lng);
   if (radius) url.searchParams.set("radius", radius);

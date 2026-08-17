@@ -7,7 +7,7 @@ import { myGroups } from "@/lib/groups";
 import { getGeneratedTrips } from "@/lib/generated-trips";
 import type { GeneratedTrip } from "@/types";
 
-type NavKey = "home";
+type NavKey = "home" | "my-trips";
 
 // Sidebar nav — only "หน้าหลัก" (Home) links anywhere real right now; "Account",
 // "Bookmark", and "Create Group" are visual placeholders (see CONTRIBUTING.md
@@ -33,21 +33,24 @@ export function Sidebar({
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)]/40 bg-white p-4">
       <div className="mb-5 flex items-center justify-between px-2">
         <div className="flex items-center gap-1">
-          <span className="text-2xl font-extrabold text-[var(--color-primary)]">pluno</span>
+          <span className="text-2xl font-extrabold text-[var(--color-primary)]">PunGuide</span>
           <span className="text-2xl font-extrabold text-[var(--color-accent-orange)]">+</span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
-        >
-          <Menu size={18} />
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
+            aria-label="ปิดเมนู"
+          >
+            <Menu size={18} />
+          </button>
+        )}
       </div>
 
       <nav className="mb-6 flex flex-col gap-1">
         <NavItem item={{ label: "หน้าหลัก", icon: Home, href: "/main" }} isActive={active === "home"} />
-        <NavItem item={{ label: "Account", icon: User }} />
+        <NavItem item={{ label: "Account", icon: User, href: "/my-trips" }} isActive={active === "my-trips"} />
         <NavItem item={{ label: "Bookmark", icon: Bookmark }} />
       </nav>
 

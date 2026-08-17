@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarDays, Link2, MapPin, Shuffle, Sparkles, Users } from "lucide-react";
@@ -10,8 +10,9 @@ import { RecommendDestinationCard } from "@/components/consumer/RecommendDestina
 import { CreatorPlanCard } from "@/components/consumer/CreatorPlanCard";
 import { creatorPlans, recommendDestinations, topDestinations } from "@/lib/home-content";
 import { findDestinationGuide } from "@/lib/discovery-content";
+import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
 
-// Public discovery home — redesigned per Pluno Guide UI reference.
+// Public discovery home — redesigned per PunGuide UI reference.
 // Uses its own top navbar (HomeNavbar) instead of the shared ConsumerShell
 // sidebar layout used by trip-detail/plan/share.
 export default function DashboardPage() {
@@ -21,6 +22,7 @@ export default function DashboardPage() {
 
       <div className="mx-auto flex max-w-7xl flex-col gap-12 px-6 py-10 sm:px-10">
         <ActionCards />
+        <RecentTripsSection />
         <RecommendDestinationSection />
         <TopDestinationSection />
         <PlanFromTopCreatorsSection />
@@ -44,7 +46,7 @@ function Hero() {
   }
 
   return (
-    <div className="relative flex min-h-[420px] flex-col items-center justify-center overflow-hidden px-6 text-center sm:min-h-[480px]">
+    <div className="relative flex min-h-[420px] flex-col items-center justify-center overflow-hidden px-6 pt-24 text-center sm:min-h-[480px] sm:pt-28">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/hero-mountain.jpg"
@@ -113,8 +115,8 @@ function ActionCards() {
             </span>
           </div>
           <div>
-            <p className="text-sm font-bold">Pluno สร้างแพลนทริปให้</p>
-            <p className="text-xs text-white/80">จัดทริปไม่ต้องเริ่มจากศูนย์ ให้ pluno จัดการทริปให้</p>
+            <p className="text-sm font-bold">PunGuide สร้างแพลนทริปให้</p>
+            <p className="text-xs text-white/80">จัดทริปไม่ต้องเริ่มจากศูนย์ ให้ PunGuide จัดการทริปให้</p>
           </div>
         </Link>
 
@@ -139,6 +141,101 @@ function ActionCards() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Backend status enum isn't finalized yet (see BackendTrip comment) — falls
+// back to the raw string for anything not in this map instead of hiding it.
+const TRIP_STATUS_LABEL: Record<string, string> = {
+  draft: "ร่างแผน",
+  confirmed: "ยืนยันแล้ว",
+  shared: "แชร์แล้ว",
+  completed: "เสร็จสิ้น",
+};
+
+const TRIP_STATUS_COLOR: Record<string, string> = {
+  draft: "var(--color-accent-orange)",
+  confirmed: "var(--color-brand-green)",
+  shared: "var(--color-primary)",
+  completed: "var(--color-muted)",
+};
+
+// GET /trips from the real backend (see lib/trips-api.ts) — shown here
+// rather than on /my-trips since that page is Firebase-gated and this
+// endpoint doesn't actually filter by caller yet (every row shares the
+// same demo ownerId). Fails silently on this public page rather than
+// blocking the rest of Home if the backend/tunnel is down.
+function RecentTripsSection() {
+  const [trips, setTrips] = useState<BackendTripListItem[] | null>(null);
+
+  useEffect(() => {
+    listTrips()
+      .then(setTrips)
+      .catch((err) => {
+        console.warn(err);
+        setTrips([]);
+      });
+  }, []);
+
+  if (!trips || trips.length === 0) return null;
+
+  const visible = [...trips]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 6);
+
+  return (
+    <section>
+      <SectionHeader title="ทริปล่าสุดจากระบบ" />
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {visible.map((trip) => (
+          <Link
+            key={trip.id}
+            href={`/generated-plan/${trip.id}`}
+            className="overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow hover:shadow-md"
+          >
+            <div className="relative h-36 bg-[var(--color-border)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={trip.coverImage?.urls.thumbnail ?? "/images/hero-mountain.jpg"}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+              <span
+                className="absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
+                style={{ backgroundColor: TRIP_STATUS_COLOR[trip.status] ?? "var(--color-muted)" }}
+              >
+                {TRIP_STATUS_LABEL[trip.status] ?? trip.status}
+              </span>
+            </div>
+            <div className="p-5">
+              <p className="truncate font-bold">{trip.title}</p>
+              <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                <MapPin size={12} className="shrink-0" />
+                <span className="truncate">{trip.destination}</span>
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+                <span className="flex items-center gap-1">
+                  <CalendarDays size={12} />
+                  {trip.schedule.durationDays != null
+                    ? `${trip.schedule.durationDays} วัน ${trip.schedule.durationNights ?? Math.max(trip.schedule.durationDays - 1, 0)} คืน`
+                    : "ยังไม่กำหนดระยะเวลา"}
+                </span>
+                {trip.budgetLimit != null && <span>งบไม่เกิน ฿{trip.budgetLimit.toLocaleString("th-TH")}</span>}
+              </div>
+              {trip.tags.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {trip.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className="rounded-full bg-[var(--color-surface)] px-2 py-1 text-[10px] font-semibold text-[var(--color-muted)]">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 

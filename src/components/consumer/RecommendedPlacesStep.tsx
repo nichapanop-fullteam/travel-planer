@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BedDouble,
@@ -8,17 +8,21 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Clock,
   Flag,
+  Info,
   Pencil,
   Plus,
   Star,
   Trash2,
   UtensilsCrossed,
+  Wallet,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { fetchPlaceRecommendations, type RecommendedPlace } from "@/lib/place-recommendations";
 import type { ExternalPlaceCategory } from "@/lib/external-places-api";
+import { enrichPlace, type EnrichedPlace } from "@/lib/place-mock-metadata";
 import type { PlaceCategory } from "@/types";
 
 // Thai labels for the raw taxonomy sub-filters shown in the "ดูทั้งหมด" view —
@@ -50,6 +54,42 @@ const CATEGORY_SECTIONS: CategorySectionConfig[] = [
   { key: "restaurant", label: "ร้านอาหารแนะนำ", countLabel: "ร้านอาหาร", icon: UtensilsCrossed },
   { key: "hotel", label: "ที่พักแนะนำ", countLabel: "ที่พัก", icon: BedDouble },
 ];
+
+// None of price/hours/distance/duration exist on RecommendedPlace (see
+// lib/external-places-api.ts) — same mock enrichment used on the self-mode
+// places step, adapted to RecommendedPlace's field names.
+function enrichForDisplay(place: RecommendedPlace, center: { lat: number; lng: number }): EnrichedPlace {
+  return enrichPlace(
+    {
+      id: place.googlePlaceId,
+      name: place.name,
+      address: place.address,
+      category: place.rawCategory,
+      lat: place.latitude,
+      lng: place.longitude,
+      rating: place.rating,
+      imageUrl: place.imageUrl,
+    },
+    center
+  );
+}
+
+// Hotel "location" / "style" tags shown over the thumbnail — also mocked
+// (no such fields on RecommendedPlace), deterministically picked per place
+// id so a card's tags stay stable across re-renders.
+const HOTEL_LOCATION_TAGS = ["ใจกลางเมือง", "เขตนอกเมือง", "ริมแม่น้ำ"];
+const HOTEL_STYLE_TAGS = ["Ultra-Luxury", "Boutique Luxury Resort", "Budget Friendly", "Family Resort"];
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+function hotelTags(placeId: string): [string, string] {
+  const seed = hashString(placeId);
+  return [HOTEL_LOCATION_TAGS[seed % HOTEL_LOCATION_TAGS.length], HOTEL_STYLE_TAGS[(seed >> 3) % HOTEL_STYLE_TAGS.length]];
+}
 
 export function RecommendedPlacesStep({
   center,
@@ -92,11 +132,11 @@ export function RecommendedPlacesStep({
           className="rounded-full px-2.5 py-1 text-xs font-bold"
           style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
         >
-          Pluno Recommend
+          PunGuide Recommend
         </span>
       </div>
       <p className="text-sm text-[var(--color-muted)]">
-        เลือกสถานที่ที่อยากแวะ Pluno จะช่วยจัดลงในแผนให้อัตโนมัติ (ข้ามได้ ไม่บังคับเลือก)
+        เลือกสถานที่ที่อยากแวะ PunGuide จะช่วยจัดลงในแผนให้อัตโนมัติ (ข้ามได้ ไม่บังคับเลือก)
       </p>
 
       <div className="mt-3 flex flex-col gap-7">
@@ -190,6 +230,7 @@ function CategorySection({
   const [places, setPlaces] = useState<RecommendedPlace[] | null>(null);
   const [viewAllOpen, setViewAllOpen] = useState(false);
   const Icon = section.icon;
+  const isHotel = section.key === "hotel";
 
   useEffect(() => {
     let cancelled = false;
@@ -201,12 +242,21 @@ function CategorySection({
     };
   }, [section.key, center.lat, center.lng]);
 
+  const enrichedById = useMemo(() => {
+    if (!places) return new Map<string, EnrichedPlace>();
+    return new Map(places.map((p) => [p.googlePlaceId, enrichForDisplay(p, center)]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [places, center.lat, center.lng]);
+
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon size={16} style={{ color: "var(--color-brand-green)" }} />
           <h3 className="text-base font-bold">{section.label}</h3>
+          {isHotel && (
+            <InfoTooltip text="คุณสามารถปรับแก้ไขข้อมูลที่พักภายหลังได้เสมอ" />
+          )}
           {selectedCount > 0 && (
             <span
               className="rounded-full px-2 py-0.5 text-xs font-bold"
@@ -240,7 +290,7 @@ function CategorySection({
         />
       )}
 
-      {section.key === "hotel" && onEditPreferences && (
+      {isHotel && onEditPreferences && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-[var(--color-muted)]">คัดจากที่คุณเลือกไว้ขั้นตอนก่อนหน้า :</span>
           <span
@@ -265,16 +315,31 @@ function CategorySection({
       <div className="flex gap-3 overflow-x-auto pb-2">
         {places === null && <p className="text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
         {places?.length === 0 && <p className="text-sm text-[var(--color-muted)]">ไม่พบสถานที่แนะนำ</p>}
-        {places?.map((place) =>
-          section.key === "restaurant" ? (
-            <RestaurantCard
-              key={place.googlePlaceId}
-              place={place}
-              icon={Icon}
-              isSelected={selectedIds.has(place.googlePlaceId)}
-              onToggle={() => onToggle(place, section.key)}
-            />
-          ) : (
+        {places?.map((place) => {
+          if (isHotel) {
+            return (
+              <HotelCard
+                key={place.googlePlaceId}
+                place={place}
+                enriched={enrichedById.get(place.googlePlaceId)}
+                isSelected={selectedIds.has(place.googlePlaceId)}
+                onToggle={() => onToggle(place, section.key)}
+              />
+            );
+          }
+          if (section.key === "restaurant") {
+            return (
+              <RestaurantCard
+                key={place.googlePlaceId}
+                place={place}
+                icon={Icon}
+                enriched={enrichedById.get(place.googlePlaceId)}
+                isSelected={selectedIds.has(place.googlePlaceId)}
+                onToggle={() => onToggle(place, section.key)}
+              />
+            );
+          }
+          return (
             <PlaceCard
               key={place.googlePlaceId}
               place={place}
@@ -282,10 +347,34 @@ function CategorySection({
               isSelected={selectedIds.has(place.googlePlaceId)}
               onToggle={() => onToggle(place, section.key)}
             />
-          )
-        )}
+          );
+        })}
       </div>
     </section>
+  );
+}
+
+// Click-to-toggle rather than hover-only — hover states don't work on touch,
+// and this is the first time accommodation shows up as a selectable item
+// alongside attractions/restaurants, so it's worth spelling out inline.
+function InfoTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-muted)]"
+      >
+        <Info size={14} />
+      </button>
+      {open && (
+        <span className="absolute bottom-full left-1/2 z-10 mb-2 w-48 -translate-x-1/2 rounded-xl bg-[#1a1a1a] px-3 py-2 text-center text-[11px] font-medium leading-snug text-white shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -365,11 +454,13 @@ function PlaceCard({
 function RestaurantCard({
   place,
   icon: Icon,
+  enriched,
   isSelected,
   onToggle,
 }: {
   place: RecommendedPlace;
   icon: LucideIcon;
+  enriched?: EnrichedPlace;
   isSelected: boolean;
   onToggle: () => void;
 }) {
@@ -394,14 +485,85 @@ function RestaurantCard({
           <p className="truncate text-sm font-bold">{place.name}</p>
           {place.address && <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>}
         </div>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[var(--color-muted)]">
+          {place.rating !== undefined && (
+            <span className="flex items-center gap-1">
+              <Star size={11} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+              {place.rating.toFixed(1)}
+            </span>
+          )}
+          {enriched && (
+            <>
+              <span className="flex items-center gap-1">
+                <Wallet size={11} />
+                {enriched.priceLabel}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock size={11} />
+                {enriched.openingHoursLabel}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <AddButton isSelected={isSelected} onToggle={onToggle} small />
+    </div>
+  );
+}
+
+// Hotels are selectable the same way attractions/restaurants are — the
+// traveler can always fine-tune accommodation details later (see the
+// InfoTooltip next to "ที่พักแนะนำ"), so adding one here just means "consider
+// this hotel," same weight as any other pick.
+function HotelCard({
+  place,
+  enriched,
+  isSelected,
+  onToggle,
+}: {
+  place: RecommendedPlace;
+  enriched?: EnrichedPlace;
+  isSelected: boolean;
+  onToggle: () => void;
+}) {
+  const [locationTag, styleTag] = hotelTags(place.googlePlaceId);
+  return (
+    <div
+      className="flex w-64 shrink-0 flex-col overflow-hidden rounded-2xl border shadow-sm"
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <div className="relative h-36 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <BedDouble size={24} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
         {place.rating !== undefined && (
-          <span className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-xs font-bold text-white">
             <Star size={11} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
             {place.rating.toFixed(1)}
           </span>
         )}
+        {isSelected && <SelectedBadge />}
+        <div className="absolute inset-x-2 bottom-2 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-semibold text-white">{locationTag}</span>
+          <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-semibold text-white">{styleTag}</span>
+        </div>
       </div>
-      <AddButton isSelected={isSelected} onToggle={onToggle} small />
+      <div className="flex flex-1 flex-col gap-1.5 p-3">
+        <p className="truncate text-sm font-bold">{place.name}</p>
+        {place.address && <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>}
+        {enriched && (
+          <p className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+            <Wallet size={11} />
+            {enriched.priceLabel}
+          </p>
+        )}
+        <AddButton isSelected={isSelected} onToggle={onToggle} />
+      </div>
     </div>
   );
 }

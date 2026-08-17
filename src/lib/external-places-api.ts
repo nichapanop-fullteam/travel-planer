@@ -122,3 +122,32 @@ export async function fetchExternalPlaceSuggestions(
 
   return (await response.json()) as ExternalSearchPlace[];
 }
+
+// GET /places/suggest/sections — same data as fetchExternalPlaceSuggestions
+// above, pre-split into three quota-guaranteed buckets instead of one
+// popularity-ranked list that can leave a category empty. `restaurants`
+// includes cafe places too (no separate cafe section). `limit` here is
+// per-section (API default 5), not overall (API default 10 for the plain
+// suggest endpoint) — see docs for why. ~2-3x slower than plain suggest on
+// an uncached center (three Google calls instead of one), so callers should
+// show per-section skeletons rather than blocking on the whole response.
+export interface ExternalPlaceSuggestionSections {
+  attractions: ExternalSearchPlace[];
+  restaurants: ExternalSearchPlace[];
+  accommodations: ExternalSearchPlace[];
+}
+
+export async function fetchExternalPlaceSuggestionSections(
+  lat: number,
+  lng: number,
+  options?: { radius?: number; limit?: number }
+): Promise<ExternalPlaceSuggestionSections> {
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (options?.radius) params.set("radius", String(options.radius));
+  if (options?.limit) params.set("limit", String(options.limit));
+
+  const response = await fetch(`/api/places/suggest/sections?${params.toString()}`);
+  if (!response.ok) return { attractions: [], restaurants: [], accommodations: [] };
+
+  return (await response.json()) as ExternalPlaceSuggestionSections;
+}

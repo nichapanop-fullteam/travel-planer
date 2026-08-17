@@ -1,3 +1,18 @@
+// ─── Account (login / create profile) ───
+// No real backend yet — persisted client-side only, same localStorage
+// pattern as everything else in this app (see lib/auth.ts).
+export type UserRole = "traveler" | "creator" | "admin";
+
+export interface User {
+  id: string; // UUID / Firebase UID
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+  role: UserRole;
+  createdAt: string; // datetime
+  updatedAt: string; // datetime
+}
+
 export type ActivityCategory =
   | "transport"
   | "food"
@@ -15,6 +30,30 @@ export interface Location {
   googlePlaceId?: string; // reference for re-fetching live details/photos from Google Places
 }
 
+// How the traveler gets from the previous stop to this one — matches the
+// `travelTypeFromPrev`/etc. fields accepted by POST /days/:dayId/items,
+// PATCH /items/:itemId, and each activity in POST /trips/create.
+export type TravelType =
+  | "walk"
+  | "bicycle"
+  | "tuk_tuk"
+  | "private_transfer"
+  | "rental_car"
+  | "boat"
+  | "train"
+  | "airplane"
+  | "other";
+
+export interface TravelFromPrevious {
+  type: TravelType;
+  customType?: string; // free-text label entered via "เพิ่มเติม" when type is "other"
+  durationMin?: number;
+  distanceKm?: number;
+  costAmount?: number;
+  costCurrency?: string;
+  notes?: string;
+}
+
 export interface Activity {
   id: string;
   time: string; // "09:00"
@@ -23,8 +62,10 @@ export interface Activity {
   location?: Location;
   notes?: string;
   cost: number; // THB, per group
-  travelNote?: string; // e.g. "เดิน ~8 นาที" — how to get here from the previous stop
+  travelNote?: string; // e.g. "เดิน ~8 นาที" — free-text fallback, kept for backward compat
+  travelFromPrevious?: TravelFromPrevious; // structured version of travelNote — the leg from the previous stop
   icon?: string; // key into ACTIVITY_ICON_OVERRIDE (generated-plan) — overrides the category default icon
+  images?: string[]; // user-uploaded photos for this stop, as data URLs
 }
 
 export interface Day {
@@ -110,8 +151,12 @@ export interface TripDraft {
   mode: TripCreationMode;
   destination: string;
   destinationPlace?: Destination; // structured place data when picked via Places Autocomplete — needed later for map/routes/nearby search, not just display
-  duration: string; // free text for now, e.g. "3 วัน 2 คืน" — no date picker yet
-  guests: string; // free text for now, e.g. "ผู้ใหญ่, 1 คน"
+  duration: string; // display label, e.g. "3 วัน 2 คืน" — always set, regardless of which DatePickerDialog tab was used
+  startDate?: string; // ISO date — only set when the user picked an explicit date range (DatePickerDialog's "ระบุวันที่" tab); absent for the "จำนวนคืน" flexible-duration tab
+  endDate?: string;
+  guests: string; // display label, e.g. "ผู้ใหญ่ 2 คน"
+  adults: number;
+  children: number;
   styles: string[];
   pace: string | null;
   budget: string | null; // preset key ("Economy" | "Comfort" | "Premium" | "Luxury" | "custom")
@@ -126,7 +171,7 @@ export interface TripDraft {
     };
     unbooked?: {
       styles: string[];
-      styleRecommend: boolean; // "แนะนำให้เลย" — let Pluno pick the style
+      styleRecommend: boolean; // "แนะนำให้เลย" — let PunGuide pick the style
       grades: string[];
       gradeRecommend: boolean;
       note: string;
@@ -153,7 +198,7 @@ export interface Destination {
 }
 
 // ─── Generated Plan (Step 2 — AI output) ───
-// The itinerary Pluno generates from a TripDraft, shown on /generated-plan/[id]
+// The itinerary PunGuide generates from a TripDraft, shown on /generated-plan/[id]
 // for review before the traveler confirms it. Saved to localStorage for now
 // (see lib/generated-trips.ts); no backend/API yet.
 
@@ -163,9 +208,12 @@ export interface GeneratedTrip {
   id: string;
   draftId: string; // links back to the TripDraft it was generated from
   createdAt: string; // ISO timestamp
+  title?: string; // custom trip name set via "แก้ไขทริป" — falls back to destination when unset
   destination: string;
   destinationPlace?: Destination; // structured place data, for Nearby/Text Search on the trip detail page
-  coverImageUrl: string;
+  coverImageUrl: string; // legacy fallback — prefer coverImage.urls.* once the trip has one (see lib/trip-media-api.ts)
+  coverImage?: Media; // set once PUT /trips/:tripId/cover has been called for this trip; absent for mock/local-only trips
+  mediaSummary?: MediaSummary;
   durationLabel: string; // "3 วัน 2 คืน"
   paceLabel: string; // "Chill เที่ยวสบาย"
   budgetLabel: string; // "฿3,000 / วัน"
@@ -173,6 +221,146 @@ export interface GeneratedTrip {
   styles: string[];
   status: GeneratedTripStatus;
   days: Day[];
+  accommodation?: TripAccommodation;
+  // Budget management (สรุปงบ tab) — expenses is the ledger shown/edited
+  // there; undefined until the tab is first opened, at which point it's
+  // seeded from the itinerary's existing costs (see lib/trip-expenses.ts).
+  expenses?: TripExpense[];
+  budgetGoal?: number; // THB, set via "ตั้งงบประมาณ"
+  // Set only for trips generated via POST /trips/generate-plan (real AI
+  // generation) — absent for the older mocked-template trips. Surfaced as a
+  // "this plan may need a look" banner when resolvedWithoutErrors is false;
+  // see generation.violations in the API docs for what each code means.
+  generationNotice?: {
+    resolvedWithoutErrors: boolean;
+    modelWarnings: string[];
+    violations: {
+      severity: "error" | "warning";
+      code: string;
+      message: string;
+      dayNumber?: number;
+      itemIndex?: number;
+    }[];
+  };
+  // Set once this trip has a real row on the backend — either loaded via
+  // GET /trips/:id, or after POST /trips/create has succeeded once. Until
+  // then, "บันทึก" has to POST /trips/create (nothing to PATCH yet);
+  // afterward it PATCHes the trip/day/item endpoints instead, to avoid
+  // creating a duplicate trip on every save. backendDayIds/backendItemIds
+  // are the ids confirmed to exist server-side at sync time — a day or
+  // activity added locally afterward (handleAddDay/handleAddActivity, both
+  // client-generated UUIDs) isn't in these sets and is skipped by the PATCH
+  // sync, since the backend hasn't offered a create-day/create-item
+  // endpoint yet, only PATCH ones for entities that already exist.
+  backendSynced?: boolean;
+  backendDayIds?: string[];
+  backendItemIds?: string[];
+}
+
+// Accommodation details editable via "แก้ไขทริป" → "เปลี่ยนที่พัก" on the trip
+// detail page. Separate from Activity/Location since a trip's stay has
+// fields (price/amenities/check-in-out) no itinerary stop needs.
+export interface TripAccommodation {
+  name: string;
+  imageUrl?: string;
+  pricePerNight?: number; // THB
+  amenities: string[];
+  checkIn?: string; // "14:00"
+  checkOut?: string; // "12:00"
+  description?: string;
+}
+
+// A single ledger entry on the budget-management tab. Broader than
+// ActivityCategory (covers costs with no itinerary stop of their own, like
+// flights or fuel) — created either by linking an existing itinerary item
+// or by picking a category directly in the "เลือกรายการ" dialog.
+export type ExpenseCategory =
+  | "flight"
+  | "hotel"
+  | "car_rental"
+  | "transport"
+  | "food"
+  | "drinks"
+  | "sightseeing"
+  | "activity"
+  | "shopping"
+  | "fuel"
+  | "groceries"
+  | "other";
+
+export interface TripExpense {
+  id: string;
+  title: string;
+  amount: number; // THB
+  category: ExpenseCategory;
+  date?: string; // ISO date; unset means "ไม่บังคับ" (no date)
+  paidBy: string; // display name — no multi-user accounts in this demo, always "คุณ"
+  splitLabel: string; // e.g. "ไม่แบ่ง" — no companion list to split across yet
+  linkedActivityId?: string; // set when created from an existing itinerary stop
+}
+
+// ─── Trip media (cover image + gallery) ───
+// See docs for POST/PATCH/DELETE /trips/:tripId/media* and PUT
+// /trips/:tripId/cover. `Trip.coverImageUrl`/`GeneratedTrip.coverImageUrl`
+// above are the old (now-unused) column — new code should prefer
+// `coverImage.urls.*` and fall back to `coverImageUrl` only for
+// trips/mocks that predate this API (see lib/trip-media-api.ts's
+// resolveCoverImageUrl helper).
+
+export type MediaSource = "user_upload" | "place" | "activity" | "destination" | "system_default";
+
+export interface Media {
+  mediaId: string;
+  source: MediaSource;
+  sourcePlaceId?: string;
+  sourceActivityId?: string;
+  storageKey?: string;
+  urls: {
+    original: string;
+    large: string;
+    thumbnail: string;
+  };
+  altText?: string;
+  caption?: string;
+  focalPoint?: { x: number; y: number };
+  dimensions?: { width: number; height: number };
+  attribution?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaSummary {
+  totalImages: number;
+  hasMore: boolean;
+  galleryEndpoint: string;
+}
+
+// Lighter-weight shape returned by GET /trips/:tripId/media's `items` — see
+// #27 in the media API doc for why this differs from `Media` above.
+export interface GalleryMediaItem {
+  id: string;
+  source: MediaSource;
+  sourcePlaceId: string | null;
+  sourceActivityId: string | null;
+  dayNumber: number | null;
+  urls: {
+    large: string;
+    thumbnail: string;
+  };
+  altText: string | null;
+  caption: string | null;
+  isCover: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface TripGalleryResponse {
+  tripId: string;
+  coverMediaId?: string;
+  total: number;
+  page: number;
+  limit: number;
+  items: GalleryMediaItem[];
 }
 
 // ─── Place recommendations (Google Places / OpenTripMap) ───
@@ -198,7 +386,7 @@ export interface PlaceRecommendation {
   score?: number; // recommendationScore() result at generation time
 }
 
-// A place the user picked via Places Autocomplete, before Pluno-specific
+// A place the user picked via Places Autocomplete, before PunGuide-specific
 // scheduling info (time/cost/category) is attached.
 export interface SelectedPlace {
   googlePlaceId: string;
@@ -212,7 +400,7 @@ export interface SelectedPlace {
   addressComponents?: { longText: string | null; shortText: string | null; types: string[] }[];
 }
 
-// SelectedPlace + the scheduling info Pluno adds when the user builds their
+// SelectedPlace + the scheduling info PunGuide adds when the user builds their
 // own trip (Create Trip → "สร้างด้วยตัวเอง"). Saved client-side for now via
 // lib/trip-places.ts; no backend yet.
 export interface TripPlace extends SelectedPlace {

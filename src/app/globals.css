@@ -8,7 +8,7 @@
   --color-primary-foreground: #ffffff;
   --color-secondary-green: #4cac71;
   --color-deep-green: #1f5b45;
-  --color-brand-green: #2e6b4f; /* matches the "o" accents in public/images/brand-logo.svg */
+  --color-brand-green: #2e6b4f; /* PunGuide wordmark accent — see components/common/Logo.tsx */
   --color-accent-mint: #7ea891;
   --color-accent-orange: #F37130;
   --color-neutral-gray: #a3a0a0;
@@ -27,7 +27,7 @@
   --color-danger-bg: #fdeceb;
   --color-danger-border: #f2c5c0;
 
-  /* Activity category colors — from Pluno App UI design (theme.css / TripDetailView ACTIVITY_CONFIG) */
+  /* Activity category colors — from PunGuide App UI design (theme.css / TripDetailView ACTIVITY_CONFIG) */
   --color-cat-transport: #6b7fd4;
   --color-cat-food: var(--color-accent-orange);
   --color-cat-hotel: #5b9bd5;

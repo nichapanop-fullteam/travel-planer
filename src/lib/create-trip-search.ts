@@ -9,6 +9,8 @@ export interface CreateTripSearch {
   destination: string;
   destinationPlace?: Destination;
   duration: string;
+  startDate?: string;
+  endDate?: string;
   guests: string;
   adults: number;
   children: number;

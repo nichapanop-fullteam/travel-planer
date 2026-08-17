@@ -78,7 +78,7 @@ function DiscoveryHero({ destinationName }: { destinationName: string }) {
   }
 
   return (
-    <div className="relative flex min-h-[280px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-8 text-center">
+    <div className="relative flex min-h-[280px] flex-col items-center justify-center gap-5 overflow-hidden px-6 pb-8 pt-16 text-center sm:pt-20">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/hero-mountain.jpg"
@@ -116,7 +116,7 @@ function DiscoveryHero({ destinationName }: { destinationName: string }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-sm font-bold">
-              Pluno จัดแพลนให้
+              PunGuide จัดแพลนให้
               <span
                 className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
                 style={{ backgroundColor: "var(--color-accent-orange)" }}

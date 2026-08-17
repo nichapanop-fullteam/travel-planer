@@ -3,7 +3,7 @@ import type { Activity, Day } from "@/types";
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import { formatTHB, getGoogleMapsUrl } from "@/lib/trip-utils";
 
-// Timeline layout adapted from the Pluno App UI design (TripDetailView.ActivityRow)
+// Timeline layout adapted from the PunGuide App UI design (TripDetailView.ActivityRow)
 export function ActivityTimeline({ day, showCost = false }: { day: Day; showCost?: boolean }) {
   return (
     <div className="flex flex-col">

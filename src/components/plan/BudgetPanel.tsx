@@ -10,7 +10,7 @@ interface BudgetPanelTrip {
   budgetLimit?: number;
 }
 
-// Hero card + category breakdown adapted from the Pluno App UI design (TripDetailView.BudgetTab)
+// Hero card + category breakdown adapted from the PunGuide App UI design (TripDetailView.BudgetTab)
 export function BudgetPanel({ trip }: { trip: BudgetPanelTrip }) {
   const total = getTripTotalCost(trip);
   const overBudget = trip.budgetLimit != null && total > trip.budgetLimit;

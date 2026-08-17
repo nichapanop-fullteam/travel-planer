@@ -36,7 +36,9 @@ import { Divider } from "@/components/ui/Divider";
 import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { DEFAULT_RECOMMENDATION_CENTER, type RecommendedPlace } from "@/lib/place-recommendations";
 import { saveTripDraft } from "@/lib/trip-drafts";
-import { generateTripFromDraft, saveGeneratedTrip } from "@/lib/generated-trips";
+import { buildGeneratedTripFromApiResponse, createEmptyTripShell, saveGeneratedTrip } from "@/lib/generated-trips";
+import { generatePlan, GeneratePlanError } from "@/lib/generate-plan-api";
+import { buildGeneratePlanRequest } from "@/lib/generate-plan-mapping";
 import type {
   Activity,
   ActivityCategory,
@@ -47,6 +49,10 @@ import type {
   TripDraft,
 } from "@/types";
 
+// ai mode: places picked on the recommended-places step have no day chosen —
+// they're all folded into day 1 once the AI response comes back (see
+// withAiRecommendations). This is the 3-value PlaceCategory bucket the old
+// CATEGORY_SECTIONS UI groups places into, not the external API's 7-value one.
 const PLACE_TO_ACTIVITY_CATEGORY: Record<PlaceCategory, ActivityCategory> = {
   hotel: "hotel",
   restaurant: "food",
@@ -118,6 +124,8 @@ function CreateTripForm() {
   const [destination, setDestination] = useState(destinationParam);
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
+  const [startDate, setStartDate] = useState<string | undefined>(undefined);
+  const [endDate, setEndDate] = useState<string | undefined>(undefined);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [guests, setGuests] = useState(prefillDefaults ? buildGuestsLabel(1, 0) : "");
@@ -150,6 +158,7 @@ function CreateTripForm() {
   const [selectedRecommendations, setSelectedRecommendations] = useState<SelectedRecommendation[]>([]);
 
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [destDialogOpen, setDestDialogOpen] = useState(false);
   const [dateDialogOpen, setDateDialogOpen] = useState(false);
   const [guestDialogOpen, setGuestDialogOpen] = useState(false);
@@ -168,6 +177,8 @@ function CreateTripForm() {
         setDestination(last.destination);
         setDestinationPlace(last.destinationPlace);
         setDuration(last.duration);
+        setStartDate(last.startDate);
+        setEndDate(last.endDate);
         setGuests(last.guests);
         setAdults(last.adults);
         setChildren(last.children);
@@ -180,8 +191,8 @@ function CreateTripForm() {
 
   useEffect(() => {
     if (!hasHydratedSearch) return;
-    saveLastCreateTripSearch({ destination, destinationPlace, duration, guests, adults, children });
-  }, [hasHydratedSearch, destination, destinationPlace, duration, guests, adults, children]);
+    saveLastCreateTripSearch({ destination, destinationPlace, duration, startDate, endDate, guests, adults, children });
+  }, [hasHydratedSearch, destination, destinationPlace, duration, startDate, endDate, guests, adults, children]);
 
   const allStyleOptions = [...STYLE_OPTIONS, ...extraStyles];
   const remainingStyleOptions = MORE_STYLE_OPTIONS.filter(
@@ -213,7 +224,10 @@ function CreateTripForm() {
 
   function handleDestinationChange(value: string) {
     setDestination(value);
-    if (status === "error" && value.trim()) setStatus("idle");
+    if (status === "error" && value.trim()) {
+      setStatus("idle");
+      setErrorMessage(null);
+    }
   }
 
   function selectBudget(key: string) {
@@ -225,6 +239,8 @@ function CreateTripForm() {
     customBudgetInputRef.current?.focus();
   }
 
+  // ai mode: CATEGORY_SECTIONS toggle (see RecommendedPlacesStep) — a place
+  // is either selected into a bucket or not, no day assignment.
   function toggleRecommendation(place: RecommendedPlace, category: PlaceCategory) {
     setSelectedRecommendations((prev) =>
       prev.some((s) => s.place.googlePlaceId === place.googlePlaceId)
@@ -233,10 +249,11 @@ function CreateTripForm() {
     );
   }
 
-  // Appends whatever the user picked on the recommended-places step as
-  // extra day-1 activities — generateTripFromDraft only knows about the
-  // draft's preferences, not this selection, so it's merged in afterward.
-  function withSelectedRecommendations(trip: GeneratedTrip): GeneratedTrip {
+  // Appends whatever the user picked on the recommended-places step as extra
+  // day-1 activities — the trip is built from the draft's preferences alone,
+  // not this selection, so it's merged in afterward. ai mode doesn't know
+  // the real Day[] until the API responds, so everything lands on day 1.
+  function withAiRecommendations(trip: GeneratedTrip): GeneratedTrip {
     if (selectedRecommendations.length === 0 || trip.days.length === 0) return trip;
 
     const firstDay = trip.days[0];
@@ -271,7 +288,8 @@ function CreateTripForm() {
 
     // The primary button on step 1 moves to the recommended-places step
     // instead of generating right away — generation happens from step 2.
-    if (!isSkip && step === 1) {
+    // Self mode has no step 2 — it goes straight from step 1 to the trip page.
+    if (!isSkip && step === 1 && mode === "ai") {
       setStep(2);
       return;
     }
@@ -329,27 +347,58 @@ function CreateTripForm() {
     }
 
     setStatus("loading");
-    window.setTimeout(() => {
-      const draft: TripDraft = {
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        mode,
-        destination: destination.trim(),
-        destinationPlace,
-        duration: duration.trim(),
-        guests: guests.trim(),
-        styles: finalStyles,
-        pace: finalPace,
-        budget: finalBudget,
-        customBudget: finalCustomBudget,
-        conditions: finalConditions,
-        accommodation: finalAccommodation,
-      };
-      saveTripDraft(draft);
-      const generatedTrip = withSelectedRecommendations(generateTripFromDraft(draft));
-      saveGeneratedTrip(generatedTrip);
-      router.push(`/generated-plan/${generatedTrip.id}`);
-    }, 1200);
+    setErrorMessage(null);
+
+    const draft: TripDraft = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      mode,
+      destination: destination.trim(),
+      destinationPlace,
+      duration: duration.trim(),
+      startDate,
+      endDate,
+      guests: guests.trim(),
+      adults,
+      children,
+      styles: finalStyles,
+      pace: finalPace,
+      budget: finalBudget,
+      customBudget: finalCustomBudget,
+      conditions: finalConditions,
+      accommodation: finalAccommodation,
+    };
+    saveTripDraft(draft);
+
+    // "สร้างด้วยตัวเอง" (self mode) never calls the AI — it just needs an
+    // empty Trip Shell the traveler fills in themselves on the trip page.
+    if (mode === "self") {
+      window.setTimeout(() => {
+        const tripShell = createEmptyTripShell(draft);
+        saveGeneratedTrip(tripShell);
+        // ?edit=1 — land straight in edit mode instead of read-only, since the
+        // traveler just created this trip and is about to build it out.
+        router.push(`/generated-plan/${tripShell.id}?edit=1`);
+      }, 1200);
+      return;
+    }
+
+    generatePlan(buildGeneratePlanRequest(draft))
+      .then((response) => {
+        const generatedTrip = withAiRecommendations(buildGeneratedTripFromApiResponse(draft, response));
+        saveGeneratedTrip(generatedTrip);
+        router.push(`/generated-plan/${generatedTrip.id}?edit=1`);
+      })
+      .catch((err) => {
+        // NOTE: the trip row is already created server-side by this point
+        // (per the API docs) even on failure — there's no rollback and no
+        // documented delete-trip endpoint available to this app yet, so we
+        // deliberately don't auto-retry here (that would just pile up empty
+        // trips server-side). The user has to manually resubmit.
+        isSubmittingRef.current = false;
+        setStatus("error");
+        setErrorMessage(err instanceof GeneratePlanError ? err.message : "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
+      });
   }
 
   return (
@@ -382,6 +431,8 @@ function CreateTripForm() {
           onClose={() => setDateDialogOpen(false)}
           onConfirm={(result) => {
             setDuration(result.label);
+            setStartDate(result.startDate);
+            setEndDate(result.endDate);
             setDateDialogOpen(false);
           }}
         />
@@ -408,7 +459,15 @@ function CreateTripForm() {
         <div className="relative">
           {status === "error" && (
             <div className="mx-6 mt-6 rounded-2xl border px-4 py-3 text-sm sm:mx-8" style={{ backgroundColor: "var(--color-danger-bg)", borderColor: "var(--color-danger-border)", color: "var(--color-danger)" }}>
-              <strong>กรอกไม่ครบ</strong> — กรุณาระบุปลายทางก่อนสร้างแพลน
+              {errorMessage ? (
+                <>
+                  <strong>สร้างแพลนไม่สำเร็จ</strong> — {errorMessage}
+                </>
+              ) : (
+                <>
+                  <strong>กรอกไม่ครบ</strong> — กรุณาระบุปลายทางก่อนสร้างแพลน
+                </>
+              )}
             </div>
           )}
 
@@ -431,7 +490,7 @@ function CreateTripForm() {
             <>
               {mode === "self" && (
                 <div className="mx-6 mt-6 rounded-2xl border px-4 py-3 text-sm sm:mx-8" style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}>
-                  โหมด <strong>สร้างด้วยตัวเอง</strong> — คุณจะเลือกสถานที่เองในขั้นถัดไป ตัวเลือกด้านล่างใช้เป็นตัวช่วยกรองเท่านั้น
+                  โหมด <strong>สร้างด้วยตัวเอง</strong> — คุณจะเลือกสถานที่เองในหน้าแพลนทริป ตัวเลือกด้านล่างใช้เป็นตัวช่วยกรองเท่านั้น
                 </div>
               )}
 
@@ -478,7 +537,7 @@ function CreateTripForm() {
               </div>
               {styles.length === 0 && (
                 <p className="mt-2.5 text-xs text-[var(--color-muted)]">
-                  ยังไม่ได้เลือก — Pluno จะจัดทริปแบบทั่วไปให้ เลือกอย่างน้อย 1 อย่างเพื่อผลลัพธ์ที่ตรงใจกว่า
+                  ยังไม่ได้เลือก — PunGuide จะจัดทริปแบบทั่วไปให้ เลือกอย่างน้อย 1 อย่างเพื่อผลลัพธ์ที่ตรงใจกว่า
                 </p>
               )}
             </FormRow>
@@ -567,10 +626,12 @@ function CreateTripForm() {
               </>
             )}
 
-            <Divider />
+            {mode === "ai" && (
+              <>
+                <Divider />
 
-            <FormRow label="ที่พัก / โรงแรม">
-              <div className="flex flex-col gap-4">
+                <FormRow label="ที่พัก / โรงแรม">
+                  <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <AccommodationStatusCard
                     icon={Ticket}
@@ -737,7 +798,9 @@ function CreateTripForm() {
                   </div>
                 )}
               </div>
-            </FormRow>
+                </FormRow>
+              </>
+            )}
 
             <Divider />
 
@@ -770,16 +833,20 @@ function CreateTripForm() {
               would otherwise duplicate that CTA. */}
           {!(step === 2 && selectedRecommendations.length > 0) && (
             <div className="flex flex-col-reverse items-center gap-4 border-t border-[var(--color-border)]/40 px-6 py-5 sm:flex-row sm:justify-between sm:px-8">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-8 rounded-full" style={{ backgroundColor: "var(--color-accent-orange)" }} />
-                  <span
-                    className="h-2 w-2 rounded-full transition-colors"
-                    style={{ backgroundColor: step === 2 ? "var(--color-accent-orange)" : "#d5cdb8" }}
-                  />
+              {mode === "ai" ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-8 rounded-full" style={{ backgroundColor: "var(--color-accent-orange)" }} />
+                    <span
+                      className="h-2 w-2 rounded-full transition-colors"
+                      style={{ backgroundColor: step === 2 ? "var(--color-accent-orange)" : "#d5cdb8" }}
+                    />
+                  </div>
+                  <span className="text-sm text-[var(--color-muted)]">{step} จาก 2</span>
                 </div>
-                <span className="text-sm text-[var(--color-muted)]">{step} จาก 2</span>
-              </div>
+              ) : (
+                <span />
+              )}
               <div className="flex items-center gap-8">
                 <button
                   type="button"
@@ -812,6 +879,11 @@ function CreateTripForm() {
               <p className="text-sm font-semibold" style={{ color: "var(--color-brand-green)" }}>
                 กำลังสร้างแผนทริปของคุณ…
               </p>
+              {mode === "ai" && (
+                <p className="text-xs text-[var(--color-muted)]">
+                  อาจใช้เวลาถึง 30 วินาที — กำลังค้นสถานที่จริงและจัดแผนให้เหมาะกับคุณ
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -844,7 +916,7 @@ function Hero({
   const router = useRouter();
 
   return (
-    <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-8 text-center sm:min-h-[300px]">
+    <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-5 overflow-hidden px-6 pb-8 pt-16 text-center sm:min-h-[300px] sm:pt-20">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/hero-mountain.jpg"
@@ -926,7 +998,7 @@ function ModeToggle({
             : { color: "var(--foreground)" }
         }
       >
-        Pluno จัดแพลนให้
+        PunGuide จัดแพลนให้
         <span
           className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
           style={{ backgroundColor: "var(--color-accent-orange)" }}

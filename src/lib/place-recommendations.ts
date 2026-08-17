@@ -1,39 +1,40 @@
-import { fetchExternalPlaceSuggestions, type ExternalPlaceCategory, type ExternalSearchPlace } from "./external-places-api";
+import {
+  fetchExternalPlaceSuggestionSections,
+  type ExternalPlaceCategory,
+  type ExternalPlaceSuggestionSections,
+} from "./external-places-api";
 import type { PlaceCategory } from "@/types";
 
-// /places/suggest has no category filter — it returns one popularity-
-// ranked list per coordinate, upserted into the external API's own `places`
-// table on every call (same cost as /places/search). So the three
+// /places/suggest/sections returns three quota-guaranteed buckets per
+// coordinate (attractions/restaurants/accommodations) instead of one
+// popularity-ranked list split client-side — see docs for why the plain
+// /places/suggest endpoint can leave a category empty. The three
 // CategorySection calls in RecommendedPlacesStep (one per PlaceCategory)
-// must share a single fetch per center rather than each firing their own —
-// this cache is what makes that happen without changing that component.
-const suggestCache = new Map<string, Promise<ExternalSearchPlace[]>>();
-const SUGGEST_LIMIT = 20; // max allowed — one shared list split three ways needs the headroom
+// share a single fetch per center rather than each firing their own — this
+// cache is what makes that happen without changing that component.
+const sectionsCache = new Map<string, Promise<ExternalPlaceSuggestionSections>>();
+const SECTION_LIMIT = 10; // per section (API default is 5) — within the 1-20 max
 
 function cacheKey(center: { lat: number; lng: number }): string {
   return `${center.lat},${center.lng}`;
 }
 
-function fetchSuggestionsForCenter(center: { lat: number; lng: number }): Promise<ExternalSearchPlace[]> {
+function fetchSectionsForCenter(center: { lat: number; lng: number }): Promise<ExternalPlaceSuggestionSections> {
   const key = cacheKey(center);
-  let promise = suggestCache.get(key);
+  let promise = sectionsCache.get(key);
   if (!promise) {
-    promise = fetchExternalPlaceSuggestions(center.lat, center.lng, { limit: SUGGEST_LIMIT });
-    suggestCache.set(key, promise);
+    promise = fetchExternalPlaceSuggestionSections(center.lat, center.lng, { limit: SECTION_LIMIT });
+    sectionsCache.set(key, promise);
   }
   return promise;
 }
 
-// Maps the external API's DB taxonomy onto this app's PlaceCategory.
-// "transport" has no reasonable home in a "places to visit" list, so it's
-// dropped rather than force-mapped.
-const EXTERNAL_TO_PLACE_CATEGORY: Partial<Record<ExternalPlaceCategory, PlaceCategory>> = {
-  attraction: "attraction",
-  activity: "attraction",
-  shopping: "attraction",
-  restaurant: "restaurant",
-  cafe: "restaurant",
-  hotel: "hotel",
+// This app's PlaceCategory maps 1:1 onto the sections endpoint's bucket
+// keys — "restaurant" already includes cafe places server-side (see docs).
+const PLACE_CATEGORY_TO_SECTION: Record<PlaceCategory, keyof ExternalPlaceSuggestionSections> = {
+  attraction: "attractions",
+  restaurant: "restaurants",
+  hotel: "accommodations",
 };
 
 // The hardcoded Luang Prabang demo trip (and any older draft saved before
@@ -64,18 +65,17 @@ export async function fetchPlaceRecommendations(
   category: PlaceCategory,
   center: { lat: number; lng: number }
 ): Promise<RecommendedPlace[]> {
-  const results = await fetchSuggestionsForCenter(center);
+  const sections = await fetchSectionsForCenter(center);
+  const results = sections[PLACE_CATEGORY_TO_SECTION[category]];
 
-  return results
-    .filter((place) => EXTERNAL_TO_PLACE_CATEGORY[place.category] === category)
-    .map((place) => ({
-      googlePlaceId: place.id,
-      name: place.name,
-      address: place.address,
-      latitude: place.lat,
-      longitude: place.lng,
-      rating: place.rating,
-      imageUrl: place.imageUrl,
-      rawCategory: place.category,
-    }));
+  return results.map((place) => ({
+    googlePlaceId: place.id,
+    name: place.name,
+    address: place.address,
+    latitude: place.lat,
+    longitude: place.lng,
+    rating: place.rating,
+    imageUrl: place.imageUrl,
+    rawCategory: place.category,
+  }));
 }

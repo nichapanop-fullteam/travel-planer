@@ -1,18 +1,27 @@
-import { Bell, Search, SlidersHorizontal } from "lucide-react";
+import { Bell, Menu, Search, SlidersHorizontal } from "lucide-react";
 
 // Visual only — search/filter/notifications aren't wired up in this demo.
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border)]/40 bg-white px-6 py-3">
-      <div className="flex max-w-lg flex-1 items-center gap-2 rounded-full bg-[var(--color-surface)] px-4 py-2.5">
+    <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border)]/40 bg-white px-4 py-3 sm:px-6">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-surface)] md:hidden"
+        aria-label="เปิดเมนู"
+      >
+        <Menu size={18} />
+      </button>
+
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-[var(--color-surface)] px-4 py-2.5 sm:max-w-lg">
         <Search size={16} className="shrink-0 text-[var(--color-muted)]" />
         <input
           type="text"
           placeholder="ค้นหาแผนเที่ยว สถานที่ หรือผู้ใช้..."
           disabled
-          className="w-full bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
+          className="w-full min-w-0 bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
         />
-        <SlidersHorizontal size={16} className="shrink-0 text-[var(--color-muted)]" />
+        <SlidersHorizontal size={16} className="hidden shrink-0 text-[var(--color-muted)] sm:block" />
       </div>
 
       <div className="flex shrink-0 items-center gap-4">

@@ -1,4 +1,4 @@
-// Mock content for the redesigned Home page hero/sections (design ref: Pluno Guide UI).
+// Mock content for the redesigned Home page hero/sections (design ref: PunGuide UI).
 // Not wired to feed-data.ts's FeedTrip shape — these cards show summary stats only
 // (rating/saves, likes/comments), no full itinerary breakdown.
 
