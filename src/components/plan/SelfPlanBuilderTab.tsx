@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  Car,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,12 +15,15 @@ import {
   MapPin,
   Menu,
   Pencil,
+  Plane,
   Plus,
   Search,
   Share2,
   Star,
   Ticket,
   Wallet,
+  Waves,
+  Wifi,
   X,
 } from "lucide-react";
 import type { Activity, Day, GeneratedTrip, TravelFromPrevious, TravelType, TripAccommodation } from "@/types";
@@ -952,6 +956,154 @@ function AddPlaceDialog({
   );
 }
 
+interface AccommodationOption {
+  key: string;
+  dayNumber: number;
+  hotel: Activity;
+}
+
+// One entry per day that actually has a hotel-category stop, deduped by
+// place name — a trip staying at the same hotel for several nights in a row
+// only gets one chip, not one per day. Mirrors the same helper on
+// generated-plan/[id]/page.tsx's AI-mode AccommodationAccordion.
+function collectAccommodationOptions(trip: GeneratedTrip): AccommodationOption[] {
+  const seen = new Set<string>();
+  const options: AccommodationOption[] = [];
+  for (const day of trip.days) {
+    const hotel = day.activities.find((a) => a.category === "hotel");
+    if (!hotel) continue;
+    const key = hotel.location?.name || hotel.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    options.push({ key, dayNumber: day.dayNumber, hotel });
+  }
+  return options;
+}
+
+// Read-only gallery of the hotel stops already sitting in the itinerary —
+// separate from the booking form below it, which is for describing/adding
+// one. Renders nothing until at least one day actually has a hotel stop.
+function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
+  const options = useMemo(() => collectAccommodationOptions(trip), [trip]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selected = options.find((o) => o.key === selectedKey) ?? options[0];
+
+  if (!selected) return null;
+
+  // trip.accommodation (set via the booking form below) only ever describes
+  // one, trip-wide stay — it only overrides name/image/description when
+  // there's just a single accommodation option, so switching chips always
+  // reflects that day's actual hotel instead of getting stuck on the override.
+  const acc = options.length <= 1 ? trip.accommodation : undefined;
+  const name = acc?.name || selected.hotel.location?.name || selected.hotel.title;
+  const imageUrl = acc?.imageUrl || selected.hotel.location?.imageUrl || "/images/luang-prabang.jpg";
+  const description =
+    acc?.description || "Boutique Luxury Resort · เขตนอกเมือง · ท่าเรือกลางเมือง · ตลาดมืดตรงข้าม · เดินถึงภูสี";
+  const checkInOutLabel =
+    acc?.checkIn || acc?.checkOut
+      ? `เช็คอิน ${acc?.checkIn ?? "-"} · เช็คเอาท์ ${acc?.checkOut ?? "-"}`
+      : "เช็คอิน 14:00 · เช็คเอาท์ 12:00 — ฝากกระเป๋าได้";
+  const amenities =
+    acc?.amenities && acc.amenities.length > 0
+      ? acc.amenities.map((label) => ({ icon: Check, label }))
+      : [
+          { icon: Wifi, label: "อินเทอร์เน็ตฟรี" },
+          { icon: Car, label: "รถรับส่งฟรี" },
+          { icon: Waves, label: "สระ 82 ฟุต" },
+          { icon: Plane, label: "สนามบิน 15 นาที" },
+        ];
+
+  return (
+    <div className="flex flex-col gap-3 rounded-3xl bg-white p-4">
+      {options.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+          {options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setSelectedKey(option.key)}
+              className="shrink-0 overflow-hidden rounded-2xl border-2 text-left transition"
+              style={{ borderColor: option.key === selected.key ? "var(--color-brand-green)" : "transparent" }}
+            >
+              <div className="flex items-center gap-2 bg-[#FAF8F5] px-3 py-2">
+                <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#edf0ee]">
+                  {option.hotel.location?.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={option.hotel.location.imageUrl} alt="" className="h-full w-full object-cover" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="whitespace-nowrap text-xs font-bold">{option.hotel.location?.name || option.hotel.title}</p>
+                  <p className="text-[10px] text-[var(--color-muted)]">วันที่ {option.dayNumber}</p>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <div className="h-40 w-full shrink-0 overflow-hidden rounded-2xl sm:h-auto sm:w-56">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        </div>
+        <div className="flex flex-1 flex-col gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <span
+                className="mb-1.5 inline-block rounded-full px-2.5 py-1 text-[10px] font-bold uppercase"
+                style={{ backgroundColor: "#FFF3D6", color: "#B8860B" }}
+              >
+                Recommend
+              </span>
+              <p className="text-base font-bold sm:text-lg">{name}</p>
+              <p className="text-xs text-[var(--color-muted)] sm:text-sm">{description}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              {acc?.pricePerNight ? (
+                <p className="text-lg font-extrabold sm:text-xl">{formatTHB(acc.pricePerNight)}/คืน</p>
+              ) : (
+                <>
+                  <p className="text-lg font-extrabold sm:text-xl">$XXXXX</p>
+                  <p className="text-xs text-[var(--color-muted)]">฿XXXXXX/คืน</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {amenities.map((a) => (
+              <span
+                key={a.label}
+                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <a.icon size={11} />
+                {a.label}
+              </span>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+              <Clock size={13} />
+              {checkInOutLabel}
+            </p>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
+              style={{ backgroundColor: "var(--color-accent-orange)" }}
+            >
+              ดูรายละเอียด
+              <ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AccommodationAccordion({
   trip,
   center,
@@ -1041,6 +1193,8 @@ function AccommodationAccordion({
 
       {expanded && (
         <div className="flex flex-col gap-4 px-5 pb-5">
+          <AccommodationGallery trip={trip} />
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <AccommodationStatusCard
               icon={Ticket}

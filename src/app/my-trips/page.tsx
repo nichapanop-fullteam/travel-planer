@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, MapPin, Plus } from "lucide-react";
+import { LoaderCircle, MapPin, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { ConsumerShell } from "@/components/consumer/ConsumerShell";
 import LogoutButton from "@/components/LogoutButton";
-import { getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
+import { deleteTrip, getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
 
 // Client-side route guard only — good enough for this prototype, but not
@@ -18,6 +18,8 @@ export default function MyTripsPage() {
   const { user, backendUser, isLoading } = useAuth();
   const [trips, setTrips] = useState<BackendTripListItem[] | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (!isLoading && !backendUser) {
@@ -44,6 +46,24 @@ export default function MyTripsPage() {
       cancelled = true;
     };
   }, [backendUser, router]);
+
+  function handleDelete(trip: BackendTripListItem) {
+    if (!window.confirm(`ลบทริป "${trip.title}"? การลบนี้ไม่สามารถย้อนกลับได้`)) return;
+    setDeleteError("");
+    setDeletingId(trip.id);
+    deleteTrip(trip.id)
+      .then(() => {
+        setTrips((prev) => prev?.filter((t) => t.id !== trip.id) ?? prev);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof BackendAuthenticationError) {
+          router.replace("/login");
+          return;
+        }
+        setDeleteError(`ลบทริป "${trip.title}" ไม่สำเร็จ กรุณาลองอีกครั้ง`);
+      })
+      .finally(() => setDeletingId(null));
+  }
 
   if (isLoading) {
     return (
@@ -87,6 +107,12 @@ export default function MyTripsPage() {
             </Link>
           </div>
 
+          {deleteError && (
+            <div className="mb-4 rounded-2xl bg-[var(--color-danger-bg)] px-5 py-4 text-sm font-semibold text-[var(--color-danger)]">
+              {deleteError}
+            </div>
+          )}
+
           {loadError ? (
             <div className="rounded-2xl bg-[var(--color-danger-bg)] px-5 py-4 text-sm font-semibold text-[var(--color-danger)]">
               {loadError}
@@ -124,6 +150,23 @@ export default function MyTripsPage() {
                     >
                       {trip.status === "confirmed" ? "ยืนยันแล้ว" : "ร่างแผน"}
                     </span>
+                    <button
+                      type="button"
+                      aria-label={`ลบทริป ${trip.title}`}
+                      disabled={deletingId === trip.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDelete(trip);
+                      }}
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-[var(--color-danger)] shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingId === trip.id ? (
+                        <LoaderCircle size={14} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                    </button>
                   </div>
                   <div className="p-4">
                     <p className="truncate font-bold">{trip.title}</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -54,7 +54,7 @@ import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
-import { addTripMediaFromPlace, resolveCoverImageUrl } from "@/lib/trip-media-api";
+import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 
 // Bespoke per-activity icons for the Luang Prabang demo itinerary — overrides
@@ -734,11 +734,35 @@ function Hero({ trip, onManagePhotos }: { trip: GeneratedTrip; onManagePhotos: (
     { key: "conditions", icon: Asterisk, label: trip.conditionsLabel },
   ];
 
+  // resolveCoverImageUrl falls back to the static /images/hero-mountain.jpg
+  // placeholder (trip.coverImageUrl) whenever PUT /trips/:tripId/cover hasn't
+  // been called yet — before giving up to that, check GET /trips/:tripId/media
+  // for a real photo (e.g. one attached via addTripMediaFromPlace when a place
+  // was added to the itinerary) and use whichever it flags as the cover.
+  const [galleryCover, setGalleryCover] = useState<string | null>(null);
+  useEffect(() => {
+    if (trip.coverImage) return;
+    let cancelled = false;
+    getTripGallery(trip.id, { page: 1, limit: 12 })
+      .then((gallery) => {
+        if (cancelled) return;
+        const cover = gallery.items.find((item) => item.isCover) ?? gallery.items[0];
+        if (cover) setGalleryCover(cover.urls.large);
+      })
+      .catch(() => {
+        // No gallery yet (or the request failed) — resolveCoverImageUrl's own
+        // placeholder below covers this silently.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trip.id, trip.coverImage]);
+
   return (
     <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-6 text-center sm:min-h-[260px]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={resolveCoverImageUrl(trip, "large")}
+        src={galleryCover ?? resolveCoverImageUrl(trip, "large")}
         alt=""
         className="absolute inset-0 h-full w-full object-cover object-[80%_30%]"
       />
@@ -1078,9 +1102,34 @@ function findHotelActivity(trip: GeneratedTrip): Activity | undefined {
   return trip.days.flatMap((d) => d.activities).find((a) => a.category === "hotel" && a.location?.imageUrl);
 }
 
+interface AccommodationOption {
+  key: string;
+  dayNumber: number;
+  hotel: Activity;
+}
+
+// One entry per day that actually has a hotel-category stop, deduped by
+// place name — a trip staying at the same hotel for several nights in a row
+// only gets one chip, not one per day.
+function collectAccommodationOptions(trip: GeneratedTrip): AccommodationOption[] {
+  const seen = new Set<string>();
+  const options: AccommodationOption[] = [];
+  for (const day of trip.days) {
+    const hotel = day.activities.find((a) => a.category === "hotel");
+    if (!hotel) continue;
+    const key = hotel.location?.name || hotel.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    options.push({ key, dayNumber: day.dayNumber, hotel });
+  }
+  return options;
+}
+
 // Falls back to the first hotel-category Activity (and static placeholder
 // copy) when `trip.accommodation` hasn't been set via "เปลี่ยนที่พัก" yet —
-// keeps older trips saved before this field existed looking the same as before.
+// keeps older trips saved before this field existed looking the same as
+// before. When more than one day has its own hotel stop, a chip row lets the
+// traveler flip through each one instead of only ever seeing the first.
 function AccommodationAccordion({
   trip,
   canEdit,
@@ -1091,8 +1140,16 @@ function AccommodationAccordion({
   onEdit: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const hotel = findHotelActivity(trip);
-  const acc = trip.accommodation;
+  const options = useMemo(() => collectAccommodationOptions(trip), [trip]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selectedOption = options.find((o) => o.key === selectedKey) ?? options[0];
+  const hotel = selectedOption?.hotel ?? findHotelActivity(trip);
+
+  // trip.accommodation (set via "เปลี่ยนที่พัก") only ever describes one,
+  // trip-wide stay — it only overrides name/image/description when there's
+  // just a single accommodation option, so switching chips always reflects
+  // that day's actual hotel instead of getting stuck on the same override.
+  const acc = options.length <= 1 ? trip.accommodation : undefined;
   const name = acc?.name || hotel?.location?.name || "ที่พัก";
   const imageUrl = acc?.imageUrl || hotel?.location?.imageUrl || "/images/luang-prabang.jpg";
   const description = acc?.description || "Boutique Luxury Resort · เขตนอกเมือง · ท่าเรือกลางเมือง · ตลาดมืดตรงข้าม · เดินถึงภูสี";
@@ -1133,13 +1190,42 @@ function AccommodationAccordion({
       </button>
 
       {expanded && (
-        <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row">
-          <div className="h-40 w-full shrink-0 overflow-hidden rounded-2xl sm:h-auto sm:w-56">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-          </div>
-          <div className="flex flex-1 flex-col gap-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
+        <>
+          {options.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto px-5 pb-3 [scrollbar-width:none]">
+              {options.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setSelectedKey(option.key)}
+                  className="shrink-0 overflow-hidden rounded-2xl border-2 text-left transition"
+                  style={{
+                    borderColor: option.key === selectedOption?.key ? "var(--color-brand-green)" : "transparent",
+                  }}
+                >
+                  <div className="flex items-center gap-2 bg-white px-3 py-2">
+                    <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#edf0ee]">
+                      {option.hotel.location?.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={option.hotel.location.imageUrl} alt="" className="h-full w-full object-cover" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="whitespace-nowrap text-xs font-bold">{option.hotel.location?.name || option.hotel.title}</p>
+                      <p className="text-[10px] text-[var(--color-muted)]">วันที่ {option.dayNumber}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row">
+            <div className="h-40 w-full shrink-0 overflow-hidden rounded-2xl sm:h-auto sm:w-56">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            </div>
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <span
                   className="mb-1.5 inline-block rounded-full px-2.5 py-1 text-[10px] font-bold uppercase"
@@ -1203,7 +1289,8 @@ function AccommodationAccordion({
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

@@ -157,3 +157,19 @@ export async function getMyTrips(): Promise<BackendTripListItem[]> {
 
   return response.json();
 }
+
+// DELETE /trips/:tripId — not yet confirmed against the real backend (no
+// delete-trip endpoint has been documented for this app so far, see the
+// comment on createTripOnServer's error handling in trips-create-api.ts);
+// this follows the same REST shape as every other single-trip mutation here
+// (PATCH /trips/:tripId, DELETE /trips/:tripId/media/:mediaId, ...).
+export async function deleteTrip(tripId: string): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`ลบทริปไม่สำเร็จ (${response.status} ${response.statusText}) ${body.slice(0, 300)}`);
+  }
+}
