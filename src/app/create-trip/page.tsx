@@ -471,6 +471,8 @@ function CreateTripForm() {
 
         <DatePickerDialog
           isOpen={dateDialogOpen}
+          initialStartDate={startDate}
+          initialEndDate={endDate}
           onClose={() => setDateDialogOpen(false)}
           onConfirm={(result) => {
             setDuration(result.label);

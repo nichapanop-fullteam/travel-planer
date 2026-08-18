@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
@@ -49,10 +49,18 @@ function nightsLabel(nights: number): string {
 
 export function DatePickerDialog({
   isOpen,
+  initialStartDate,
+  initialEndDate,
   onClose,
   onConfirm,
 }: {
   isOpen: boolean;
+  // Whatever the parent already has selected (e.g. hydrated from a previous
+  // search) — re-seeds the calendar/nights state below every time the dialog
+  // opens, so reopening it shows the existing selection instead of a blank
+  // calendar every time.
+  initialStartDate?: string;
+  initialEndDate?: string;
   onClose: () => void;
   onConfirm: (result: DatePickerResult) => void;
 }) {
@@ -62,6 +70,20 @@ export function DatePickerDialog({
   const [rangeStart, setRangeStart] = useState<Date | null>(null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
   const [nights, setNights] = useState(1);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const start = initialStartDate ? startOfDay(new Date(initialStartDate)) : null;
+    const end = initialEndDate ? startOfDay(new Date(initialEndDate)) : null;
+    setRangeStart(start);
+    setRangeEnd(end);
+    setTab(start ? "range" : "nights");
+    setViewDate(start ?? new Date(today.getFullYear(), today.getMonth(), 1));
+    if (start && end) {
+      setNights(Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialStartDate, initialEndDate]);
 
   if (!isOpen) return null;
 

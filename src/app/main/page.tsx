@@ -81,7 +81,7 @@ export default function MainPage() {
         <LeftNav />
 
         <section className="min-w-0">
-          <div className="sticky top-[64px] z-20 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6]/95 backdrop-blur sm:top-[73px]">
+          <div className="sticky top-[64px] z-20 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6] sm:top-[73px]">
             <div className="flex">
               {["สำหรับคุณ", "กำลังติดตาม", "แพลนทริป"].map((tab) => (
                 <button
@@ -125,7 +125,7 @@ export default function MainPage() {
 
 function SocialHeader() {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-[#e4e9e6] bg-white/95 backdrop-blur-xl">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-[#e4e9e6] bg-white">
       <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-3 px-3 sm:h-[72px] sm:gap-4 sm:px-8">
         <Link href="/main" className="shrink-0"><Logo className="text-lg sm:text-xl" /></Link>
         <div className="relative ml-1 hidden max-w-md flex-1 md:block">
@@ -283,7 +283,7 @@ function LemonCard({ trip }: { trip: BackendTripListItem }) {
 // than a website: Home / Discover / a raised create button / Saved / Profile.
 function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e5e9e6] bg-white/95 backdrop-blur-xl lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e5e9e6] bg-white lg:hidden">
       <div className="mx-auto flex max-w-[560px] items-center justify-between px-6 py-2">
         <Link href="/main" className="flex flex-col items-center gap-0.5 px-3 py-1.5 text-[#236747]">
           <Home size={22} strokeWidth={2.5} fill="currentColor" fillOpacity={0.12} />

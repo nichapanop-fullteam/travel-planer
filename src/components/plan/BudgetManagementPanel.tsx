@@ -5,16 +5,15 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  List,
+  Download,
   Plus,
   Pencil,
   Receipt,
-  Settings,
+  Share2,
   Trash2,
-  UserPlus,
   X,
 } from "lucide-react";
-import type { ExpenseCategory, GeneratedTrip, TripExpense } from "@/types";
+import type { Day, ExpenseCategory, GeneratedTrip, TripExpense } from "@/types";
 import { categoryIcon } from "@/lib/category-styles";
 import {
   ACTIVITY_TO_EXPENSE_CATEGORY,
@@ -24,6 +23,44 @@ import {
 } from "@/lib/expense-styles";
 import { formatExpenseDate, formatExpenseTotal, getExpensesTotal, seedExpensesFromTrip } from "@/lib/trip-expenses";
 import { formatTHB } from "@/lib/trip-utils";
+
+// Cycled per category in the "สัดส่วนค่าใช้จ่าย" bar/legend — enough distinct
+// hues to keep adjacent segments from ever reading as the same color even
+// when several categories are present at once.
+const BREAKDOWN_COLORS = ["#1f3d2e", "#2a9e64", "#8fcdb0", "#f0a53c", "#e2c9a3", "#6b7fd4", "#e05252"];
+
+interface CategoryBreakdown {
+  category: ExpenseCategory;
+  amount: number;
+  percent: number;
+  color: string;
+}
+
+function getCategoryBreakdown(expenses: TripExpense[]): CategoryBreakdown[] {
+  const total = getExpensesTotal(expenses);
+  if (total <= 0) return [];
+
+  const totalsByCategory = new Map<ExpenseCategory, number>();
+  for (const expense of expenses) {
+    totalsByCategory.set(expense.category, (totalsByCategory.get(expense.category) ?? 0) + expense.amount);
+  }
+
+  return Array.from(totalsByCategory.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, amount], i) => ({
+      category,
+      amount,
+      percent: Math.round((amount / total) * 100),
+      color: BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length],
+    }));
+}
+
+// Expenses seeded from the itinerary (see seedExpensesFromTrip) carry the
+// activity's own day.date — matching on that same string is enough to group
+// by day without needing a separate day <-> expense link.
+function getDayExpenseTotal(day: Day, expenses: TripExpense[]): number {
+  return expenses.filter((e) => e.date === day.date).reduce((sum, e) => sum + e.amount, 0);
+}
 
 // Reference-design "การจัดการงบประมาณ" tab: a spend summary, an expense
 // ledger, and the add-expense + pick-item flows. Companion-related affordances
@@ -55,61 +92,111 @@ export function BudgetManagementPanel({
     const db = b.date ?? "";
     return sortAsc ? da.localeCompare(db) : db.localeCompare(da);
   });
+  const breakdown = getCategoryBreakdown(expenses);
+  const goal = trip.budgetGoal;
+  const spentPercent = goal ? Math.min(100, Math.round((total / goal) * 100)) : 0;
+  const remaining = goal ? goal - total : undefined;
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-extrabold sm:text-2xl">การจัดการงบประมาณ</h2>
-        <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-bold text-white sm:px-5"
-          style={{ backgroundColor: "var(--color-accent-orange)" }}
-        >
-          <Plus size={16} /> เพิ่มค่าใช้จ่าย
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-extrabold sm:text-2xl">สรุปงบ</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <Share2 size={14} /> แชร์
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <Download size={14} /> บันทึกรูป
+          </button>
+          <button
+            type="button"
+            onClick={() => setGoalOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            <Pencil size={14} /> แก้ไขงบ
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            <Plus size={14} /> เพิ่มงบ
+          </button>
+        </div>
       </div>
 
-      <div className="rounded-2xl p-5 sm:p-6" style={{ backgroundColor: "var(--color-surface)" }}>
-        <div className="flex flex-wrap items-start justify-between gap-6">
-          <div>
-            <p className="text-3xl font-extrabold tracking-tight sm:text-4xl">{formatExpenseTotal(total)}</p>
-            {trip.budgetGoal ? (
-              <p className="mt-2 text-xs font-semibold text-[var(--color-muted)]">
-                ใช้ไปแล้ว {Math.min(100, Math.round((total / trip.budgetGoal) * 100))}% จากงบ {formatTHB(trip.budgetGoal)}
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setGoalOpen(true)}
-                className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <Pencil size={14} /> ตั้งงบประมาณ
-              </button>
-              <span
-                title={DEMO_DISABLED_TITLE}
-                className="flex cursor-default items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold opacity-70"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <Receipt size={14} /> ยอดคงเหลือกลุ่ม
-              </span>
+      <div className="rounded-3xl p-5 text-white sm:p-6" style={{ backgroundColor: "var(--color-brand-green)" }}>
+        <p className="text-sm font-medium text-white/80">งบประมาณรวมทั้งทริปที่ตั้งไว้</p>
+        <p className="mt-1 text-3xl font-extrabold sm:text-4xl">{goal ? formatTHB(goal) : "ยังไม่ได้ตั้งงบ"}</p>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
+          <span>งบที่ใช้จริง = {formatTHB(total)}</span>
+          {remaining !== undefined && (
+            <span className="text-white/80">
+              {remaining >= 0 ? `เหลือ ${formatTHB(remaining)} จะเท่างบที่ตั้งไว้` : `เกินงบไป ${formatTHB(-remaining)}`}
+            </span>
+          )}
+        </div>
+
+        {goal ? (
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/20">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${spentPercent}%`, backgroundColor: "var(--color-accent-mint)" }}
+            />
+          </div>
+        ) : null}
+
+        {breakdown.length > 0 && (
+          <div className="mt-5 rounded-2xl bg-white p-4 text-[var(--foreground)] sm:p-5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-bold sm:text-base">สัดส่วนค่าใช้จ่าย</h3>
+              <span className="text-xs text-[var(--color-muted)]">{expenses.length} รายการ</span>
+            </div>
+
+            <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full">
+              {breakdown.map((b) => (
+                <div key={b.category} style={{ width: `${b.percent}%`, backgroundColor: b.color }} />
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
+              {breakdown.map((b) => (
+                <div key={b.category}>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-muted)]">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
+                    {expenseCategoryLabel[b.category]}
+                  </p>
+                  <p className="mt-1 text-sm font-extrabold">{formatTHB(b.amount)}</p>
+                  <p className="text-xs text-[var(--color-muted)]">{b.percent}%</p>
+                </div>
+              ))}
             </div>
           </div>
+        )}
+      </div>
 
-          <div className="flex flex-col gap-3 text-sm font-semibold text-[var(--color-muted)]">
-            <span title={DEMO_DISABLED_TITLE} className="flex cursor-default items-center gap-2 opacity-80">
-              <List size={16} /> ดูการแยกย่อย
-            </span>
-            <span title={DEMO_DISABLED_TITLE} className="flex cursor-default items-center gap-2 opacity-80">
-              <UserPlus size={16} /> เพิ่มเพื่อนร่วมทริป
-            </span>
-            <span title={DEMO_DISABLED_TITLE} className="flex cursor-default items-center gap-2 opacity-80">
-              <Settings size={16} /> การตั้งค่า
-            </span>
+      <div className="flex flex-col gap-2.5">
+        {trip.days.map((day) => (
+          <div
+            key={day.id}
+            className="flex items-center justify-between rounded-2xl border px-5 py-3.5"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <span className="text-sm font-bold">วันที่ {day.dayNumber}</span>
+            <span className="text-sm font-extrabold">{formatTHB(getDayExpenseTotal(day, expenses))}</span>
           </div>
-        </div>
+        ))}
       </div>
 
       <div>

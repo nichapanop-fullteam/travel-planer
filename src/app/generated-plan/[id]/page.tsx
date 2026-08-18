@@ -1893,8 +1893,14 @@ function TripMapPanel({ day }: { day: Day }) {
   const selected = day.activities.find((a) => a.id === selectedId);
 
   return (
-    <div className="relative min-h-[320px] overflow-hidden rounded-2xl border border-[var(--color-border)]/25">
-      <FakeMapBackground />
+    // overflow-hidden lives on the background wrapper below, not this outer
+    // div — PlacePopup positions itself relative to a pin here, and clipping
+    // the whole panel was cutting the popup off at the map's own edges
+    // instead of letting it float over whatever's next to the map.
+    <div className="relative min-h-[320px] rounded-2xl border border-[var(--color-border)]/25">
+      <div className="absolute inset-0 overflow-hidden rounded-2xl">
+        <FakeMapBackground />
+      </div>
 
       <button
         type="button"
