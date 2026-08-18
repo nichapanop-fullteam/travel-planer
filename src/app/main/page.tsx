@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   Bookmark,
@@ -18,10 +19,15 @@ import {
   Users,
 } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
+import { BookingBar } from "@/components/consumer/BookingBar";
+import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
+import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
+import { GuestPickerDialog } from "@/components/consumer/GuestPickerDialog";
+import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { feedCategoryLabel } from "@/lib/feed-categories";
-import type { FeedCategory } from "@/types";
+import type { Destination, FeedCategory } from "@/types";
 
 // Every cover crops to the same ratio — object-cover absorbs each source
 // photo's real (and differing) dimensions so the grid still lines up cleanly
@@ -81,7 +87,9 @@ export default function MainPage() {
         <LeftNav />
 
         <section className="min-w-0">
-          <div className="sticky top-[64px] z-20 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6] sm:top-[73px]">
+          <HomeSearchBar />
+
+          <div className="sticky top-[64px] z-20 mt-4 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6] sm:top-[73px]">
             <div className="flex">
               {["สำหรับคุณ", "กำลังติดตาม", "แพลนทริป"].map((tab) => (
                 <button
@@ -120,6 +128,117 @@ export default function MainPage() {
 
       <BottomNav />
     </main>
+  );
+}
+
+// Same Destination/Date/Guest search widget as the Create Trip hero (see
+// BookingBar's own doc comment) — searching here just hands the entered
+// fields to create-trip via the same "last search" localStorage prefill it
+// already reads on mount, rather than duplicating its whole form here.
+function HomeSearchBar() {
+  const router = useRouter();
+  const [destination, setDestination] = useState("");
+  const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
+  const [duration, setDuration] = useState("");
+  const [startDate, setStartDate] = useState<string | undefined>(undefined);
+  const [endDate, setEndDate] = useState<string | undefined>(undefined);
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
+  const [guests, setGuests] = useState("");
+  const [destDialogOpen, setDestDialogOpen] = useState(false);
+  const [dateDialogOpen, setDateDialogOpen] = useState(false);
+  const [guestDialogOpen, setGuestDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const last = getLastCreateTripSearch();
+    if (!last) return;
+    setDestination(last.destination);
+    setDestinationPlace(last.destinationPlace);
+    setDuration(last.duration);
+    setStartDate(last.startDate);
+    setEndDate(last.endDate);
+    setGuests(last.guests);
+    setAdults(last.adults);
+    setChildren(last.children);
+  }, []);
+
+  function handleSearch() {
+    saveLastCreateTripSearch({ destination, destinationPlace, duration, startDate, endDate, guests, adults, children });
+    router.push("/create-trip");
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/luang-prabang-aerial.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute inset-0 bg-black/35" />
+      <div className="relative flex flex-col items-center gap-3 px-4 py-7 sm:py-8">
+        <p className="text-base font-extrabold text-white drop-shadow-sm sm:text-lg">พร้อมทริปต่อไปหรือยัง?</p>
+        <BookingBar
+          fields={[
+            {
+              icon: MapPin,
+              label: "Destination",
+              value: destination,
+              placeholder: "หลวงพระบาง, ลาว",
+              onFieldClick: () => setDestDialogOpen(true),
+              readOnly: true,
+            },
+            {
+              icon: CalendarDays,
+              label: "Date",
+              value: duration,
+              placeholder: "วันเดินทางไป - วันกลับ",
+              onFieldClick: () => setDateDialogOpen(true),
+              readOnly: true,
+            },
+            {
+              icon: Users,
+              label: "Guest",
+              value: guests,
+              placeholder: "ประเภท และจำนวนคน",
+              onFieldClick: () => setGuestDialogOpen(true),
+              readOnly: true,
+            },
+          ]}
+          onSearch={handleSearch}
+        />
+      </div>
+
+      <DestinationPickerDialog
+        isOpen={destDialogOpen}
+        onClose={() => setDestDialogOpen(false)}
+        onConfirm={(result) => {
+          setDestination(result.label);
+          setDestinationPlace(result.destination);
+          setDestDialogOpen(false);
+        }}
+      />
+      <DatePickerDialog
+        isOpen={dateDialogOpen}
+        initialStartDate={startDate}
+        initialEndDate={endDate}
+        onClose={() => setDateDialogOpen(false)}
+        onConfirm={(result) => {
+          setDuration(result.label);
+          setStartDate(result.startDate);
+          setEndDate(result.endDate);
+          setDateDialogOpen(false);
+        }}
+      />
+      <GuestPickerDialog
+        isOpen={guestDialogOpen}
+        initialAdults={adults}
+        initialChildren={children}
+        onClose={() => setGuestDialogOpen(false)}
+        onConfirm={(result) => {
+          setAdults(result.adults);
+          setChildren(result.children);
+          setGuests(result.label);
+          setGuestDialogOpen(false);
+        }}
+      />
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ImageOff, LoaderCircle, Star, Trash2, Upload, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, LoaderCircle, Star, Trash2, Upload, X } from "lucide-react";
 import {
   deleteTripMedia,
   getTripGallery,
@@ -30,6 +30,10 @@ export function TripGalleryDialog({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Which item is open in the full-size preview lightbox — set/cleared by
+  // clicking a thumbnail (not the hover star/trash quick-actions, which stay
+  // on the grid for the "act without opening anything" case).
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function load() {
@@ -155,8 +159,15 @@ export function TripGalleryDialog({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {items.map((item) => (
                 <div key={item.id} className="group relative aspect-square overflow-hidden rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.urls.thumbnail} alt={item.altText ?? ""} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewId(item.id)}
+                    aria-label="ดูรูปภาพขนาดใหญ่"
+                    className="block h-full w-full"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.urls.thumbnail} alt={item.altText ?? ""} className="h-full w-full object-cover" />
+                  </button>
                   {item.isCover && (
                     <span
                       className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold"
@@ -196,6 +207,134 @@ export function TripGalleryDialog({
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {previewId && (
+        <GalleryPreview
+          items={items}
+          activeId={previewId}
+          busyId={busyId}
+          onChangeActive={setPreviewId}
+          onClose={() => setPreviewId(null)}
+          onSetCover={handleSetCover}
+          onDelete={async (mediaId) => {
+            const index = items.findIndex((it) => it.id === mediaId);
+            await handleDelete(mediaId);
+            const remaining = items.filter((it) => it.id !== mediaId);
+            setPreviewId(remaining.length ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null) : null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-size lightbox — opened by clicking a thumbnail (the grid's hover
+// star/trash stay as quick-actions that don't require opening this at all).
+// Same set-cover/delete actions as the grid, plus prev/next since this is
+// also just a nicer way to flip through the trip's photos one at a time.
+function GalleryPreview({
+  items,
+  activeId,
+  busyId,
+  onChangeActive,
+  onClose,
+  onSetCover,
+  onDelete,
+}: {
+  items: GalleryMediaItem[];
+  activeId: string;
+  busyId: string | null;
+  onChangeActive: (id: string) => void;
+  onClose: () => void;
+  onSetCover: (mediaId: string) => void;
+  onDelete: (mediaId: string) => void;
+}) {
+  const index = items.findIndex((it) => it.id === activeId);
+  const item = items[index];
+  if (!item) return null;
+
+  function step(delta: number) {
+    const next = items[(index + delta + items.length) % items.length];
+    if (next) onChangeActive(next.id);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="ปิดรูปภาพ"
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+      >
+        <X size={18} />
+      </button>
+
+      {items.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              step(-1);
+            }}
+            aria-label="รูปก่อนหน้า"
+            className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              step(1);
+            }}
+            aria-label="รูปถัดไป"
+            className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </>
+      )}
+
+      <div className="flex max-h-full max-w-3xl flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.urls.large}
+          alt={item.altText ?? ""}
+          className="max-h-[70vh] max-w-full rounded-lg object-contain"
+        />
+        <div className="flex items-center gap-2">
+          {item.isCover ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-bold"
+              style={{ color: "var(--color-brand-green)" }}
+            >
+              <Star size={14} fill="currentColor" />
+              รูปปกของทริป
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSetCover(item.id)}
+              disabled={busyId === item.id}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-bold disabled:opacity-60"
+            >
+              {busyId === item.id ? <LoaderCircle size={14} className="animate-spin" /> : <Star size={14} />}
+              ตั้งเป็นรูปปก
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onDelete(item.id)}
+            disabled={busyId === item.id}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-bold disabled:opacity-60"
+            style={{ color: "var(--color-danger)" }}
+          >
+            <Trash2 size={14} />
+            ลบรูปภาพ
+          </button>
         </div>
       </div>
     </div>

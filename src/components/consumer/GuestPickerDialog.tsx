@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 
 export interface GuestPickerResult {
@@ -30,6 +30,18 @@ export function GuestPickerDialog({
 }) {
   const [adults, setAdults] = useState(initialAdults);
   const [children, setChildren] = useState(initialChildren);
+
+  // The dialog stays mounted between opens (isOpen just toggles this early
+  // return), so a plain useState(initialAdults) only seeds it once on the
+  // very first mount — reopening after the parent's guest count changed
+  // elsewhere kept showing whatever was left over instead of the current
+  // value. Re-sync every time it opens instead.
+  useEffect(() => {
+    if (!isOpen) return;
+    setAdults(initialAdults);
+    setChildren(initialChildren);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialAdults, initialChildren]);
 
   if (!isOpen) return null;
 

@@ -386,8 +386,17 @@ function CreateTripForm() {
           // buildGeneratedTripFromBackendTrip sets draftId: trip.id (its own
           // backend id) by default — override it to this TripDraft's id,
           // otherwise isSelfMode's getTripDrafts() lookup on the trip page
-          // can't find a match and falls back to the AI-mode tabs.
-          let tripShell = { ...buildGeneratedTripFromBackendTrip(backendTrip), draftId: draft.id };
+          // can't find a match and falls back to the AI-mode tabs. It also
+          // never sets destinationPlace at all — BackendTrip only carries a
+          // plain destination string, no lat/lng — so without this override
+          // SelfPlanBuilderTab's place-suggestion search always falls back to
+          // DEFAULT_RECOMMENDATION_CENTER (Luang Prabang) regardless of the
+          // destination actually picked here.
+          let tripShell = {
+            ...buildGeneratedTripFromBackendTrip(backendTrip),
+            draftId: draft.id,
+            destinationPlace: draft.destinationPlace,
+          };
 
           // POST /trips only creates the trip row itself — no day rows come
           // back even when startDate/endDate imply a duration. Build the same
