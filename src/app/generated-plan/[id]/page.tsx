@@ -54,7 +54,7 @@ import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
-import { resolveCoverImageUrl } from "@/lib/trip-media-api";
+import { addTripMediaFromPlace, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 
 // Bespoke per-activity icons for the Luang Prabang demo itinerary — overrides
@@ -78,9 +78,16 @@ import {
   saveGeneratedTrip,
   updateGeneratedTrip,
 } from "@/lib/generated-trips";
-import { createTripOnServer, reconcileTripWithServer } from "@/lib/trips-create-api";
+import { buildActivity, createTripOnServer, reconcileTripWithServer } from "@/lib/trips-create-api";
 import { getTrip } from "@/lib/trips-api";
-import { updateTripDayOnServer, updateTripItemOnServer, updateTripOnServer } from "@/lib/trips-update-api";
+import {
+  createTripDayOnServer,
+  createTripItemOnServer,
+  updateTripDayOnServer,
+  updateTripItemOnServer,
+  updateTripOnServer,
+  type UpdateTripItemRequest,
+} from "@/lib/trips-update-api";
 import { getTripDrafts } from "@/lib/trip-drafts";
 import {
   formatDuration,
@@ -260,13 +267,16 @@ export default function GeneratedPlanPage() {
   // backend row (see GeneratedTrip.backendSynced). There's no per-field
   // dirty-tracking, so this just re-sends the trip/day/item's full current
   // values each time — harmless since PATCH is idempotent, and simpler than
-  // maintaining a diff. Days/items not in backendDayIds/backendItemIds were
-  // added locally after the last sync and have no backend row to PATCH yet
-  // (no create-day/create-item endpoint exists) — they stay local-only.
+  // maintaining a diff. This is a catch-all fallback on top of the
+  // per-action autosave in handleAddDay/handleSaveActivity/
+  // handleUpdateActivityTravel above — days/items not yet in
+  // backendDayIds/backendItemIds (that per-action sync hasn't caught up
+  // with, e.g. because it's still in flight) stay local-only here too.
   async function syncTripUpdatesToServer(current: GeneratedTrip) {
+    // Never sends `status` — this endpoint is shared with autosave, and the
+    // contract is explicit that plan-level saves don't touch trip status.
     await updateTripOnServer(current.id, {
       title: current.title || current.destination,
-      status: current.status === "confirmed" ? "confirmed" : undefined,
       budgetLimit: current.budgetGoal,
     });
 
@@ -280,18 +290,7 @@ export default function GeneratedPlanPage() {
       ...current.days
         .flatMap((day) => day.activities)
         .filter((activity) => knownItemIds.has(activity.id) && activity.travelFromPrevious)
-        .map((activity) => {
-          const travel = activity.travelFromPrevious!;
-          return updateTripItemOnServer(activity.id, {
-            travelTypeFromPrev: travel.type,
-            travelCustomTypeFromPrev: travel.customType,
-            travelTimeFromPrevMin: travel.durationMin,
-            travelDistanceFromPrevKm: travel.distanceKm,
-            travelCostFromPrevAmount: travel.costAmount,
-            travelCostFromPrevCurrency: travel.costCurrency,
-            travelNotesFromPrev: travel.notes,
-          });
-        }),
+        .map((activity) => updateTripItemOnServer(activity.id, travelPatch(activity.travelFromPrevious!))),
     ]);
   }
 
@@ -355,17 +354,51 @@ export default function GeneratedPlanPage() {
     });
   }
 
+  // Swaps a locally-generated day/activity id for the real one the backend
+  // just returned, via the same functional setTrip pattern as updateDay
+  // below (safe against other edits landing in the same tick).
+  function replaceDayId(localId: string, serverId: string) {
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const days = prev.days.map((d) => (d.id === localId ? { ...d, id: serverId } : d));
+      const backendDayIds = [...(prev.backendDayIds ?? []), serverId];
+      updateGeneratedTrip(prev.id, { days, backendDayIds });
+      return { ...prev, days, backendDayIds };
+    });
+  }
+
+  function replaceActivityId(dayId: string, localId: string, serverId: string) {
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const days = prev.days.map((d) =>
+        d.id === dayId ? { ...d, activities: d.activities.map((a) => (a.id === localId ? { ...a, id: serverId } : a)) } : d
+      );
+      const backendItemIds = [...(prev.backendItemIds ?? []), serverId];
+      updateGeneratedTrip(prev.id, { days, backendItemIds });
+      return { ...prev, days, backendItemIds };
+    });
+  }
+
   function handleAddDay() {
     const days = trip!.days;
     const lastDate = days.length ? new Date(days[days.length - 1].date).getTime() : Date.now();
+    const localId = crypto.randomUUID();
     const newDay: Day = {
-      id: crypto.randomUUID(),
+      id: localId,
       dayNumber: days.length + 1,
       date: new Date(lastDate + 86_400_000).toISOString().slice(0, 10),
       activities: [],
     };
     const nextDays = [...days, newDay];
     applyPatch({ days: nextDays, durationLabel: durationLabelFor(nextDays) });
+
+    // "เพิ่มวัน" — POST /trips/:planId/days, so this day has a real id to
+    // add/edit activities and PATCH itself against right away.
+    if (trip!.backendSynced) {
+      createTripDayOnServer(trip!.id, { dayNumber: newDay.dayNumber, date: newDay.date })
+        .then((created) => replaceDayId(localId, created.id))
+        .catch((err) => console.warn("เพิ่มวันไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
+    }
   }
 
   // Reads/writes `prev.days` from the functional setTrip updater rather than
@@ -382,19 +415,63 @@ export default function GeneratedPlanPage() {
     });
   }
 
+  function travelPatch(travel: TravelFromPrevious): UpdateTripItemRequest {
+    return {
+      travelTypeFromPrev: travel.type,
+      travelCustomTypeFromPrev: travel.customType,
+      travelTimeFromPrevMin: travel.durationMin,
+      travelDistanceFromPrevKm: travel.distanceKm,
+      travelCostFromPrevAmount: travel.costAmount,
+      travelCostFromPrevCurrency: travel.costCurrency,
+      travelNotesFromPrev: travel.notes,
+    };
+  }
+
   // Shared by both the "+เพิ่มสถานที่" flow (a brand-new id, never matches an
   // existing activity, so it's always appended) and AddActivityDialog's edit
   // mode (the id matches an existing activity, so it's replaced in place).
   function handleSaveActivity(dayId: string, activity: Activity) {
-    updateDay(dayId, (d) => {
-      const exists = d.activities.some((a) => a.id === activity.id);
-      return {
-        ...d,
-        activities: exists
-          ? d.activities.map((a) => (a.id === activity.id ? activity : a))
-          : [...d.activities, activity],
-      };
-    });
+    const day = trip!.days.find((d) => d.id === dayId);
+    const exists = day?.activities.some((a) => a.id === activity.id) ?? false;
+    const orderIndex = day?.activities.length ?? 0;
+
+    updateDay(dayId, (d) => ({
+      ...d,
+      activities: exists
+        ? d.activities.map((a) => (a.id === activity.id ? activity : a))
+        : [...d.activities, activity],
+    }));
+
+    if (!trip!.backendSynced) return;
+
+    if (!exists && (trip!.backendDayIds ?? []).includes(dayId)) {
+      // "เพิ่มสถานที่/กิจกรรม" — POST /days/:dayId/items.
+      const localId = activity.id;
+      const placeId = activity.location?.googlePlaceId;
+      createTripItemOnServer(dayId, buildActivity(activity, orderIndex))
+        .then((created) => {
+          replaceActivityId(dayId, localId, created.id);
+          // The place's own photo (activity.location.imageUrl) is only ever
+          // a live link to the external API — it isn't part of this trip's
+          // media gallery until explicitly attached here, so cover-image
+          // fallback (see LemonCard on /main) and the gallery dialog can
+          // actually find it later.
+          if (placeId) {
+            addTripMediaFromPlace(trip!.id, placeId, created.id).catch((err) =>
+              console.warn("บันทึกรูปสถานที่ไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
+            );
+          }
+        })
+        .catch((err) => console.warn("เพิ่มกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
+    } else if (exists && (trip!.backendItemIds ?? []).includes(activity.id) && activity.travelFromPrevious) {
+      // "แก้กิจกรรม" — PATCH /items/:itemId. Only the travel-from-previous
+      // fields are confirmed accepted by the backend's UpdateItemDto (see
+      // trips-update-api.ts) — other edited fields (title/time/cost/notes)
+      // have no confirmed server-side path yet and stay local-only.
+      updateTripItemOnServer(activity.id, travelPatch(activity.travelFromPrevious)).catch((err) =>
+        console.warn("แก้ไขกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
+      );
+    }
   }
 
   function handleDeleteActivity(dayId: string, activityId: string) {
@@ -408,11 +485,24 @@ export default function GeneratedPlanPage() {
         a.id === activityId ? { ...a, travelFromPrevious: travel, travelNote: summarizeTravelNote(travel) } : a
       ),
     }));
+
+    // "แก้กิจกรรม" — PATCH /items/:itemId.
+    if (trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId)) {
+      updateTripItemOnServer(activityId, travelPatch(travel)).catch((err) =>
+        console.warn("แก้ไขเส้นทางไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
+      );
+    }
   }
 
   const isConfirmed = trip.status === "confirmed";
   // Read-only by default regardless of draft/confirmed status — "แก้ไขทริป"/
   // "แก้ไขแพลน" must be pressed to unlock editing, same gesture either way.
+  // Viewing a trip from /main never carries ?edit=1, so it always lands here
+  // read-only; only arriving straight from create-trip starts unlocked. Self
+  // mode still autosaves every add/edit once unlocked (see
+  // handleAddDay/handleSaveActivity/handleUpdateActivityTravel above) — it
+  // just has no "เสร็จสิ้น"/"บันทึก" step to lock back down with (see
+  // SelfPlanBuilderTab's and PlanTab's `!canEdit` gate on EditLockToggle).
   const canEdit = editUnlocked;
 
   return (
@@ -438,6 +528,7 @@ export default function GeneratedPlanPage() {
         onMenuClick={() => setSidebarOpen(true)}
         onSave={handleSaveToServer}
         saveState={saveState}
+        hideSaveButton={isSelfMode}
       />
 
       <div
@@ -509,6 +600,7 @@ export default function GeneratedPlanPage() {
               onUpdateActivityTravel={handleUpdateActivityTravel}
               onSaveTrip={handleSaveToServer}
               saveState={saveState}
+              hideManualControls={isSelfMode}
             />
           )}
           {tab === "weather" && <WeatherTab />}
@@ -546,11 +638,13 @@ function TopBar({
   onMenuClick,
   onSave,
   saveState,
+  hideSaveButton,
 }: {
   onBack: () => void;
   onMenuClick: () => void;
   onSave: () => void;
   saveState: SaveState;
+  hideSaveButton?: boolean;
 }) {
   const SaveIcon = saveState === "saving" ? LoaderCircle : saveState === "saved" ? Check : Save;
   const saveLabel =
@@ -579,24 +673,26 @@ function TopBar({
       <p className="hidden text-base font-extrabold text-white sm:block sm:text-lg">PunGuide</p>
 
       <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saveState === "saving"}
-          title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
-          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
-          style={{
-            backgroundColor:
-              saveState === "saved"
-                ? "var(--color-brand-green)"
-                : saveState === "error"
-                  ? "var(--color-danger)"
-                  : "rgba(255,255,255,0.15)",
-          }}
-        >
-          <SaveIcon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
-          <span className="hidden sm:inline">{saveLabel}</span>
-        </button>
+        {!hideSaveButton && (
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveState === "saving"}
+            title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
+            style={{
+              backgroundColor:
+                saveState === "saved"
+                  ? "var(--color-brand-green)"
+                  : saveState === "error"
+                    ? "var(--color-danger)"
+                    : "rgba(255,255,255,0.15)",
+            }}
+          >
+            <SaveIcon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">{saveLabel}</span>
+          </button>
+        )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/images/profile-avatar.jpg" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
       </div>
@@ -1293,6 +1389,7 @@ function PlanTab({
   onUpdateActivityTravel,
   onSaveTrip,
   saveState,
+  hideManualControls,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1304,6 +1401,10 @@ function PlanTab({
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
   onSaveTrip: () => void;
   saveState: SaveState;
+  // Self mode autosaves every add/edit immediately — no manual "บันทึก" or
+  // "เสร็จสิ้น"/"แก้ไขแพลน" lock toggle to show there (see canEdit in the page
+  // component, which is always true for self mode).
+  hideManualControls?: boolean;
 }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
@@ -1328,9 +1429,17 @@ function PlanTab({
           <Download size={14} />
           บันทึกรูป
         </button>
-        <SaveTripButton onSave={onSaveTrip} saveState={saveState} />
-        <div className="h-6 w-px" style={{ backgroundColor: "var(--color-border)" }} />
-        <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
+        {!hideManualControls ? (
+          <>
+            <SaveTripButton onSave={onSaveTrip} saveState={saveState} />
+            <div className="h-6 w-px" style={{ backgroundColor: "var(--color-border)" }} />
+            <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
+          </>
+        ) : (
+          // Self mode autosaves every add/edit once unlocked — no "เสร็จสิ้น"
+          // step to lock back down with, so this only ever offers the way in.
+          !canEdit && <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
+        )}
       </div>
     </div>
   );

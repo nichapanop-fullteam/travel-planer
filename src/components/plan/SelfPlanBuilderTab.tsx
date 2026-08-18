@@ -182,7 +182,9 @@ export function SelfPlanBuilderTab({
             <Download size={14} />
             บันทึกรูป
           </button>
-          {onToggleEditLock && <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />}
+          {/* Self mode autosaves every add/edit once unlocked — no "เสร็จสิ้น"
+              step to lock back down with, so this only ever offers the way in. */}
+          {!canEdit && onToggleEditLock && <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />}
         </div>
       </div>
 

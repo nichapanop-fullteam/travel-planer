@@ -245,7 +245,9 @@ function buildBudget(draft: TripDraft | undefined, numPeople: number | undefined
   return { budgetTier: tier, budgetLimit };
 }
 
-function buildActivity(activity: Activity, orderIndex: number): CreateTripActivity {
+// Exported for reuse by trips-update-api.ts's createTripItemOnServer (POST
+// /days/:dayId/items) — same activity shape as this bulk-create path.
+export function buildActivity(activity: Activity, orderIndex: number): CreateTripActivity {
   const placeId = activity.location?.googlePlaceId;
   const travel = activity.travelFromPrevious;
   return {

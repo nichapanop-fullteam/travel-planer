@@ -200,7 +200,12 @@ function parseDurationDays(durationLabel: string): number {
   return Number.isFinite(days) && days > 0 ? days : 1;
 }
 
-function emptyDays(durationLabel: string, startDate?: string): Day[] {
+// Exported for reuse by create-trip/page.tsx — POST /trips (self mode) only
+// creates the trip row itself, with no day rows even when startDate/endDate
+// imply a duration, so the same placeholder-days-per-duration this shell
+// always started with get built there too before syncing each to the
+// backend via POST /trips/:planId/days.
+export function emptyDays(durationLabel: string, startDate?: string): Day[] {
   const dayCount = parseDurationDays(durationLabel);
   const parsedStart = startDate ? new Date(`${startDate.slice(0, 10)}T00:00:00Z`).getTime() : NaN;
   const start = Number.isFinite(parsedStart) ? parsedStart : Date.now();

@@ -36,9 +36,16 @@ import { Divider } from "@/components/ui/Divider";
 import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { DEFAULT_RECOMMENDATION_CENTER, type RecommendedPlace } from "@/lib/place-recommendations";
 import { saveTripDraft } from "@/lib/trip-drafts";
-import { buildGeneratedTripFromApiResponse, createEmptyTripShell, saveGeneratedTrip } from "@/lib/generated-trips";
+import {
+  buildGeneratedTripFromApiResponse,
+  buildGeneratedTripFromBackendTrip,
+  emptyDays,
+  saveGeneratedTrip,
+} from "@/lib/generated-trips";
 import { generatePlan, GeneratePlanError } from "@/lib/generate-plan-api";
 import { buildGeneratePlanRequest } from "@/lib/generate-plan-mapping";
+import { createDraftTripOnServer } from "@/lib/trips-draft-api";
+import { createTripDayOnServer } from "@/lib/trips-update-api";
 import type {
   Activity,
   ActivityCategory,
@@ -370,16 +377,52 @@ function CreateTripForm() {
     };
     saveTripDraft(draft);
 
-    // "สร้างด้วยตัวเอง" (self mode) never calls the AI — it just needs an
-    // empty Trip Shell the traveler fills in themselves on the trip page.
+    // "สร้างด้วยตัวเอง" (self mode) — "เริ่มจัดทริปเอง" creates the trip on the
+    // backend (POST /trips) up front with the info gathered so far, so the
+    // traveler has a real draft id to build/autosave against on the trip page.
     if (mode === "self") {
-      window.setTimeout(() => {
-        const tripShell = createEmptyTripShell(draft);
-        saveGeneratedTrip(tripShell);
-        // ?edit=1 — land straight in edit mode instead of read-only, since the
-        // traveler just created this trip and is about to build it out.
-        router.push(`/generated-plan/${tripShell.id}?edit=1`);
-      }, 1200);
+      createDraftTripOnServer(draft)
+        .then(async (backendTrip) => {
+          // buildGeneratedTripFromBackendTrip sets draftId: trip.id (its own
+          // backend id) by default — override it to this TripDraft's id,
+          // otherwise isSelfMode's getTripDrafts() lookup on the trip page
+          // can't find a match and falls back to the AI-mode tabs.
+          let tripShell = { ...buildGeneratedTripFromBackendTrip(backendTrip), draftId: draft.id };
+
+          // POST /trips only creates the trip row itself — no day rows come
+          // back even when startDate/endDate imply a duration. Build the same
+          // empty-days-per-duration placeholders self mode always started
+          // with, then create each one for real via POST /trips/:planId/days
+          // so they have a backend id to add/edit activities against right
+          // away. A day that fails to create (e.g. offline) just stays
+          // local-only, same as any other unsynced day elsewhere in the app.
+          if (tripShell.days.length === 0) {
+            const placeholderDays = emptyDays(draft.duration, draft.startDate);
+            const createdDays = await Promise.all(
+              placeholderDays.map((day) =>
+                createTripDayOnServer(backendTrip.id, { dayNumber: day.dayNumber, date: day.date }).catch(
+                  () => null
+                )
+              )
+            );
+            tripShell = {
+              ...tripShell,
+              durationLabel: draft.duration || tripShell.durationLabel,
+              days: placeholderDays.map((day, i) => ({ ...day, id: createdDays[i]?.id ?? day.id })),
+              backendDayIds: createdDays.filter((d): d is NonNullable<typeof d> => d !== null).map((d) => d.id),
+            };
+          }
+
+          saveGeneratedTrip(tripShell);
+          // ?edit=1 — land straight in edit mode instead of read-only, since the
+          // traveler just created this trip and is about to build it out.
+          router.push(`/generated-plan/${tripShell.id}?edit=1`);
+        })
+        .catch((err) => {
+          isSubmittingRef.current = false;
+          setStatus("error");
+          setErrorMessage(err instanceof Error ? err.message : "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
+        });
       return;
     }
 
