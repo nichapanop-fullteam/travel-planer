@@ -87,6 +87,17 @@ export default function MainPage() {
     loadTrips(destination);
   }
 
+  // "ล้างการค้นหา" needs to reset the Destination field itself, not just the
+  // feed — handleSearch("") alone leaves HomeSearchBar's own destination
+  // state (and the localStorage it prefills from) untouched, so the field
+  // would still show the old value even though the feed is back to
+  // unfiltered. Bumping this counter is HomeSearchBar's cue to clear it.
+  const [clearSignal, setClearSignal] = useState(0);
+  function handleClearSearch() {
+    setClearSignal((n) => n + 1);
+    handleSearch("");
+  }
+
   const visibleTrips = useMemo(() => {
     if (!trips) return trips;
     if (activeCategory === "ทั้งหมด") return trips;
@@ -101,7 +112,7 @@ export default function MainPage() {
         <LeftNav />
 
         <section className="min-w-0">
-          <HomeSearchBar onSearch={handleSearch} />
+          <HomeSearchBar onSearch={handleSearch} clearSignal={clearSignal} />
 
           <div className="sticky top-[64px] z-20 mt-4 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6] sm:top-[73px]">
             <div className="flex">
@@ -128,7 +139,7 @@ export default function MainPage() {
               </span>
               <button
                 type="button"
-                onClick={() => handleSearch("")}
+                onClick={handleClearSearch}
                 className="shrink-0 text-xs font-semibold text-[#236747] underline"
               >
                 ล้างการค้นหา
@@ -169,7 +180,13 @@ export default function MainPage() {
 // create-trip via the same "last search" localStorage bucket if the
 // traveler goes on to build a trip elsewhere) but have no server-side
 // equivalent on this endpoint, so they don't affect what gets searched.
-function HomeSearchBar({ onSearch }: { onSearch: (destination: string) => void }) {
+function HomeSearchBar({
+  onSearch,
+  clearSignal,
+}: {
+  onSearch: (destination: string) => void;
+  clearSignal: number;
+}) {
   const [destination, setDestination] = useState("");
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState("");
@@ -194,6 +211,20 @@ function HomeSearchBar({ onSearch }: { onSearch: (destination: string) => void }
     setAdults(last.adults);
     setChildren(last.children);
   }, []);
+
+  // "ล้างการค้นหา" on the parent feed bumps clearSignal — clear just the
+  // Destination field (Date/Guest have no bearing on the search, see the doc
+  // comment above, so leave them as the traveler set them). Skips the
+  // signal's initial value (0) so this doesn't wipe out the localStorage
+  // prefill effect above on first mount. Also re-persists the cleared value,
+  // so reloading the page doesn't bring the old destination right back.
+  useEffect(() => {
+    if (clearSignal === 0) return;
+    setDestination("");
+    setDestinationPlace(undefined);
+    saveLastCreateTripSearch({ destination: "", destinationPlace: undefined, duration, startDate, endDate, guests, adults, children });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearSignal]);
 
   function handleSearch() {
     saveLastCreateTripSearch({ destination, destinationPlace, duration, startDate, endDate, guests, adults, children });
