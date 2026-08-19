@@ -30,6 +30,7 @@ import {
   Maximize2,
   MapPin,
   Menu,
+  MessageSquare,
   Minus,
   MoreVertical,
   Navigation,
@@ -562,6 +563,7 @@ export default function GeneratedPlanPage() {
               onAddActivityDirect={handleSaveActivity}
               onOpenAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
+              onDeleteActivity={handleDeleteActivity}
               onSaveAccommodation={(accommodation) => applyPatch({ accommodation })}
               onAddDay={handleAddDay}
               onGoToPlanTab={() => setTab("plan")}
@@ -1395,12 +1397,15 @@ function ItineraryRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-semibold">{activity.title}</p>
         <p className="text-[11px] text-[var(--color-muted)]">
-          <span className="font-semibold" style={{ color: "var(--color-accent-orange)" }}>
-            {activity.time}
-          </span>
-          {activity.travelNote && <> · {activity.travelNote}</>}
-          {activity.cost > 0 && <> · {formatTHB(activity.cost)}</>}
+          {activity.time && (
+            <span className="font-semibold" style={{ color: "var(--color-accent-orange)" }}>
+              {activity.time}
+            </span>
+          )}
+          {activity.travelNote && <> {activity.time && "· "}{activity.travelNote}</>}
+          {activity.cost > 0 && <> {(activity.time || activity.travelNote) && "· "}{formatTHB(activity.cost)}</>}
         </p>
+        {activity.notes && <p className="truncate text-[11px] text-[var(--color-muted)]">{activity.notes}</p>}
       </div>
       {canEdit && (
         <div className="flex shrink-0 items-center gap-0.5">
@@ -1610,7 +1615,7 @@ function PlanTab({
         </div>
 
         <div className={`grid grid-cols-1 gap-5 ${showMap ? "lg:grid-cols-[2fr_3fr]" : ""}`}>
-          <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
+          <div className="min-w-0 overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
             <div
               className="flex items-center justify-between rounded-t-2xl px-4 py-3"
               style={{ backgroundColor: "var(--color-sel-bg)" }}
@@ -1725,8 +1730,8 @@ function PlanActivityRow({
           <Icon size={15} style={{ color }} className="mt-0.5 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-1.5">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <p className="text-sm font-semibold">{activity.title}</p>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <p className="min-w-0 break-words text-sm font-semibold">{activity.title}</p>
                 {isHighlight && (
                   <span
                     className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
@@ -1755,16 +1760,33 @@ function PlanActivityRow({
                 </div>
               )}
             </div>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs font-semibold">
-              <span style={{ color: "var(--color-accent-orange)" }}>{activity.time}</span>
-              {activity.travelNote ? (
-                <span className="font-semibold text-[var(--color-muted)]">· {activity.travelNote}</span>
-              ) : (
-                activity.cost > 0 && (
-                  <span className="font-semibold text-[var(--color-muted)]">· {formatTHB(activity.cost)}</span>
-                )
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-semibold">
+              {activity.time && (
+                <span className="shrink-0" style={{ color: "var(--color-accent-orange)" }}>
+                  {activity.time}
+                </span>
               )}
-            </p>
+              {/* travelNote and cost are independent facts (how to get here vs.
+                  what it costs) — shown together instead of either/or, which
+                  used to silently drop the cost whenever a travel note was set.
+                  Time is optional (see AddActivityDialog) — only lead with "· "
+                  when something actually precedes this piece. */}
+              {activity.travelNote && (
+                <span className="font-semibold text-[var(--color-muted)]">
+                  {activity.time && "· "}
+                  {activity.travelNote}
+                </span>
+              )}
+              {activity.cost > 0 && (
+                <span className="shrink-0 font-semibold text-[var(--color-muted)]">
+                  {(activity.time || activity.travelNote) && "· "}
+                  {formatTHB(activity.cost)}
+                </span>
+              )}
+            </div>
+            {activity.notes && (
+              <p className="mt-1 break-words text-xs font-normal text-[var(--color-muted)]">{activity.notes}</p>
+            )}
           </div>
         </div>
       </div>
@@ -2560,9 +2582,12 @@ function AddActivityDialog({
 }) {
   const isEditing = initialActivity !== undefined;
   const [selectedDayId, setSelectedDayId] = useState<string | null>(initialDayId);
-  const [time, setTime] = useState(initialActivity?.time ?? "09:00");
+  // Optional — an empty string means "no time set" (already the convention
+  // trips-create-api.ts's buildActivity expects: `time || undefined`).
+  const [time, setTime] = useState(initialActivity?.time ?? "");
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [title, setTitle] = useState(initialActivity?.title ?? "");
+  const [notes, setNotes] = useState(initialActivity?.notes ?? "");
   const [category, setCategory] = useState<ActivityCategory>(initialActivity?.category ?? "sightseeing");
   const [cost, setCost] = useState(initialActivity?.cost ? String(initialActivity.cost) : "");
   const [travelNote, setTravelNote] = useState(initialActivity?.travelNote ?? "");
@@ -2615,6 +2640,7 @@ function AddActivityDialog({
       time,
       title: title.trim(),
       category,
+      notes: notes.trim() || undefined,
       cost: cost.trim() ? Number(cost.replace(/[^\d]/g, "")) || 0 : 0,
       travelNote: travelNote.trim() || undefined,
       // Not editable from this dialog — carry over untouched so saving a
@@ -2676,6 +2702,22 @@ function AddActivityDialog({
             </div>
           )}
 
+          {/* Optional — a free-text note/heading about the stop, shown on the
+              itinerary list (PlanActivityRow) under the time/cost line when set. */}
+          <label
+            className="flex items-start gap-3 rounded-2xl px-4 py-3.5"
+            style={{ backgroundColor: "var(--color-surface)" }}
+          >
+            <MessageSquare size={16} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="เพิ่มหัวข้อเรื่อง หรือรายละเอียดเพิ่มเติม (ไม่บังคับ)"
+              rows={1}
+              className="w-full resize-none bg-transparent text-sm focus:outline-none"
+            />
+          </label>
+
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-[200px_1fr]">
             <ActivityImagesField images={images} onChange={setImages} />
 
@@ -2683,16 +2725,36 @@ function AddActivityDialog({
               <ActivityPlaceSearchField value={title} onChange={handleTitleChange} onSelectPlace={handleSelectPlace} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เวลา</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowTimePicker(true)}
-                    className="flex w-full items-center gap-2 rounded-xl border px-3.5 py-2.5 text-left text-sm focus:outline-none"
+                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">
+                    เวลา <span className="font-normal text-[var(--color-muted)]">(ไม่บังคับ)</span>
+                  </label>
+                  <div
+                    className="flex w-full items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm"
                     style={{ borderColor: "var(--color-border)" }}
                   >
-                    <Clock size={14} style={{ color: "var(--color-muted)" }} />
-                    {formatTimeDisplay(time)}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowTimePicker(true)}
+                      className="flex flex-1 items-center gap-2 text-left focus:outline-none"
+                    >
+                      <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                      {time ? (
+                        formatTimeDisplay(time)
+                      ) : (
+                        <span className="text-[var(--color-muted)]">ไม่ระบุเวลา</span>
+                      )}
+                    </button>
+                    {time && (
+                      <button
+                        type="button"
+                        onClick={() => setTime("")}
+                        aria-label="ล้างเวลา"
+                        className="shrink-0 rounded-full p-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <ActivityCategoryField value={category} onChange={setCategory} />
               </div>
@@ -2702,8 +2764,9 @@ function AddActivityDialog({
                 <div className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: "var(--color-border)" }}>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={cost}
-                    onChange={(e) => setCost(e.target.value)}
+                    onChange={(e) => setCost(e.target.value.replace(/[^\d]/g, ""))}
                     placeholder="0"
                     className="w-full bg-transparent text-sm focus:outline-none"
                   />
@@ -2738,7 +2801,7 @@ function AddActivityDialog({
       </div>
 
       {showTimePicker && (
-        <TimePickerDialog value={time} onConfirm={setTime} onClose={() => setShowTimePicker(false)} />
+        <TimePickerDialog value={time || "09:00"} onConfirm={setTime} onClose={() => setShowTimePicker(false)} />
       )}
     </>
   );

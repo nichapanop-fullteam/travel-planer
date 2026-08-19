@@ -55,6 +55,26 @@ function stripHeavyImages(trips: GeneratedTrip[]): GeneratedTrip[] {
   }));
 }
 
+// Fired after every write so any mounted component holding its own copy of
+// the list (e.g. Sidebar's "ทริปของฉัน") can refresh — a plain useEffect on
+// mount only ever sees the list as of whenever that component happened to
+// load, so without this it goes stale the moment something elsewhere
+// creates/updates/deletes a trip in the same tab (storage events don't fire
+// for writes made by the tab that made them).
+const TRIPS_CHANGED_EVENT = "pluno:generated-trips-changed";
+
+function notifyTripsChanged(): void {
+  if (typeof window === "undefined") return;
+  // writeAll (and so this) can run synchronously inside a setTrip(prev => ...)
+  // updater — e.g. updateGeneratedTrip called from generated-plan/[id]/page.tsx
+  // — which React invokes during that component's render. Dispatching the
+  // event straight from there makes Sidebar's listener call setState on a
+  // *different* component mid-render ("Cannot update a component while
+  // rendering a different component"). Deferring a tick lets that render
+  // finish and commit first.
+  queueMicrotask(() => window.dispatchEvent(new Event(TRIPS_CHANGED_EVENT)));
+}
+
 function writeAll(trips: GeneratedTrip[]): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trips));
@@ -67,6 +87,7 @@ function writeAll(trips: GeneratedTrip[]): void {
       console.error("บันทึกทริปไม่สำเร็จแม้ตัดรูปออกแล้ว", retryError);
     }
   }
+  notifyTripsChanged();
 }
 
 export function getGeneratedTrip(id: string): GeneratedTrip | undefined {
@@ -75,6 +96,23 @@ export function getGeneratedTrip(id: string): GeneratedTrip | undefined {
 
 export function getGeneratedTrips(): GeneratedTrip[] {
   return readAll();
+}
+
+// Subscribe to local trip list changes (create/update/delete) — see
+// TRIPS_CHANGED_EVENT above for why this is needed alongside a mount-time
+// getGeneratedTrips() call. Returns an unsubscribe function.
+export function onGeneratedTripsChanged(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(TRIPS_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(TRIPS_CHANGED_EVENT, listener);
+}
+
+// Removes a trip from local storage — e.g. when "ลบทริป" on my-trips deletes
+// the backend row, this keeps a self-mode trip's local copy (saved under the
+// same id, see create-trip/page.tsx) from lingering in the "ทริปของฉัน"
+// sidebar list afterward. A no-op if this id was never saved locally.
+export function deleteGeneratedTrip(id: string): void {
+  writeAll(readAll().filter((t) => t.id !== id));
 }
 
 export function saveGeneratedTrip(trip: GeneratedTrip): void {

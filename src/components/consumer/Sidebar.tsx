@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bookmark, Home, MapPin, Menu, Plus, User, Users } from "lucide-react";
 import { myGroups } from "@/lib/groups";
-import { getGeneratedTrips } from "@/lib/generated-trips";
+import { getGeneratedTrips, onGeneratedTripsChanged } from "@/lib/generated-trips";
 import type { GeneratedTrip } from "@/types";
 
 type NavKey = "home" | "my-trips";
@@ -27,6 +27,10 @@ export function Sidebar({
 
   useEffect(() => {
     setMyTrips(getGeneratedTrips());
+    // Re-sync whenever a trip is created/updated/deleted anywhere else in the
+    // app (e.g. create-trip, or "ลบทริป" on my-trips) — this list otherwise
+    // only ever reflected whatever was saved as of this component's mount.
+    return onGeneratedTripsChanged(() => setMyTrips(getGeneratedTrips()));
   }, []);
 
   return (

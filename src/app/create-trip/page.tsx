@@ -33,7 +33,7 @@ import { DestinationPickerDialog } from "@/components/consumer/DestinationPicker
 import { buildGuestsLabel, GuestPickerDialog } from "@/components/consumer/GuestPickerDialog";
 import { RecommendedPlacesStep, type SelectedRecommendation } from "@/components/consumer/RecommendedPlacesStep";
 import { Divider } from "@/components/ui/Divider";
-import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
+import { clearLastCreateTripSearch, getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { DEFAULT_RECOMMENDATION_CENTER, type RecommendedPlace } from "@/lib/place-recommendations";
 import { saveTripDraft } from "@/lib/trip-drafts";
 import {
@@ -125,9 +125,10 @@ function CreateTripForm() {
   // form with the reference preferences instead of leaving it blank.
   const prefillDefaults = destinationParam.includes("หลวงพระบาง");
 
-  const [mode, setMode] = useState<TripCreationMode>(
-    searchParams.get("mode") === "self" ? "self" : "ai"
-  );
+  // AI mode is hidden for now (see ModeToggle below) — always self mode,
+  // regardless of ?mode=. The AI-mode code paths below stay in place, just
+  // unreachable, so this is a quick flip to bring back rather than a removal.
+  const [mode, setMode] = useState<TripCreationMode>("self");
   const [destination, setDestination] = useState(destinationParam);
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
@@ -423,6 +424,7 @@ function CreateTripForm() {
           }
 
           saveGeneratedTrip(tripShell);
+          clearLastCreateTripSearch();
           // ?edit=1 — land straight in edit mode instead of read-only, since the
           // traveler just created this trip and is about to build it out.
           router.push(`/generated-plan/${tripShell.id}?edit=1`);
@@ -439,6 +441,7 @@ function CreateTripForm() {
       .then((response) => {
         const generatedTrip = withAiRecommendations(buildGeneratedTripFromApiResponse(draft, response));
         saveGeneratedTrip(generatedTrip);
+        clearLastCreateTripSearch();
         router.push(`/generated-plan/${generatedTrip.id}?edit=1`);
       })
       .catch((err) => {
@@ -504,11 +507,8 @@ function CreateTripForm() {
           }}
         />
 
-        {step === 1 && (
-          <div className="px-6 py-4 sm:px-8">
-            <ModeToggle mode={mode} setMode={setMode} />
-          </div>
-        )}
+        {/* ModeToggle (PunGuide จัดแพลนให้ / สร้างด้วยตัวเอง) hidden while AI
+            mode is off — see the `mode` state above. */}
 
         <div className="relative">
           {status === "error" && (

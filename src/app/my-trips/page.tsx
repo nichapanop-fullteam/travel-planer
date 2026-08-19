@@ -8,6 +8,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { ConsumerShell } from "@/components/consumer/ConsumerShell";
 import LogoutButton from "@/components/LogoutButton";
 import { deleteTrip, getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
+import { deleteGeneratedTrip } from "@/lib/generated-trips";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
 
 // Client-side route guard only — good enough for this prototype, but not
@@ -54,6 +55,10 @@ export default function MyTripsPage() {
     deleteTrip(trip.id)
       .then(() => {
         setTrips((prev) => prev?.filter((t) => t.id !== trip.id) ?? prev);
+        // Self-mode trips are also saved locally under this same backend id
+        // (see create-trip/page.tsx) — clear that copy too, otherwise it
+        // lingers in the "ทริปของฉัน" sidebar list after the real trip is gone.
+        deleteGeneratedTrip(trip.id);
       })
       .catch((error: unknown) => {
         if (error instanceof BackendAuthenticationError) {
