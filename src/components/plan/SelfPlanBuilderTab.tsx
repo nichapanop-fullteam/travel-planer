@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Compass,
   Download,
   Flag,
   Lock,
@@ -20,7 +21,6 @@ import {
   Search,
   Share2,
   Star,
-  Ticket,
   Trash2,
   Wallet,
   Waves,
@@ -35,8 +35,9 @@ import {
 } from "@/lib/external-places-api";
 import { CATEGORY_LABEL_TH, enrichPlace, EXTERNAL_TO_ACTIVITY_CATEGORY, type EnrichedPlace } from "@/lib/place-mock-metadata";
 import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
-import { formatTHB } from "@/lib/trip-utils";
+import { formatDuration, formatTHB, getTripRouteSummary } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
+import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 
 // Matches the three carousels this tab always shows (แนะนำสถานที่ห้ามพลาด /
 // ร้านอาหารแนะนำ / ที่พักแนะนำ) — see docs for GET /places/suggest/sections,
@@ -195,6 +196,8 @@ export function SelfPlanBuilderTab({
         </div>
       </div>
 
+      <TripSummaryCards trip={trip} />
+
       {/* Locked (view-only) mode hides every recommend/add-place tool below —
           there's nothing to pick from a confirmed plan until "แก้ไขแพลน" is
           tapped (see canEdit in generated-plan/[id]/page.tsx). */}
@@ -243,7 +246,6 @@ export function SelfPlanBuilderTab({
           <AccommodationAccordion
             trip={trip}
             center={center}
-            onSave={onSaveAccommodation}
             addedIds={addedIds}
             stagedPlaces={stagedPlaces}
             onStage={stagePlace}
@@ -271,6 +273,38 @@ export function SelfPlanBuilderTab({
           onClose={() => setDayPickerRequest(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Quick-glance totals across the whole trip — derived from each activity's
+// own cost plus whatever travel legs ("เพิ่มการเดินทาง") have been filled in,
+// so it starts at 0 km / 0m until the traveler has entered any travel info.
+// Same StatCard look as the AI-mode Plan tab's per-day summary (see
+// generated-plan/[id]/page.tsx), just trip-wide instead of per-day.
+function TripSummaryCards({ trip }: { trip: GeneratedTrip }) {
+  const { distanceKm, minutes, costAmount } = getTripRouteSummary(trip);
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <StatCard icon={Compass} label="Total Distance" value={`${distanceKm} km`} />
+      <StatCard icon={Clock} label="Total Time" value={formatDuration(minutes)} />
+      <StatCard icon={Wallet} label="Est. Cost" value={formatTHB(costAmount)} />
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value }: { icon: typeof Wallet; label: string; value: string }) {
+  return (
+    <div
+      className="flex flex-col justify-center gap-1.5 rounded-2xl border border-[var(--color-border)]/25 p-4"
+      style={{ backgroundColor: "#FFFFFF" }}
+    >
+      <span className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+        <Icon size={13} />
+        {label}
+      </span>
+      <p className="text-base font-bold">{value}</p>
     </div>
   );
 }
@@ -1093,14 +1127,20 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
               <Clock size={13} />
               {checkInOutLabel}
             </p>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
-              style={{ backgroundColor: "var(--color-accent-orange)" }}
-            >
-              ดูรายละเอียด
-              <ChevronRight size={12} />
-            </button>
+            <div className="flex items-center gap-2">
+              <HotelBookingButton
+                name={name}
+                className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
+              />
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
+                style={{ backgroundColor: "var(--color-accent-orange)" }}
+              >
+                ดูรายละเอียด
+                <ChevronRight size={12} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1111,14 +1151,12 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
 function AccommodationAccordion({
   trip,
   center,
-  onSave,
   addedIds,
   stagedPlaces,
   onStage,
 }: {
   trip: GeneratedTrip;
   center: { lat: number; lng: number };
-  onSave: (accommodation: TripAccommodation) => void;
   // Hotels stage into the same shared list as attractions/restaurants — see
   // SelfPlanBuilderTab's stagePlace/stagedPlaces — so this accordion only
   // needs to read/write that shared state, not own a separate checklist.
@@ -1127,13 +1165,6 @@ function AccommodationAccordion({
   onStage: (place: EnrichedPlace) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const [status, setStatus] = useState<"booked" | "unbooked" | null>(null);
-  const [hotelName, setHotelName] = useState(trip.accommodation?.name ?? "");
-  const [location, setLocation] = useState("");
-  const [checkInDate, setCheckInDate] = useState("");
-  const [checkOutDate, setCheckOutDate] = useState("");
-  const [checkInTime, setCheckInTime] = useState(trip.accommodation?.checkIn ?? "");
-  const [checkOutTime, setCheckOutTime] = useState(trip.accommodation?.checkOut ?? "");
 
   const hotels = usePlaceSuggestions(center, ["hotel"]);
 
@@ -1171,17 +1202,6 @@ function AccommodationAccordion({
     onStage(place);
   }
 
-  function saveBookedHotel() {
-    if (!hotelName.trim()) return;
-    onSave({
-      name: hotelName.trim(),
-      checkIn: checkInTime || undefined,
-      checkOut: checkOutTime || undefined,
-      amenities: trip.accommodation?.amenities ?? [],
-      description: location.trim() || undefined,
-    });
-  }
-
   return (
     <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
       <button
@@ -1199,159 +1219,86 @@ function AccommodationAccordion({
         <div className="flex flex-col gap-4 px-5 pb-5">
           <AccommodationGallery trip={trip} />
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <AccommodationStatusCard
-              icon={Ticket}
-              title="จองแล้ว"
-              subtitle="แนบไฟล์การจองหรือลิงก์"
-              isOn={status === "booked"}
-              onClick={() => setStatus((prev) => (prev === "booked" ? null : "booked"))}
-            />
-            <AccommodationStatusCard
-              icon={Search}
-              title="ยังไม่จอง"
-              subtitle="บอกสไตล์กับเราตรงๆ"
-              isOn={status === "unbooked"}
-              onClick={() => setStatus((prev) => (prev === "unbooked" ? null : "unbooked"))}
-            />
+          <div className="flex flex-col gap-4">
+            <div className="relative">
+              <div
+                className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Search size={16} style={{ color: "var(--color-muted)" }} />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onFocus={() => dropdownResults && dropdownResults.length > 0 && setDropdownOpen(true)}
+                  placeholder="เพิ่มที่พัก"
+                  className="w-full bg-transparent text-sm focus:outline-none"
+                />
+              </div>
+
+              {dropdownOpen && dropdownResults && dropdownResults.length > 0 && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
+                  <div className="absolute inset-x-0 top-full z-20 mt-2 flex flex-col overflow-hidden rounded-2xl border bg-white shadow-lg" style={{ borderColor: "var(--color-border)" }}>
+                    {dropdownResults.map((place) => (
+                      <button
+                        key={place.id}
+                        type="button"
+                        onClick={() => pickDropdownResult(place)}
+                        className="px-4 py-3 text-left text-sm hover:bg-[var(--color-surface)]"
+                      >
+                        {place.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-1.5 text-sm font-bold">
+                <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
+                ที่พักแนะนำ
+              </p>
+            </div>
+
+            {hotels === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
+
+            <div className="flex gap-4 overflow-x-auto pb-1">
+              {hotels?.map((hotel) => {
+                const isStaged = stagedPlaces.some((p) => p.id === hotel.id);
+                const isAdded = addedIds.has(hotel.id) || isStaged;
+                return (
+                  <div key={hotel.id} className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
+                    <div className="relative h-32 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+                      {hotel.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={hotel.imageUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center">
+                          <MapPin size={22} style={{ color: "var(--color-muted)" }} />
+                        </span>
+                      )}
+                      {hotel.rating !== undefined && (
+                        <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-bold text-white">
+                          <Star size={10} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+                          {hotel.rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col gap-2 p-3">
+                      <p className="truncate text-sm font-bold">{hotel.name}</p>
+                      <p className="truncate text-xs text-[var(--color-muted)]">{hotel.priceLabel}</p>
+                      <div className="mt-auto flex flex-col items-center gap-1.5">
+                        <AddButton isAdded={isAdded} label="เพิ่ม" onClick={() => onStage(hotel)} />
+                        <HotelBookingButton name={hotel.name} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-
-          {status === "booked" && (
-            <div className="flex flex-col gap-4">
-              <LabeledInput label="ชื่อโรงแรม" value={hotelName} onChange={setHotelName} onBlur={saveBookedHotel} placeholder="ชื่อโรงแรม" />
-              <LabeledInput
-                label="ตำแหน่งที่อยู่ของที่พัก"
-                value={location}
-                onChange={setLocation}
-                onBlur={saveBookedHotel}
-                placeholder="ตำแหน่งที่อยู่ของที่พัก"
-              />
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-[var(--color-muted)]">วันที่เข้าพัก - วันที่ออก</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={checkInDate}
-                    onChange={(e) => setCheckInDate(e.target.value)}
-                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
-                    style={{ borderColor: "var(--color-border)" }}
-                  />
-                  <span className="text-[var(--color-muted)]">-</span>
-                  <input
-                    type="date"
-                    value={checkOutDate}
-                    onChange={(e) => setCheckOutDate(e.target.value)}
-                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
-                    style={{ borderColor: "var(--color-border)" }}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-[var(--color-muted)]">เวลา Check in - Check out</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    value={checkInTime}
-                    onChange={(e) => setCheckInTime(e.target.value)}
-                    onBlur={saveBookedHotel}
-                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
-                    style={{ borderColor: "var(--color-border)" }}
-                  />
-                  <span className="text-[var(--color-muted)]">-</span>
-                  <input
-                    type="time"
-                    value={checkOutTime}
-                    onChange={(e) => setCheckOutTime(e.target.value)}
-                    onBlur={saveBookedHotel}
-                    className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm focus:outline-none"
-                    style={{ borderColor: "var(--color-border)" }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {status === "unbooked" && (
-            <div className="flex flex-col gap-4">
-              <div className="relative">
-                <div
-                  className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
-                  style={{ borderColor: "var(--color-border)" }}
-                >
-                  <Search size={16} style={{ color: "var(--color-muted)" }} />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onFocus={() => dropdownResults && dropdownResults.length > 0 && setDropdownOpen(true)}
-                    placeholder="เพิ่มที่พัก"
-                    className="w-full bg-transparent text-sm focus:outline-none"
-                  />
-                </div>
-
-                {dropdownOpen && dropdownResults && dropdownResults.length > 0 && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
-                    <div className="absolute inset-x-0 top-full z-20 mt-2 flex flex-col overflow-hidden rounded-2xl border bg-white shadow-lg" style={{ borderColor: "var(--color-border)" }}>
-                      {dropdownResults.map((place) => (
-                        <button
-                          key={place.id}
-                          type="button"
-                          onClick={() => pickDropdownResult(place)}
-                          className="px-4 py-3 text-left text-sm hover:bg-[var(--color-surface)]"
-                        >
-                          {place.name}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="flex items-center gap-1.5 text-sm font-bold">
-                  <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
-                  ที่พักแนะนำ
-                </p>
-              </div>
-
-              {hotels === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
-
-              <div className="flex gap-4 overflow-x-auto pb-1">
-                {hotels?.map((hotel) => {
-                  const isStaged = stagedPlaces.some((p) => p.id === hotel.id);
-                  const isAdded = addedIds.has(hotel.id) || isStaged;
-                  return (
-                    <div key={hotel.id} className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
-                      <div className="relative h-32 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
-                        {hotel.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={hotel.imageUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center">
-                            <MapPin size={22} style={{ color: "var(--color-muted)" }} />
-                          </span>
-                        )}
-                        {hotel.rating !== undefined && (
-                          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-bold text-white">
-                            <Star size={10} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
-                            {hotel.rating.toFixed(1)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-1 flex-col gap-2 p-3">
-                        <p className="truncate text-sm font-bold">{hotel.name}</p>
-                        <p className="truncate text-xs text-[var(--color-muted)]">{hotel.priceLabel}</p>
-                        <div className="mt-auto flex justify-center">
-                          <AddButton isAdded={isAdded} label="เพิ่ม" onClick={() => onStage(hotel)} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1388,42 +1335,6 @@ function LabeledInput({
         />
       </div>
     </div>
-  );
-}
-
-function AccommodationStatusCard({
-  icon: Icon,
-  title,
-  subtitle,
-  isOn,
-  onClick,
-}: {
-  icon: typeof Ticket;
-  title: string;
-  subtitle: string;
-  isOn: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm transition-transform hover:-translate-y-0.5"
-      style={isOn ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" } : { borderColor: "var(--color-border)" }}
-    >
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-        style={{ backgroundColor: isOn ? "rgba(255,255,255,0.7)" : "var(--color-surface)" }}
-      >
-        <Icon size={16} style={{ color: isOn ? "var(--color-brand-green)" : "var(--color-muted)" }} />
-      </span>
-      <span>
-        <span className="block text-sm font-bold" style={isOn ? { color: "var(--color-brand-green)" } : undefined}>
-          {title}
-        </span>
-        <span className="mt-0.5 block text-xs text-[var(--color-muted)]">{subtitle}</span>
-      </span>
-    </button>
   );
 }
 

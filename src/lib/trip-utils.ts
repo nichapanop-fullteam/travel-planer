@@ -42,6 +42,28 @@ export function formatDuration(minutes: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+// Real totals derived from each activity's own cost plus whatever travel leg
+// (travelFromPrevious) was attached to it — unlike getDayRouteEstimate above,
+// this only counts distance/time actually entered by the traveler, so it
+// starts at 0 until "เพิ่มการเดินทาง" has been filled in.
+export function getTripRouteSummary(trip: HasDays): { distanceKm: number; minutes: number; costAmount: number } {
+  let distanceKm = 0;
+  let minutes = 0;
+  let costAmount = 0;
+  for (const day of trip.days) {
+    for (const activity of day.activities) {
+      costAmount += activity.cost;
+      const travel = activity.travelFromPrevious;
+      if (travel) {
+        distanceKm += travel.distanceKm ?? 0;
+        minutes += travel.durationMin ?? 0;
+        costAmount += travel.costAmount ?? 0;
+      }
+    }
+  }
+  return { distanceKm: Math.round(distanceKm * 10) / 10, minutes, costAmount };
+}
+
 export function getTripCostByCategory(trip: HasDays): Partial<Record<ActivityCategory, number>> {
   const totals: Partial<Record<ActivityCategory, number>> = {};
   for (const day of trip.days) {
@@ -67,6 +89,18 @@ export function getGoogleMapsUrl(location: Location): string {
     ? `${location.lat},${location.lng}`
     : location.name;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+// Generic hotel-search deep links — no partner/affiliate API integration
+// exists yet, so these just hand the hotel name off to each site's own
+// search box rather than linking a specific listing.
+export function getHotelBookingLinks(name: string): { agoda: string; booking: string; trip: string } {
+  const query = encodeURIComponent(name);
+  return {
+    agoda: `https://www.agoda.com/search?q=${query}`,
+    booking: `https://www.booking.com/searchresults.html?ss=${query}`,
+    trip: `https://www.trip.com/hotels/list?keyword=${query}`,
+  };
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {

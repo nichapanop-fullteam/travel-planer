@@ -99,6 +99,7 @@ import {
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
+import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { SelfPlanBuilderTab, DayTab, EditLockToggle, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { Sidebar } from "@/components/consumer/Sidebar";
 
@@ -541,7 +542,7 @@ export default function GeneratedPlanPage() {
         </div>
       </div>
 
-      <Hero trip={trip} onManagePhotos={() => setGalleryDialogOpen(true)} />
+      <Hero trip={trip} canEdit={canEdit} onManagePhotos={() => setGalleryDialogOpen(true)} />
 
       {galleryDialogOpen && (
         <TripGalleryDialog
@@ -728,7 +729,15 @@ function SaveTripButton({ onSave, saveState }: { onSave: () => void; saveState: 
   );
 }
 
-function Hero({ trip, onManagePhotos }: { trip: GeneratedTrip; onManagePhotos: () => void }) {
+function Hero({
+  trip,
+  canEdit,
+  onManagePhotos,
+}: {
+  trip: GeneratedTrip;
+  canEdit: boolean;
+  onManagePhotos: () => void;
+}) {
   const pills = [
     { key: "duration", icon: CalendarDays, label: trip.durationLabel },
     { key: "pace", icon: Footprints, label: trip.paceLabel },
@@ -739,17 +748,21 @@ function Hero({ trip, onManagePhotos }: { trip: GeneratedTrip; onManagePhotos: (
   // resolveCoverImageUrl falls back to the static /images/hero-mountain.jpg
   // placeholder (trip.coverImageUrl) whenever PUT /trips/:tripId/cover hasn't
   // been called yet — before giving up to that, check GET /trips/:tripId/media
-  // for a real photo (e.g. one attached via addTripMediaFromPlace when a place
-  // was added to the itinerary) and use whichever it flags as the cover.
-  const [galleryCover, setGalleryCover] = useState<string | null>(null);
+  // for every real photo attached to the trip (e.g. via addTripMediaFromPlace
+  // when a place was added to the itinerary): the one flagged as cover leads,
+  // the rest become swipeable slides on the read-only detail view below.
+  const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   useEffect(() => {
-    if (trip.coverImage) return;
     let cancelled = false;
     getTripGallery(trip.id, { page: 1, limit: 12 })
       .then((gallery) => {
         if (cancelled) return;
-        const cover = gallery.items.find((item) => item.isCover) ?? gallery.items[0];
-        if (cover) setGalleryCover(cover.urls.large);
+        const coverIndex = gallery.items.findIndex((item) => item.isCover);
+        const ordered =
+          coverIndex > 0
+            ? [gallery.items[coverIndex], ...gallery.items.filter((_, i) => i !== coverIndex)]
+            : gallery.items;
+        setGalleryImages(ordered.map((item) => item.urls.large));
       })
       .catch(() => {
         // No gallery yet (or the request failed) — resolveCoverImageUrl's own
@@ -758,26 +771,40 @@ function Hero({ trip, onManagePhotos }: { trip: GeneratedTrip; onManagePhotos: (
     return () => {
       cancelled = true;
     };
-  }, [trip.id, trip.coverImage]);
+  }, [trip.id]);
+
+  const fallback = trip.coverImage?.urls.large ?? resolveCoverImageUrl(trip, "large");
+  const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
 
   return (
     <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-6 text-center sm:min-h-[260px]">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={galleryCover ?? resolveCoverImageUrl(trip, "large")}
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover object-[80%_30%]"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/10 to-black/50" />
+      {/* Editing keeps a single static cover — swiping through photos is a
+          viewing affordance, and would fight with "จัดการรูปภาพ" for the same
+          tap target. The read-only detail view (canEdit === false, i.e.
+          opened from a trip card rather than "แก้ไขแพลน") gets the swipeable
+          gallery instead. */}
+      {canEdit || images.length <= 1 ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={images[0] ?? "/images/hero-mountain.jpg"}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-[80%_30%]"
+        />
+      ) : (
+        <HeroImageCarousel images={images} title={trip.title || trip.destination} />
+      )}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-black/10 to-black/50" />
 
-      <button
-        type="button"
-        onClick={onManagePhotos}
-        className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-2 text-xs font-semibold shadow-md"
-      >
-        <ImagePlus size={14} />
-        จัดการรูปภาพ
-      </button>
+      {canEdit && (
+        <button
+          type="button"
+          onClick={onManagePhotos}
+          className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-2 text-xs font-semibold shadow-md"
+        >
+          <ImagePlus size={14} />
+          จัดการรูปภาพ
+        </button>
+      )}
 
       <h1 className="relative text-4xl font-extrabold text-white drop-shadow-sm sm:text-[70px]">
         {trip.title || trip.destination}
@@ -795,6 +822,104 @@ function Hero({ trip, onManagePhotos }: { trip: GeneratedTrip; onManagePhotos: (
         ))}
       </div>
     </div>
+  );
+}
+
+// Snap-scrolling photo strip for the read-only trip detail view — same
+// gesture as a Lemon8/IG story: swipe or tap the arrow to advance, dots at
+// the bottom track position. Sits behind the title/pills overlay (Hero
+// renders those on top, in normal document flow above this absolutely
+// positioned strip) so they read as fixed chrome while photos scroll under it.
+function HeroImageCarousel({ images, title }: { images: string[]; title: string }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+  // A swipe that actually scrolls the strip never fires a click on the image
+  // underneath (standard browser drag-suppression) — so a plain onClick here
+  // only ever fires for a genuine tap, no extra gesture-tracking needed to
+  // tell "swiping" apart from "viewing full-size".
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  function handleScroll() {
+    const el = scrollerRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  function goTo(next: number) {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const clampedIndex = (next + images.length) % images.length;
+    const target = clampedIndex * el.clientWidth;
+    el.scrollTo({ left: target, behavior: "smooth" });
+    // The active dot normally tracks the "scroll" event fired as the user
+    // swipes or the smooth animation plays — set directly here too so the
+    // arrow button doesn't depend on that event actually firing (seen to be
+    // unreliable for programmatic scrollLeft changes in some webviews/this
+    // project's own headless test harness).
+    setIndex(clampedIndex);
+    // Belt-and-suspenders for the same environments — if the smooth scrollTo
+    // itself was a silent no-op, jump there directly once its animation
+    // should be done instead of leaving the arrow looking broken.
+    window.setTimeout(() => {
+      if (Math.abs(el.scrollLeft - target) > el.clientWidth / 2) el.scrollLeft = target;
+    }, 500);
+  }
+
+  return (
+    <>
+      <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
+        className="absolute inset-0 flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {images.map((src, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label="ดูรูปเต็มจอ"
+            className="h-full w-full shrink-0 snap-center"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={src} alt="" className="h-full w-full object-cover object-[80%_30%]" />
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => goTo(index + 1)}
+        aria-label="ดูรูปถัดไป"
+        className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
+      >
+        <ChevronRight size={18} />
+      </button>
+
+      {/* bottom-10, not bottom-3 — the content sheet right below Hero
+          overlaps its bottom ~32px (see the "-mt-8" on that sheet in the
+          parent), which would otherwise paint over the dots. */}
+      <div className="pointer-events-none absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5">
+        {images.map((_, i) => (
+          <span
+            key={i}
+            className="h-1.5 rounded-full transition-all"
+            style={{
+              width: i === index ? "18px" : "6px",
+              backgroundColor: i === index ? "#fff" : "rgba(255,255,255,0.5)",
+            }}
+          />
+        ))}
+      </div>
+
+      {lightboxOpen && (
+        <ImageLightbox
+          title={title}
+          images={images}
+          initialIndex={index}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -1280,6 +1405,10 @@ function AccommodationAccordion({
                     เปลี่ยนที่พัก
                   </button>
                 )}
+                <HotelBookingButton
+                  name={name}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
+                />
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
@@ -1787,6 +1916,12 @@ function PlanActivityRow({
             {activity.notes && (
               <p className="mt-1 break-words text-xs font-normal text-[var(--color-muted)]">{activity.notes}</p>
             )}
+            {activity.category === "hotel" && (
+              <HotelBookingButton
+                name={activity.location?.name ?? activity.title}
+                className="mt-1.5 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1826,13 +1961,15 @@ function PlanActivityRow({
 function ImageLightbox({
   title,
   images,
+  initialIndex = 0,
   onClose,
 }: {
   title: string;
   images: string[];
+  initialIndex?: number;
   onClose: () => void;
 }) {
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(initialIndex);
   const hasMultiple = images.length > 1;
 
   function goTo(next: number) {

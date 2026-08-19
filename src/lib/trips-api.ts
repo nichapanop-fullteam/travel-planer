@@ -30,13 +30,19 @@ export type BackendBudgetTier = "economy" | "comfort" | "premium" | "luxury" | "
 
 // Compact shape returned by GET /trips. It intentionally does not contain
 // days, customer, brief, or mediaSummary; cards must not treat it as a full
-// BackendTrip and should fetch GET /trips/:id after navigation.
+// BackendTrip and should fetch GET /trips/:id after navigation. Carries both
+// budget fields, and they are NOT interchangeable: `totalBudget` is the
+// actual sum of expenses in the plan (always present, 0 when there's
+// nothing spent yet — 0 means "don't show a price row", not "unset"),
+// while `budgetLimit` is the traveler's own spending cap (absent when never
+// set). Never substitute one for the other in the UI.
 export interface BackendTripListItem {
   id: string;
   title: string;
   destination: string;
   status: "draft" | "shared" | "confirmed" | "completed";
   schedule: BackendTripSchedule;
+  totalBudget: number;
   budgetLimit?: number;
   budgetTier?: BackendBudgetTier;
   tags: string[];
@@ -85,8 +91,14 @@ export interface BackendTrip {
 // which blocks a direct browser fetch with CORS. Used on the public /main
 // page; getMyTrips() below is the strict, auth-required variant for
 // /my-trips.
-export async function listTrips(): Promise<BackendTripListItem[]> {
-  const response = await fetch("/api/trips");
+//
+// `destination` does a partial, case-insensitive match against the trip's
+// destination field (e.g. "หลวงพระบาง" matches "หลวงพระบาง, ลาว") — omit it
+// (or pass an empty string) for the unfiltered feed. Built with
+// URLSearchParams so Thai text and other special characters survive.
+export async function listTrips(destination?: string): Promise<BackendTripListItem[]> {
+  const url = destination ? `/api/trips?${new URLSearchParams({ destination })}` : "/api/trips";
+  const response = await fetch(url);
 
   if (!response.ok) {
     throw new Error(`โหลดทริปไม่สำเร็จ (${response.status} ${response.statusText})`);

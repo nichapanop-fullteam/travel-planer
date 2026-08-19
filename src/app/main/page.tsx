@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Bell,
   Bookmark,
@@ -17,6 +16,7 @@ import {
   Search,
   Sparkles,
   Users,
+  Wallet,
 } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 import { BookingBar } from "@/components/consumer/BookingBar";
@@ -27,6 +27,7 @@ import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-
 import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { feedCategoryLabel } from "@/lib/feed-categories";
+import { formatTHB } from "@/lib/trip-utils";
 import type { Destination, FeedCategory } from "@/types";
 
 // Every cover crops to the same ratio — object-cover absorbs each source
@@ -54,14 +55,20 @@ export default function MainPage() {
   const [activeCategory, setActiveCategory] = useState("ทั้งหมด");
   const [trips, setTrips] = useState<BackendTripListItem[] | null>(null);
   const [loadError, setLoadError] = useState("");
+  // "" = unfiltered feed. Set whenever "ค้นหา" is pressed in HomeSearchBar
+  // (destination-only — Date/Guest have no server-side equivalent) so the
+  // empty/error copy below can say what was searched and offer a way back.
+  const [activeSearch, setActiveSearch] = useState("");
 
   // GET /trips — the public cross-owner feed (no login required), same
   // source my-trips.tsx uses for "ทริปของฉัน" via its authenticated sibling.
   // This is real trip data end to end: no mock author/like/comment fields,
   // since the backend doesn't return any of those for a trip.
-  useEffect(() => {
+  function loadTrips(destination: string) {
     let cancelled = false;
-    listTrips()
+    setTrips(null);
+    setLoadError("");
+    listTrips(destination)
       .then((items) => {
         if (!cancelled) setTrips(items);
       })
@@ -71,7 +78,14 @@ export default function MainPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }
+
+  useEffect(() => loadTrips(""), []);
+
+  function handleSearch(destination: string) {
+    setActiveSearch(destination);
+    loadTrips(destination);
+  }
 
   const visibleTrips = useMemo(() => {
     if (!trips) return trips;
@@ -87,7 +101,7 @@ export default function MainPage() {
         <LeftNav />
 
         <section className="min-w-0">
-          <HomeSearchBar />
+          <HomeSearchBar onSearch={handleSearch} />
 
           <div className="sticky top-[64px] z-20 mt-4 rounded-2xl border border-[#e5e9e6] bg-[#f6f7f6] sm:top-[73px]">
             <div className="flex">
@@ -107,6 +121,21 @@ export default function MainPage() {
             <CategoryChips active={activeCategory} onSelect={setActiveCategory} />
           </div>
 
+          {activeSearch && (
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-full bg-[#e9f4ee] px-4 py-2.5 text-sm">
+              <span className="truncate">
+                ผลค้นหา: <b className="font-bold text-[#236747]">{activeSearch}</b>
+              </span>
+              <button
+                type="button"
+                onClick={() => handleSearch("")}
+                className="shrink-0 text-xs font-semibold text-[#236747] underline"
+              >
+                ล้างการค้นหา
+              </button>
+            </div>
+          )}
+
           {loadError ? (
             <div className="mt-4 rounded-2xl bg-[#fdeceb] px-5 py-4 text-sm font-semibold text-[#c53d3d]">{loadError}</div>
           ) : visibleTrips === null ? (
@@ -115,7 +144,9 @@ export default function MainPage() {
             </div>
           ) : visibleTrips.length === 0 ? (
             <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-[#d8dedb] py-16 text-center">
-              <p className="text-sm font-semibold">ยังไม่มีทริปในหมวดนี้</p>
+              <p className="text-sm font-semibold">
+                {activeSearch ? `ไม่พบทริปสำหรับ "${activeSearch}"` : "ยังไม่มีทริปในหมวดนี้"}
+              </p>
               <p className="text-xs text-[#9aa19d]">ลองเลือกหมวดอื่น หรือกลับมาดูใหม่ภายหลัง</p>
             </div>
           ) : (
@@ -132,11 +163,13 @@ export default function MainPage() {
 }
 
 // Same Destination/Date/Guest search widget as the Create Trip hero (see
-// BookingBar's own doc comment) — searching here just hands the entered
-// fields to create-trip via the same "last search" localStorage prefill it
-// already reads on mount, rather than duplicating its whole form here.
-function HomeSearchBar() {
-  const router = useRouter();
+// BookingBar's own doc comment) — but here "ค้นหา" filters the trip feed
+// below by destination (GET /trips?destination=) instead of jumping to
+// create-trip. Date/Guest still get remembered (and still prefill
+// create-trip via the same "last search" localStorage bucket if the
+// traveler goes on to build a trip elsewhere) but have no server-side
+// equivalent on this endpoint, so they don't affect what gets searched.
+function HomeSearchBar({ onSearch }: { onSearch: (destination: string) => void }) {
   const [destination, setDestination] = useState("");
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState("");
@@ -164,7 +197,7 @@ function HomeSearchBar() {
 
   function handleSearch() {
     saveLastCreateTripSearch({ destination, destinationPlace, duration, startDate, endDate, guests, adults, children });
-    router.push("/create-trip");
+    onSearch(destination);
   }
 
   return (
@@ -381,6 +414,13 @@ function LemonCard({ trip }: { trip: BackendTripListItem }) {
               </span>
             ))}
           </div>
+        )}
+
+        {trip.totalBudget > 0 && (
+          <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-[#236747]">
+            <Wallet size={11} className="shrink-0" />
+            งบ {formatTHB(trip.totalBudget)}
+          </p>
         )}
 
         <div className="mt-1.5 flex items-center justify-between gap-2">

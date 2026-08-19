@@ -11,7 +11,11 @@ const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL ?? "https://trav
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
 
-  const response = await fetch(new URL("/trips", EXTERNAL_API_BASE_URL), {
+  const upstreamUrl = new URL("/trips", EXTERNAL_API_BASE_URL);
+  const destination = request.nextUrl.searchParams.get("destination");
+  if (destination) upstreamUrl.searchParams.set("destination", destination);
+
+  const response = await fetch(upstreamUrl, {
     headers: {
       "ngrok-skip-browser-warning": "true",
       ...(authHeader ? { Authorization: authHeader } : {}),

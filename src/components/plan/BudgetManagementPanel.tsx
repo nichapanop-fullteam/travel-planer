@@ -96,6 +96,12 @@ export function BudgetManagementPanel({
   const goal = trip.budgetGoal;
   const spentPercent = goal ? Math.min(100, Math.round((total / goal) * 100)) : 0;
   const remaining = goal ? goal - total : undefined;
+  // Per-day bars below are scaled against the single highest-spending day
+  // (not the trip goal) so the busiest day always reads as "full" — dayBudget
+  // (goal split evenly across days) is only used to flag days that ran hot,
+  // a much rougher signal than an actual daily allowance.
+  const maxDayTotal = Math.max(...trip.days.map((day) => getDayExpenseTotal(day, expenses)), 0);
+  const dayBudget = goal ? goal / trip.days.length : undefined;
 
   return (
     <div className="flex flex-col gap-5">
@@ -188,14 +194,13 @@ export function BudgetManagementPanel({
 
       <div className="flex flex-col gap-2.5">
         {trip.days.map((day) => (
-          <div
+          <DayExpenseRow
             key={day.id}
-            className="flex items-center justify-between rounded-2xl border px-5 py-3.5"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <span className="text-sm font-bold">วันที่ {day.dayNumber}</span>
-            <span className="text-sm font-extrabold">{formatTHB(getDayExpenseTotal(day, expenses))}</span>
-          </div>
+            day={day}
+            amount={getDayExpenseTotal(day, expenses)}
+            maxAmount={maxDayTotal}
+            dayBudget={dayBudget}
+          />
         ))}
       </div>
 
@@ -256,6 +261,41 @@ export function BudgetManagementPanel({
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Background fill scaled to the highest-spending day, so at a glance you can
+// see which day burned through the most — a plain number-per-row list makes
+// that comparison require reading every value. Turns red (instead of the
+// usual brand-green tint) when a day ran over its even split of the trip
+// goal, since that's the one thing worth flagging without opening the ledger.
+function DayExpenseRow({
+  day,
+  amount,
+  maxAmount,
+  dayBudget,
+}: {
+  day: Day;
+  amount: number;
+  maxAmount: number;
+  dayBudget?: number;
+}) {
+  const percent = maxAmount > 0 ? Math.round((amount / maxAmount) * 100) : 0;
+  const overBudget = dayBudget !== undefined && amount > dayBudget;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border px-5 py-3.5" style={{ borderColor: "var(--color-border)" }}>
+      <div
+        className="absolute inset-y-0 left-0 transition-all"
+        style={{ width: `${percent}%`, backgroundColor: overBudget ? "var(--color-danger-bg)" : "var(--color-sel-bg)" }}
+      />
+      <div className="relative flex items-center justify-between gap-3">
+        <span className="text-sm font-bold">วันที่ {day.dayNumber}</span>
+        <span className="text-sm font-extrabold" style={overBudget ? { color: "var(--color-danger)" } : undefined}>
+          {formatTHB(amount)}
+        </span>
+      </div>
     </div>
   );
 }
