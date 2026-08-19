@@ -29,3 +29,10 @@ export function getLastCreateTripSearch(): CreateTripSearch | null {
 export function saveLastCreateTripSearch(search: CreateTripSearch): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(search));
 }
+
+// Called once a trip has actually been created — the prefill is only meant
+// to survive an abandoned/reopened form, not linger and resurface on the
+// traveler's *next*, unrelated trip.
+export function clearLastCreateTripSearch(): void {
+  window.localStorage.removeItem(STORAGE_KEY);
+}

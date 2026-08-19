@@ -172,9 +172,10 @@ function HomeSearchBar() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/images/luang-prabang-aerial.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
       <div className="absolute inset-0 bg-black/35" />
-      <div className="relative flex flex-col items-center gap-3 px-4 py-7 sm:py-8">
-        <p className="text-base font-extrabold text-white drop-shadow-sm sm:text-lg">พร้อมทริปต่อไปหรือยัง?</p>
+      <div className="relative flex flex-col items-center gap-2.5 px-4 py-5 sm:py-6">
+        <p className="text-sm font-extrabold text-white drop-shadow-sm sm:text-base">พร้อมทริปต่อไปหรือยัง?</p>
         <BookingBar
+          compact
           fields={[
             {
               icon: MapPin,

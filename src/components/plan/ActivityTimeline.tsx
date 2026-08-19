@@ -36,7 +36,7 @@ function ActivityRow({
     <div className="flex gap-3">
       <div className="flex w-12 shrink-0 flex-col items-center">
         <span className="mb-1.5 whitespace-nowrap text-[10px] font-semibold text-[var(--color-muted)]">
-          {activity.time}
+          {activity.time || "—"}
         </span>
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-full"

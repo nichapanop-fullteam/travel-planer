@@ -21,6 +21,7 @@ import {
   Share2,
   Star,
   Ticket,
+  Trash2,
   Wallet,
   Waves,
   Wifi,
@@ -90,6 +91,7 @@ export function SelfPlanBuilderTab({
   onAddActivityDirect,
   onOpenAddActivity,
   onEditActivity,
+  onDeleteActivity,
   onSaveAccommodation,
   onAddDay,
   onGoToPlanTab,
@@ -103,6 +105,7 @@ export function SelfPlanBuilderTab({
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
   onOpenAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
+  onDeleteActivity: (dayId: string, activityId: string) => void;
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onAddDay: () => void;
   onGoToPlanTab: () => void;
@@ -253,6 +256,7 @@ export function SelfPlanBuilderTab({
         canEdit={canEdit}
         onOpenAddActivity={onOpenAddActivity}
         onEditActivity={onEditActivity}
+        onDeleteActivity={onDeleteActivity}
         onGoToPlanTab={onGoToPlanTab}
         onUpdateActivityTravel={onUpdateActivityTravel}
       />
@@ -1428,6 +1432,7 @@ function ScheduleAccordion({
   canEdit,
   onOpenAddActivity,
   onEditActivity,
+  onDeleteActivity,
   onGoToPlanTab,
   onUpdateActivityTravel,
 }: {
@@ -1435,6 +1440,7 @@ function ScheduleAccordion({
   canEdit: boolean;
   onOpenAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
+  onDeleteActivity: (dayId: string, activityId: string) => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
 }) {
@@ -1506,6 +1512,7 @@ function ScheduleAccordion({
                           index={i}
                           canEdit={canEdit}
                           onEdit={() => onEditActivity(day.id, a)}
+                          onDelete={() => onDeleteActivity(day.id, a.id)}
                         />
                         {next && (
                           <TravelConnectorRow
@@ -1535,11 +1542,13 @@ function ScheduleActivityRow({
   index,
   canEdit,
   onEdit,
+  onDelete,
 }: {
   activity: Activity;
   index: number;
   canEdit: boolean;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
@@ -1555,13 +1564,22 @@ function ScheduleActivityRow({
       </span>
       <p className="min-w-0 flex-1 truncate text-xs font-bold">{activity.title}</p>
       {canEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
-        >
-          <Pencil size={12} />
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -1630,14 +1648,14 @@ export function TravelConnectorRow({
             type="button"
             onClick={() => setShowDialog(true)}
             aria-label={travel ? `แก้ไขการเดินทางไป ${toActivity.title}` : `เพิ่มการเดินทางไป ${toActivity.title}`}
-            className="my-auto flex min-h-7 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
+            className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
           >
             {content}
           </button>
         ) : (
           <div
-            className="my-auto flex min-h-7 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-[10px] font-semibold"
+            className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-[10px] font-semibold"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
           >
             {content}
