@@ -255,6 +255,22 @@ export interface GeneratedTrip {
   backendSynced?: boolean;
   backendDayIds?: string[];
   backendItemIds?: string[];
+  // Ownership/social metadata threaded from BackendTrip (see
+  // buildGeneratedTripFromBackendTrip in lib/generated-trips.ts) — absent for
+  // local-only/never-synced trips, which are always the current browser's own.
+  ownerId?: string;
+  creator?: { id: string; name: string; avatarUrl?: string };
+  planMode?: string;
+  saveCount?: number;
+  remixCount?: number;
+  // Set when this trip was created via POST /trips/:sourceTripId/remix — see
+  // lib/trip-remix-api.ts. Only ever points at the immediate source (never a
+  // chain), so attribution UI never has to render nested "remix of a remix".
+  remixedFrom?: {
+    sourceTripId: string;
+    sourceTitle: string;
+    sourceCreatorName?: string;
+  };
 }
 
 // Accommodation details editable via "แก้ไขทริป" → "เปลี่ยนที่พัก" on the trip

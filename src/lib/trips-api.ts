@@ -82,6 +82,13 @@ export interface BackendTrip {
   days: BackendTripDay[];
   createdAt: string;
   updatedAt: string;
+  // Social/remix metadata — optional since no backend environment sends
+  // these yet; the UI degrades gracefully (counts hidden, isRemix falsy)
+  // until the Remix API (see lib/trip-remix-api.ts) ships them for real.
+  saveCount?: number;
+  remixCount?: number;
+  isRemix?: boolean;
+  remixSource?: { id: string; title: string; ownerName?: string };
 }
 
 // GET /trips is the public, cross-owner feed and intentionally sends no

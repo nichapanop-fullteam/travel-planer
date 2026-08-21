@@ -8,7 +8,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { ConsumerShell } from "@/components/consumer/ConsumerShell";
 import LogoutButton from "@/components/LogoutButton";
 import { deleteTrip, getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
-import { deleteGeneratedTrip } from "@/lib/generated-trips";
+import { deleteGeneratedTrip, onGeneratedTripsChanged } from "@/lib/generated-trips";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
 
 // Client-side route guard only — good enough for this prototype, but not
@@ -31,20 +31,30 @@ export default function MyTripsPage() {
   useEffect(() => {
     if (!backendUser) return;
     let cancelled = false;
-    getMyTrips()
-      .then((items) => {
-        if (!cancelled) setTrips(items);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        if (error instanceof BackendAuthenticationError) {
-          router.replace("/login");
-          return;
-        }
-        setLoadError("โหลดทริปของคุณไม่สำเร็จ กรุณาลองอีกครั้ง");
-      });
+
+    function refetch() {
+      getMyTrips()
+        .then((items) => {
+          if (!cancelled) setTrips(items);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          if (error instanceof BackendAuthenticationError) {
+            router.replace("/login");
+            return;
+          }
+          setLoadError("โหลดทริปของคุณไม่สำเร็จ กรุณาลองอีกครั้ง");
+        });
+    }
+
+    refetch();
+    // A successful Remix (or any other local trip create/update/delete)
+    // fires this event — re-run the fetch so a trip created elsewhere shows
+    // up here without a hard page refresh.
+    const unsubscribe = onGeneratedTripsChanged(refetch);
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [backendUser, router]);
 

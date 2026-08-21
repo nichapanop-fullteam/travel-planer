@@ -40,8 +40,10 @@ import {
   Plane,
   Plus,
   RefreshCcw,
+  Repeat2,
   Save,
   Share2,
+  Sparkles,
   Star,
   Ticket,
   Trash2,
@@ -101,7 +103,12 @@ import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { SelfPlanBuilderTab, DayTab, EditLockToggle, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
+import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/consumer/Sidebar";
+import { useAuth } from "@/providers/AuthProvider";
+import { useToast } from "@/providers/ToastProvider";
+import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
+import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
 
 type TabKey = "overview" | "plan" | "weather" | "budget" | "chat";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -182,6 +189,10 @@ export default function GeneratedPlanPage() {
     null
   );
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
+  const [remixDialogOpen, setRemixDialogOpen] = useState(false);
+  const { backendUser } = useAuth();
+  const { showToast } = useToast();
+  const remix = useRemixTrip();
   // Every trip opens read-only (no add/delete/edit affordances) so it
   // doesn't look editable by accident — "แก้ไขแพลน"/"แก้ไขทริป" reveals them
   // again — see canEdit below. The one exception: arriving straight from
@@ -266,6 +277,30 @@ export default function GeneratedPlanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Returning from the forced /login redirect (see handleRemixClick below) —
+  // only consumes the stored intent once we actually know backendUser, so a
+  // render where the session is still restoring never discards it.
+  useEffect(() => {
+    if (!trip || !backendUser) return;
+    const pendingSourceTripId = consumePendingRemixIntent();
+    if (pendingSourceTripId === trip.id) {
+      remix.reset();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to a one-shot sessionStorage flag left by a prior page, not to React state
+      setRemixDialogOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip, backendUser]);
+
+  useEffect(() => {
+    if (remix.status !== "success" || !remix.newTripId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing the dialog is a one-time reaction to the hook's async result landing, not a render-time derivation
+    setRemixDialogOpen(false);
+    showToast("สร้างทริปของคุณแล้ว แก้ไขได้โดยไม่กระทบแผนต้นฉบับ");
+    // Always the new trip's id — never the source trip's.
+    router.push(`/generated-plan/${remix.newTripId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remix.status, remix.newTripId]);
+
   if (trip === undefined) return null;
 
   if (trip === null) {
@@ -285,6 +320,31 @@ export default function GeneratedPlanPage() {
 
   const isSelfMode = getTripDrafts().find((d) => d.id === trip.draftId)?.mode === "self";
   const tabs = isSelfMode ? SELF_TABS : AI_TABS;
+
+  // Local-only/never-synced trips have no ownerId at all (see
+  // buildGeneratedTripFromBackendTrip) and are always this browser's own —
+  // default to owner in that case. Otherwise ownership is decided purely by
+  // comparing against the signed-in backend user, never by edit-lock state.
+  const isOwner = !trip.ownerId || (!!backendUser && backendUser.id === trip.ownerId);
+  const remixSourceMeta: RemixSourceMeta = {
+    sourceTripId: trip.id,
+    sourceTitle: trip.title || trip.destination,
+    sourceCreatorName: trip.creator?.name,
+    sourceDurationDays: trip.days.length,
+  };
+
+  function handleRemixClick() {
+    if (!backendUser) {
+      // Never call the Remix API before auth is confirmed — send the
+      // visitor through the existing login flow and remember which trip
+      // they meant to remix so we can reopen this dialog on return.
+      setPendingRemixIntent(trip!.id);
+      router.push(`/login?redirect=${encodeURIComponent(`/generated-plan/${trip!.id}`)}`);
+      return;
+    }
+    remix.reset();
+    setRemixDialogOpen(true);
+  }
 
   function handleConfirm() {
     confirmGeneratedTrip(trip!.id);
@@ -536,7 +596,7 @@ export default function GeneratedPlanPage() {
   const canEdit = editUnlocked;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen bg-white ${!isOwner ? "pb-28 sm:pb-0" : ""}`}>
       <div
         className={`fixed inset-0 z-50 flex transition-opacity duration-300 ${
           sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -572,6 +632,8 @@ export default function GeneratedPlanPage() {
 
       <Hero trip={trip} canEdit={canEdit} onManagePhotos={() => setGalleryDialogOpen(true)} />
 
+      <TripAttributionBar trip={trip} isOwner={isOwner} onRemixClick={handleRemixClick} />
+
       {galleryDialogOpen && (
         <TripGalleryDialog
           tripId={trip.id}
@@ -582,6 +644,7 @@ export default function GeneratedPlanPage() {
 
       <div className="relative -mt-6 rounded-t-[32px] bg-white sm:-mt-8">
         <div className="mx-auto max-w-7xl px-6 py-8 sm:px-10">
+          {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
           {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
 
           {tab === "overview" && isSelfMode && (
@@ -660,6 +723,23 @@ export default function GeneratedPlanPage() {
           onSave={handleSaveActivity}
         />
       )}
+
+      {remixDialogOpen && (
+        <RemixSetupDialog
+          onClose={() => setRemixDialogOpen(false)}
+          source={{
+            title: remixSourceMeta.sourceTitle,
+            creatorName: remixSourceMeta.sourceCreatorName,
+            durationDays: remixSourceMeta.sourceDurationDays,
+          }}
+          status={remix.status}
+          message={remix.message}
+          expectedDurationDays={remix.expectedDurationDays}
+          onSubmit={(values) => remix.submit(values, remixSourceMeta)}
+        />
+      )}
+
+      {!isOwner && <MobileRemixBar onRemixClick={handleRemixClick} />}
     </div>
   );
 }
@@ -948,6 +1028,139 @@ function HeroImageCarousel({ images, title }: { images: string[]; title: string 
         />
       )}
     </>
+  );
+}
+
+// Creator identity + social proof + the primary Remix CTA (desktop/tablet
+// inline variant — see MobileRemixBar below for the mobile sticky bar).
+// Rendered for every trip; individual pieces degrade gracefully when their
+// backing data is absent (no creator, no counts, owner viewing their own).
+function TripAttributionBar({
+  trip,
+  isOwner,
+  onRemixClick,
+}: {
+  trip: GeneratedTrip;
+  isOwner: boolean;
+  onRemixClick: () => void;
+}) {
+  const showRealExperienceBadge = !isOwner && (trip.planMode === "self" || trip.planMode === "manual");
+  const hasCounts = trip.saveCount != null || trip.remixCount != null;
+
+  if (!trip.creator && !showRealExperienceBadge && !hasCounts && isOwner) return null;
+
+  return (
+    <div className="mx-auto max-w-7xl px-6 pt-6 sm:px-10">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {trip.creator && (
+            <div className="flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={trip.creator.avatarUrl || "/images/profile-avatar.jpg"}
+                alt={trip.creator.name}
+                className="h-9 w-9 shrink-0 rounded-full object-cover"
+              />
+              <div className="text-sm">
+                <p className="font-semibold leading-tight">{trip.creator.name}</p>
+                <p className="text-xs text-[var(--color-muted)]">ผู้สร้างทริปนี้</p>
+              </div>
+            </div>
+          )}
+
+          {showRealExperienceBadge && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold"
+              style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--foreground)" }}
+            >
+              <Sparkles size={12} />
+              ทริปจากประสบการณ์จริง
+            </span>
+          )}
+
+          {hasCounts && (
+            <div className="flex items-center gap-3 text-xs text-[var(--color-muted)]">
+              {trip.saveCount != null && (
+                <span className="inline-flex items-center gap-1">
+                  <Bookmark size={12} />
+                  {trip.saveCount}
+                </span>
+              )}
+              {trip.remixCount != null && (
+                <span className="inline-flex items-center gap-1">
+                  <Repeat2 size={12} />
+                  {trip.remixCount}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {!isOwner && (
+          <div className="hidden flex-col items-end gap-1 sm:flex">
+            <button
+              type="button"
+              onClick={onRemixClick}
+              className="inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-bold text-white"
+              style={{ backgroundColor: "var(--color-brand-green)" }}
+            >
+              <Repeat2 size={14} />
+              นำไปปรับเป็นทริปของฉัน
+            </button>
+            <p className="max-w-[240px] text-right text-[11px] text-[var(--color-muted)]">
+              ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Shown on a remixed trip's own Planner — always the immediate source only,
+// even if that source was itself a remix, so attribution never nests.
+function RemixSourceBanner({ remixedFrom }: { remixedFrom: NonNullable<GeneratedTrip["remixedFrom"]> }) {
+  return (
+    <div
+      className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-3 text-sm"
+      style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
+    >
+      <p>
+        Remix จาก &ldquo;{remixedFrom.sourceTitle}&rdquo;
+        {remixedFrom.sourceCreatorName ? ` โดย ${remixedFrom.sourceCreatorName}` : ""}
+      </p>
+      <Link
+        href={`/generated-plan/${remixedFrom.sourceTripId}`}
+        className="shrink-0 text-xs font-semibold underline"
+        style={{ color: "var(--color-brand-green)" }}
+      >
+        ดูต้นฉบับ
+      </Link>
+    </div>
+  );
+}
+
+// Mobile-only sticky bottom CTA — kept visible without scrolling, per the
+// requirement that the primary action never requires scrolling to reach.
+function MobileRemixBar({ onRemixClick }: { onRemixClick: () => void }) {
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-1 border-t bg-white px-4 py-3 sm:hidden"
+      style={{ borderColor: "var(--color-border)", paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+    >
+      <button
+        type="button"
+        onClick={onRemixClick}
+        className="flex w-full items-center justify-center gap-1.5 rounded-full py-3 text-sm font-bold text-white"
+        style={{ backgroundColor: "var(--color-brand-green)" }}
+      >
+        <Repeat2 size={15} />
+        นำไปปรับเป็นทริปของฉัน
+      </button>
+      <p className="text-center text-[11px] text-[var(--color-muted)]">
+        ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ
+      </p>
+    </div>
   );
 }
 

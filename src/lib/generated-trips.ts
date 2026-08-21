@@ -415,6 +415,21 @@ export function buildGeneratedTripFromBackendTrip(trip: BackendTrip): GeneratedT
     backendSynced: true,
     backendDayIds: trip.days.map((d) => d.id),
     backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
+    ownerId: trip.ownerId,
+    creator: trip.customer
+      ? { id: trip.customer.id, name: trip.customer.name, avatarUrl: trip.customer.avatarUrl }
+      : undefined,
+    planMode: trip.planMode,
+    saveCount: trip.saveCount,
+    remixCount: trip.remixCount,
+    remixedFrom:
+      trip.isRemix && trip.remixSource
+        ? {
+            sourceTripId: trip.remixSource.id,
+            sourceTitle: trip.remixSource.title,
+            sourceCreatorName: trip.remixSource.ownerName,
+          }
+        : undefined,
   };
 }
 
