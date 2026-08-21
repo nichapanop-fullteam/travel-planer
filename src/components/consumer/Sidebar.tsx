@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Bookmark, Home, MapPin, Menu, Plus, User, Users } from "lucide-react";
 import { myGroups } from "@/lib/groups";
-import { getGeneratedTrips, onGeneratedTripsChanged } from "@/lib/generated-trips";
-import type { GeneratedTrip } from "@/types";
+import { onGeneratedTripsChanged } from "@/lib/generated-trips";
+import { useAuth } from "@/providers/AuthProvider";
+import { getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
 
 type NavKey = "home" | "my-trips";
 
 // Sidebar nav — only "หน้าหลัก" (Home) links anywhere real right now; "Account",
 // "Bookmark", and "Create Group" are visual placeholders (see CONTRIBUTING.md
 // for what's real vs. visual). Groups list links to real trip-detail pages,
-// and "ทริปของฉัน" reads real generated trips from lib/generated-trips.ts.
+// and "ทริปของฉัน" reads the signed-in user's real trips from GET /trips/mine
+// (see lib/trips-api.ts) — same source as /my-trips, so a trip created/deleted
+// on another device or via /my-trips shows up here correctly too.
 export function Sidebar({
   active,
   activeGroupId,
@@ -23,15 +26,28 @@ export function Sidebar({
   onClose?: () => void;
 }) {
   const groups = myGroups;
-  const [myTrips, setMyTrips] = useState<GeneratedTrip[]>([]);
+  const { backendUser } = useAuth();
+  // Discarded via the `backendUser ? ... : []` fallback below on logout,
+  // rather than reset with an extra setState call, so the effect never needs
+  // a synchronous setState in its body (only inside the fetch's .then/.catch).
+  const [fetchedTrips, setFetchedTrips] = useState<BackendTripListItem[]>([]);
+  const myTrips = backendUser ? fetchedTrips : [];
+
+  const loadMyTrips = useCallback(() => {
+    getMyTrips()
+      .then(setFetchedTrips)
+      .catch(() => setFetchedTrips([]));
+  }, []);
 
   useEffect(() => {
-    setMyTrips(getGeneratedTrips());
-    // Re-sync whenever a trip is created/updated/deleted anywhere else in the
-    // app (e.g. create-trip, or "ลบทริป" on my-trips) — this list otherwise
-    // only ever reflected whatever was saved as of this component's mount.
-    return onGeneratedTripsChanged(() => setMyTrips(getGeneratedTrips()));
-  }, []);
+    if (!backendUser) return;
+    loadMyTrips();
+    // onGeneratedTripsChanged still fires on every local trip
+    // create/update/delete (create-trip, "ลบทริป" on my-trips, ...) — reused
+    // here purely as a "something changed, refetch from the server" signal,
+    // not as the data source itself.
+    return onGeneratedTripsChanged(loadMyTrips);
+  }, [backendUser, loadMyTrips]);
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[var(--color-border)]/40 bg-white p-4">
@@ -105,7 +121,7 @@ export function Sidebar({
                   <MapPin size={16} className="shrink-0" />
                   <span className="truncate">
                     {trip.destination}
-                    {trip.status === "generated" && " (WIP)"}
+                    {trip.status !== "confirmed" && " (WIP)"}
                   </span>
                 </Link>
               ))}

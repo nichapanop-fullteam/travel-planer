@@ -77,10 +77,10 @@ export async function createTripDayOnServer(
 }
 
 // The backend's UpdateItemDto is a strict whitelist — sending title/time/
-// cost/notes/etc. (borrowed from CreateTripActivity's shape) 400s with
-// "property X should not exist". Only the travel-leg-from-previous-stop
-// fields are confirmed accepted here (same vocabulary as POST
-// /days/:dayId/items and each activity in POST /trips/create).
+// notes/etc. (borrowed from CreateTripActivity's shape) 400s with "property
+// X should not exist". Travel-leg-from-previous-stop fields, plus
+// costAmount/paidBy/splitLabel (per the budget tab's "เพิ่มค่าใช้จ่าย" ->
+// "เลือกจากแผนการเดินทาง" flow), are the confirmed accepted fields.
 export interface UpdateTripItemRequest {
   travelTypeFromPrev?: TravelType;
   travelCustomTypeFromPrev?: string;
@@ -89,6 +89,9 @@ export interface UpdateTripItemRequest {
   travelCostFromPrevAmount?: number;
   travelCostFromPrevCurrency?: string;
   travelNotesFromPrev?: string;
+  costAmount?: number;
+  paidBy?: string;
+  splitLabel?: string;
 }
 
 // PATCH /items/:itemId

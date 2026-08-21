@@ -1,19 +1,23 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  LoaderCircle,
   Plus,
   Pencil,
   Receipt,
   Share2,
   Trash2,
+  TriangleAlert,
   X,
 } from "lucide-react";
-import type { Day, ExpenseCategory, GeneratedTrip, TripExpense } from "@/types";
+import Link from "next/link";
+import { useAuth } from "@/providers/AuthProvider";
+import type { ExpenseCategory, GeneratedTrip } from "@/types";
 import { categoryIcon } from "@/lib/category-styles";
 import {
   ACTIVITY_TO_EXPENSE_CATEGORY,
@@ -21,87 +25,148 @@ import {
   expenseCategoryIcon,
   expenseCategoryLabel,
 } from "@/lib/expense-styles";
-import { formatExpenseDate, formatExpenseTotal, getExpensesTotal, seedExpensesFromTrip } from "@/lib/trip-expenses";
+import { formatExpenseDate } from "@/lib/trip-expenses";
 import { formatTHB } from "@/lib/trip-utils";
+import { updateTripItemOnServer, updateTripOnServer } from "@/lib/trips-update-api";
+import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
+import {
+  createExpense,
+  deleteExpense,
+  getTripBudget,
+  toBackendExpenseCategory,
+  type TripBudget,
+  type TripBudgetLineItem,
+} from "@/lib/trip-budget-api";
 
 // Cycled per category in the "สัดส่วนค่าใช้จ่าย" bar/legend — enough distinct
 // hues to keep adjacent segments from ever reading as the same color even
 // when several categories are present at once.
 const BREAKDOWN_COLORS = ["#1f3d2e", "#2a9e64", "#8fcdb0", "#f0a53c", "#e2c9a3", "#6b7fd4", "#e05252"];
 
-interface CategoryBreakdown {
-  category: ExpenseCategory;
-  amount: number;
-  percent: number;
-  color: string;
-}
-
-function getCategoryBreakdown(expenses: TripExpense[]): CategoryBreakdown[] {
-  const total = getExpensesTotal(expenses);
-  if (total <= 0) return [];
-
-  const totalsByCategory = new Map<ExpenseCategory, number>();
-  for (const expense of expenses) {
-    totalsByCategory.set(expense.category, (totalsByCategory.get(expense.category) ?? 0) + expense.amount);
-  }
-
-  return Array.from(totalsByCategory.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([category, amount], i) => ({
-      category,
-      amount,
-      percent: Math.round((amount / total) * 100),
-      color: BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length],
-    }));
-}
-
-// Expenses seeded from the itinerary (see seedExpensesFromTrip) carry the
-// activity's own day.date — matching on that same string is enough to group
-// by day without needing a separate day <-> expense link.
-function getDayExpenseTotal(day: Day, expenses: TripExpense[]): number {
-  return expenses.filter((e) => e.date === day.date).reduce((sum, e) => sum + e.amount, 0);
-}
-
 // Reference-design "การจัดการงบประมาณ" tab: a spend summary, an expense
-// ledger, and the add-expense + pick-item flows. Companion-related affordances
-// (ยอดคงเหลือกลุ่ม/เพิ่มเพื่อนร่วมทริป/การตั้งค่า/ดูการแยกย่อย) stay inert —
-// same "not wired up in this demo" pattern as Sidebar.tsx, since there's no
-// multi-user backend to back them yet.
+// ledger, and the add-expense + pick-item flows, all backed by
+// GET/POST/PATCH/DELETE /trips/:id/budget & /expenses (see lib/trip-budget-api.ts).
+// Companion-related affordances (ยอดคงเหลือกลุ่ม/เพิ่มเพื่อนร่วมทริป/การตั้งค่า/
+// ดูการแยกย่อย) stay inert — same "not wired up in this demo" pattern as
+// Sidebar.tsx, since there's no multi-user backend to back them yet.
 const DEMO_DISABLED_TITLE = "ยังไม่เปิดใช้งานในเดโมนี้";
 
-export function BudgetManagementPanel({
-  trip,
-  onPatch,
-}: {
-  trip: GeneratedTrip;
-  onPatch: (patch: Partial<GeneratedTrip>) => void;
-}) {
-  const expenses = trip.expenses ?? seedExpensesFromTrip(trip);
+export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: (patch: Partial<GeneratedTrip>) => void }) {
+  const { backendUser, isLoading: authLoading } = useAuth();
+  const [budget, setBudget] = useState<TripBudget | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [sortAsc, setSortAsc] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
 
-  function persist(next: TripExpense[]) {
-    onPatch({ expenses: next });
+  const canUseBudget = Boolean(backendUser) && Boolean(trip.backendSynced);
+
+  // No synchronous setState here — only the async .then/.catch callbacks
+  // touch state, so this is safe to call directly from the mount effect
+  // below as well as from retry/refresh event handlers.
+  const loadBudget = useCallback(() => {
+    getTripBudget(trip.id)
+      .then((data) => {
+        setBudget(data);
+        setLoadError("");
+      })
+      .catch(() => setLoadError("โหลดข้อมูลงบประมาณไม่สำเร็จ กรุณาลองอีกครั้ง"));
+  }, [trip.id]);
+
+  useEffect(() => {
+    if (canUseBudget) loadBudget();
+  }, [canUseBudget, loadBudget]);
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center p-10">
+        <LoaderCircle size={22} className="animate-spin text-[var(--color-muted)]" />
+      </div>
+    );
   }
 
-  const total = getExpensesTotal(expenses);
-  const sorted = [...expenses].sort((a, b) => {
+  if (!backendUser) {
+    return (
+      <EmptyStateCard
+        title="เข้าสู่ระบบเพื่อดูงบประมาณ"
+        description="งบและค่าใช้จ่ายของทริปผูกกับบัญชีผู้ใช้ ต้องเข้าสู่ระบบก่อนจึงจะดู/แก้ไขได้"
+        action={
+          <Link
+            href="/login"
+            className="rounded-full px-5 py-2.5 text-sm font-bold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            เข้าสู่ระบบ
+          </Link>
+        }
+      />
+    );
+  }
+
+  if (!trip.backendSynced) {
+    return (
+      <EmptyStateCard
+        title="บันทึกทริปนี้ก่อนใช้งบประมาณ"
+        description="แท็บนี้อ่าน/เขียนงบจากเซิร์ฟเวอร์โดยตรง กด “บันทึก” หรือ “เสร็จสิ้น” เพื่อสร้างทริปนี้บนเซิร์ฟเวอร์ก่อน"
+      />
+    );
+  }
+
+  if (loadError) {
+    return (
+      <EmptyStateCard
+        title="โหลดข้อมูลงบประมาณไม่สำเร็จ"
+        description={loadError}
+        action={
+          <button
+            type="button"
+            onClick={loadBudget}
+            className="rounded-full px-5 py-2.5 text-sm font-bold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            ลองอีกครั้ง
+          </button>
+        }
+      />
+    );
+  }
+
+  if (!budget) {
+    return (
+      <div className="flex items-center justify-center p-10">
+        <LoaderCircle size={22} className="animate-spin text-[var(--color-muted)]" />
+      </div>
+    );
+  }
+
+  const items = budget.items;
+  const total = budget.totalBudget;
+  const goal = budget.budgetLimit;
+  const spentPercent = goal ? Math.min(100, Math.round((total / goal) * 100)) : 0;
+  const remaining = goal !== undefined ? goal - total : undefined;
+  const breakdown = budget.byCategory.map((b, i) => ({ ...b, color: BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length] }));
+  const sorted = [...items].sort((a, b) => {
     const da = a.date ?? "";
     const db = b.date ?? "";
     return sortAsc ? da.localeCompare(db) : db.localeCompare(da);
   });
-  const breakdown = getCategoryBreakdown(expenses);
-  const goal = trip.budgetGoal;
-  const spentPercent = goal ? Math.min(100, Math.round((total / goal) * 100)) : 0;
-  const remaining = goal ? goal - total : undefined;
-  // Per-day bars below are scaled against the single highest-spending day
-  // (not the trip goal) so the busiest day always reads as "full" — dayBudget
-  // (goal split evenly across days) is only used to flag days that ran hot,
-  // a much rougher signal than an actual daily allowance.
-  const maxDayTotal = Math.max(...trip.days.map((day) => getDayExpenseTotal(day, expenses)), 0);
+
+  const unassignedTotal = items.filter((i) => i.dayNumber == null).reduce((sum, i) => sum + i.amount, 0);
+  const amountByDayId = new Map(budget.byDay.map((d) => [d.dayId, d.amount]));
+  const maxDayTotal = Math.max(...trip.days.map((day) => amountByDayId.get(day.id) ?? 0), unassignedTotal, 0);
   const dayBudget = goal ? goal / trip.days.length : undefined;
+
+  async function deleteLineItem(item: TripBudgetLineItem) {
+    if (item.source === "expense") {
+      await deleteExpense(item.id);
+    } else if (item.source === "activity") {
+      await updateTripItemOnServer(item.id, { costAmount: 0 });
+    } else {
+      return;
+    }
+    loadBudget();
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -110,14 +175,16 @@ export function BudgetManagementPanel({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold"
+            title={DEMO_DISABLED_TITLE}
+            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold opacity-70"
             style={{ borderColor: "var(--color-border)" }}
           >
             <Share2 size={14} /> แชร์
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold"
+            title={DEMO_DISABLED_TITLE}
+            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold opacity-70"
             style={{ borderColor: "var(--color-border)" }}
           >
             <Download size={14} /> บันทึกรูป
@@ -143,7 +210,7 @@ export function BudgetManagementPanel({
 
       <div className="rounded-3xl p-5 text-white sm:p-6" style={{ backgroundColor: "var(--color-brand-green)" }}>
         <p className="text-sm font-medium text-white/80">งบประมาณรวมทั้งทริปที่ตั้งไว้</p>
-        <p className="mt-1 text-3xl font-extrabold sm:text-4xl">{goal ? formatTHB(goal) : "ยังไม่ได้ตั้งงบ"}</p>
+        <p className="mt-1 text-3xl font-extrabold sm:text-4xl">{goal !== undefined ? formatTHB(goal) : "ยังไม่ได้ตั้งงบ"}</p>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
           <span>งบที่ใช้จริง = {formatTHB(total)}</span>
@@ -154,7 +221,7 @@ export function BudgetManagementPanel({
           )}
         </div>
 
-        {goal ? (
+        {goal !== undefined ? (
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/20">
             <div
               className="h-full rounded-full transition-all"
@@ -167,12 +234,12 @@ export function BudgetManagementPanel({
           <div className="mt-5 rounded-2xl bg-white p-4 text-[var(--foreground)] sm:p-5">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold sm:text-base">สัดส่วนค่าใช้จ่าย</h3>
-              <span className="text-xs text-[var(--color-muted)]">{expenses.length} รายการ</span>
+              <span className="text-xs text-[var(--color-muted)]">{items.length} รายการ</span>
             </div>
 
             <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full">
               {breakdown.map((b) => (
-                <div key={b.category} style={{ width: `${b.percent}%`, backgroundColor: b.color }} />
+                <div key={b.category} style={{ width: `${b.percentage}%`, backgroundColor: b.color }} />
               ))}
             </div>
 
@@ -184,7 +251,7 @@ export function BudgetManagementPanel({
                     {expenseCategoryLabel[b.category]}
                   </p>
                   <p className="mt-1 text-sm font-extrabold">{formatTHB(b.amount)}</p>
-                  <p className="text-xs text-[var(--color-muted)]">{b.percent}%</p>
+                  <p className="text-xs text-[var(--color-muted)]">{b.percentage}%</p>
                 </div>
               ))}
             </div>
@@ -196,12 +263,15 @@ export function BudgetManagementPanel({
         {trip.days.map((day) => (
           <DayExpenseRow
             key={day.id}
-            day={day}
-            amount={getDayExpenseTotal(day, expenses)}
+            label={`วันที่ ${day.dayNumber}`}
+            amount={amountByDayId.get(day.id) ?? 0}
             maxAmount={maxDayTotal}
             dayBudget={dayBudget}
           />
         ))}
+        {unassignedTotal > 0 && (
+          <DayExpenseRow label="ไม่ระบุวันที่" amount={unassignedTotal} maxAmount={maxDayTotal} />
+        )}
       </div>
 
       <div>
@@ -228,12 +298,16 @@ export function BudgetManagementPanel({
             {sorted.length === 0 ? (
               <p className="p-6 text-center text-sm text-[var(--color-muted)]">ยังไม่มีค่าใช้จ่าย</p>
             ) : (
-              sorted.map((expense, i) => (
+              sorted.map((item, i) => (
                 <ExpenseRow
-                  key={expense.id}
-                  expense={expense}
+                  key={item.id}
+                  item={item}
                   showDivider={i > 0}
-                  onDelete={() => persist(expenses.filter((e) => e.id !== expense.id))}
+                  onDelete={
+                    item.source === "expense" || item.source === "activity"
+                      ? () => deleteLineItem(item)
+                      : undefined
+                  }
                 />
               ))
             )}
@@ -245,22 +319,34 @@ export function BudgetManagementPanel({
         <AddExpenseDialog
           trip={trip}
           onClose={() => setAddOpen(false)}
-          onAdd={(expense) => {
-            persist([expense, ...expenses]);
+          onSaved={() => {
             setAddOpen(false);
+            loadBudget();
           }}
         />
       )}
       {goalOpen && (
         <SetBudgetGoalDialog
           trip={trip}
+          currentGoal={goal}
           onClose={() => setGoalOpen(false)}
-          onSave={(budgetGoal) => {
-            onPatch({ budgetGoal });
+          onSaved={() => {
             setGoalOpen(false);
+            loadBudget();
           }}
         />
       )}
+    </div>
+  );
+}
+
+function EmptyStateCard({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-3xl border p-10 text-center" style={{ borderColor: "var(--color-border)" }}>
+      <TriangleAlert size={28} className="text-[var(--color-muted)]" />
+      <h2 className="text-lg font-bold">{title}</h2>
+      <p className="max-w-sm text-sm text-[var(--color-muted)]">{description}</p>
+      {action}
     </div>
   );
 }
@@ -271,12 +357,12 @@ export function BudgetManagementPanel({
 // usual brand-green tint) when a day ran over its even split of the trip
 // goal, since that's the one thing worth flagging without opening the ledger.
 function DayExpenseRow({
-  day,
+  label,
   amount,
   maxAmount,
   dayBudget,
 }: {
-  day: Day;
+  label: string;
   amount: number;
   maxAmount: number;
   dayBudget?: number;
@@ -291,7 +377,7 @@ function DayExpenseRow({
         style={{ width: `${percent}%`, backgroundColor: overBudget ? "var(--color-danger-bg)" : "var(--color-sel-bg)" }}
       />
       <div className="relative flex items-center justify-between gap-3">
-        <span className="text-sm font-bold">วันที่ {day.dayNumber}</span>
+        <span className="text-sm font-bold">{label}</span>
         <span className="text-sm font-extrabold" style={overBudget ? { color: "var(--color-danger)" } : undefined}>
           {formatTHB(amount)}
         </span>
@@ -301,15 +387,15 @@ function DayExpenseRow({
 }
 
 function ExpenseRow({
-  expense,
+  item,
   showDivider,
   onDelete,
 }: {
-  expense: TripExpense;
+  item: TripBudgetLineItem;
   showDivider: boolean;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
-  const Icon = expenseCategoryIcon[expense.category];
+  const Icon = expenseCategoryIcon[item.category];
   return (
     <div
       className={`flex items-center gap-3 p-4 ${showDivider ? "border-t" : ""}`}
@@ -322,28 +408,32 @@ function ExpenseRow({
         <Icon size={16} className="text-[var(--color-muted)]" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold">{expense.title}</p>
+        <p className="truncate text-sm font-bold">{item.title}</p>
         <p className="text-xs text-[var(--color-muted)]">
-          {expense.date ? formatExpenseDate(expense.date) : "ไม่ระบุวันที่"} • {expenseCategoryLabel[expense.category]}
+          {item.date ? formatExpenseDate(item.date) : "ไม่ระบุวันที่"} • {expenseCategoryLabel[item.category]}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label="ลบค่าใช้จ่าย"
-        className="shrink-0 rounded-full p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
-      >
-        <Trash2 size={14} />
-      </button>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="text-sm font-extrabold">{formatTHB(expense.amount)}</span>
-        <span
-          className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
-          style={{ backgroundColor: "var(--color-primary)" }}
-          title={expense.paidBy}
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="ลบค่าใช้จ่าย"
+          className="shrink-0 rounded-full p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
         >
-          {expense.paidBy.charAt(0)}
-        </span>
+          <Trash2 size={14} />
+        </button>
+      )}
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <span className="text-sm font-extrabold">{formatTHB(item.amount)}</span>
+        {item.paidBy && (
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+            style={{ backgroundColor: "var(--color-primary)" }}
+            title={item.paidBy}
+          >
+            {item.paidBy.charAt(0)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -401,38 +491,63 @@ type ExpenseSelection = {
   title: string;
   category: ExpenseCategory;
   linkedActivityId?: string;
+  // Only set when picked "จากแผนการเดินทาง" — that activity's own day.date is
+  // already known, so there's no reason to leave "วันที่: ไม่บังคับ" and have
+  // it fall into the budget tab's "ไม่ระบุวันที่" bucket. A category-only pick
+  // (no linked activity) has no day to infer this from, so it stays unset.
+  date?: string;
 };
 
 function AddExpenseDialog({
   trip,
   onClose,
-  onAdd,
+  onSaved,
 }: {
   trip: GeneratedTrip;
   onClose: () => void;
-  onAdd: (expense: TripExpense) => void;
+  onSaved: () => void;
 }) {
   const [amount, setAmount] = useState("");
   const [selected, setSelected] = useState<ExpenseSelection | null>(null);
   const [date, setDate] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const numericAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
   const SelectedIcon = selected ? expenseCategoryIcon[selected.category] : Receipt;
 
-  function handleSave() {
+  async function handleSave() {
     if (numericAmount <= 0) return;
-    onAdd({
-      id: crypto.randomUUID(),
-      title: selected?.title ?? "ค่าใช้จ่ายอื่นๆ",
-      amount: numericAmount,
-      category: selected?.category ?? "other",
-      date: date || undefined,
-      paidBy: "คุณ",
-      splitLabel: "ไม่แบ่ง",
-      linkedActivityId: selected?.linkedActivityId,
-    });
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (selected?.linkedActivityId) {
+        // Linking to an existing itinerary stop — this cost belongs to that
+        // activity, so it goes through PATCH /items/:itemId, not a standalone
+        // expense row (posting both would double-count it in the budget).
+        await updateTripItemOnServer(selected.linkedActivityId, {
+          costAmount: numericAmount,
+          paidBy: "คุณ",
+          splitLabel: "ไม่แบ่ง",
+        });
+      } else {
+        await createExpense(trip.id, {
+          title: selected?.title ?? "ค่าใช้จ่ายอื่นๆ",
+          amount: numericAmount,
+          category: selected ? toBackendExpenseCategory(selected.category) : "other",
+          date: date || undefined,
+          paidBy: "คุณ",
+          splitLabel: "ไม่แบ่ง",
+        });
+      }
+      onSaved();
+    } catch (error) {
+      setSaveError(error instanceof BackendAuthenticationError ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (pickerOpen) {
@@ -443,6 +558,7 @@ function AddExpenseDialog({
         onBack={() => setPickerOpen(false)}
         onSelect={(next) => {
           setSelected(next);
+          if (next.date) setDate(next.date);
           setPickerOpen(false);
         }}
       />
@@ -454,15 +570,19 @@ function AddExpenseDialog({
       title="เพิ่มค่าใช้จ่าย"
       onClose={onClose}
       footer={
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={numericAmount <= 0}
-          className="w-full rounded-full py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ backgroundColor: "var(--color-accent-orange)" }}
-        >
-          บันทึก
-        </button>
+        <div className="flex flex-col gap-2">
+          {saveError && <p className="text-center text-xs font-semibold text-[var(--color-danger)]">{saveError}</p>}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={numericAmount <= 0 || saving}
+            className="flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            {saving && <LoaderCircle size={14} className="animate-spin" />}
+            บันทึก
+          </button>
+        </div>
       }
     >
       <div
@@ -518,23 +638,25 @@ function AddExpenseDialog({
         </span>
       </div>
 
-      <div className="relative flex items-center gap-1.5 px-1">
-        <span className="text-sm text-[var(--color-muted)]">วันที่:</span>
-        <button
-          type="button"
-          onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.focus()}
-          className="flex items-center gap-1 text-sm font-semibold"
-        >
-          {date ? formatExpenseDate(date) : "ไม่บังคับ"} <ChevronDown size={14} />
-        </button>
-        <input
-          ref={dateInputRef}
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="absolute inset-y-0 left-0 h-full w-32 cursor-pointer opacity-0"
-        />
-      </div>
+      {!selected?.linkedActivityId && (
+        <div className="relative flex items-center gap-1.5 px-1">
+          <span className="text-sm text-[var(--color-muted)]">วันที่:</span>
+          <button
+            type="button"
+            onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.focus()}
+            className="flex items-center gap-1 text-sm font-semibold"
+          >
+            {date ? formatExpenseDate(date) : "ไม่บังคับ"} <ChevronDown size={14} />
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="absolute inset-y-0 left-0 h-full w-32 cursor-pointer opacity-0"
+          />
+        </div>
+      )}
     </DialogShell>
   );
 }
@@ -558,6 +680,7 @@ function SelectExpenseItemDialog({
       title: activity.title,
       category: ACTIVITY_TO_EXPENSE_CATEGORY[activity.category],
       icon: categoryIcon[activity.category],
+      date: day.date,
     }))
   );
   const visibleItems = showAllItems ? itineraryItems : itineraryItems.slice(0, 2);
@@ -574,7 +697,7 @@ function SelectExpenseItemDialog({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => onSelect({ title: item.title, category: item.category, linkedActivityId: item.id })}
+                  onClick={() => onSelect({ title: item.title, category: item.category, linkedActivityId: item.id, date: item.date })}
                   className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--color-surface)]"
                 >
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--color-surface)" }}>
@@ -628,19 +751,32 @@ function SelectExpenseItemDialog({
 
 function SetBudgetGoalDialog({
   trip,
+  currentGoal,
   onClose,
-  onSave,
+  onSaved,
 }: {
   trip: GeneratedTrip;
+  currentGoal?: number;
   onClose: () => void;
-  onSave: (budgetGoal: number) => void;
+  onSaved: () => void;
 }) {
-  const [value, setValue] = useState(trip.budgetGoal ? String(trip.budgetGoal) : "");
+  const [value, setValue] = useState(currentGoal ? String(currentGoal) : "");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  function handleSave() {
+  async function handleSave() {
     const numeric = Number(value.replace(/[^\d.]/g, "")) || 0;
     if (numeric <= 0) return;
-    onSave(numeric);
+    setSaving(true);
+    setSaveError("");
+    try {
+      await updateTripOnServer(trip.id, { budgetLimit: numeric });
+      onSaved();
+    } catch (error) {
+      setSaveError(error instanceof BackendAuthenticationError ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -648,24 +784,28 @@ function SetBudgetGoalDialog({
       title="ตั้งงบประมาณ"
       onClose={onClose}
       footer={
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-full border py-2.5 text-sm font-bold"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!value.trim()}
-            className="flex-1 rounded-full py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
-          >
-            บันทึก
-          </button>
+        <div className="flex flex-col gap-2">
+          {saveError && <p className="text-center text-xs font-semibold text-[var(--color-danger)]">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-full border py-2.5 text-sm font-bold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!value.trim() || saving}
+              className="flex flex-1 items-center justify-center gap-2 rounded-full py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ backgroundColor: "var(--color-brand-green)" }}
+            >
+              {saving && <LoaderCircle size={14} className="animate-spin" />}
+              บันทึก
+            </button>
+          </div>
         </div>
       }
     >

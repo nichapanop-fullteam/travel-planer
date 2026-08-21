@@ -189,12 +189,17 @@ export default function GeneratedPlanPage() {
   // just created this trip and is about to build it out.
   const [editUnlocked, setEditUnlocked] = useState(() => searchParams.get("edit") === "1");
 
-  // Local-first: a trip this browser created (draft in progress, or an
-  // already-confirmed one saved earlier) always renders from localStorage.
-  // Only once that lookup misses does this reach for the backend — covers a
-  // trip saved via createTripOnServer (see trips-create-api.ts) and opened
-  // from /main's "ทริปล่าสุดจากระบบ" list or a shared link, neither of which
-  // has ever touched this browser's localStorage.
+  // Backend-wins once a trip has a real server row: a local-only draft
+  // (never saved — see `backendSynced`) has nothing to reconcile against, so
+  // it renders straight from localStorage. Otherwise this always refetches
+  // GET /trips/:id fresh on every visit and replaces the localStorage cache
+  // wholesale — days/activities, cover, and budget already write straight
+  // through to the server the moment they're edited (see
+  // createTripItemOnServer, setTripCover, trip-budget-api.ts), so the
+  // server copy is authoritative and a stale local copy (e.g. from editing
+  // this same trip on another device) should never keep winning just
+  // because it got here first. The local copy (if any) is shown immediately
+  // so the page isn't blank while the refetch is in flight.
   useEffect(() => {
     if (params.id === DEMO_LUANG_PRABANG_ID) {
       const loaded = getOrCreateDemoLuangPrabangTrip();
@@ -204,23 +209,46 @@ export default function GeneratedPlanPage() {
     }
 
     const local = getGeneratedTrip(params.id);
-    if (local) {
+
+    if (local && !local.backendSynced) {
       setTrip(local);
       if (local.status === "confirmed") setTab("plan");
       return;
+    }
+
+    if (local) {
+      setTrip(local);
+      if (local.status === "confirmed") setTab("plan");
     }
 
     let cancelled = false;
     getTrip(params.id)
       .then((backendTrip) => {
         if (cancelled) return;
-        const loaded = backendTrip ? buildGeneratedTripFromBackendTrip(backendTrip) : null;
+        if (!backendTrip) {
+          // Gone server-side (e.g. deleted from another device) — keep
+          // showing the stale local copy rather than a hard "not found" if
+          // we have one; otherwise there was never anything to show.
+          if (!local) setTrip(null);
+          return;
+        }
+        const loaded = buildGeneratedTripFromBackendTrip(backendTrip);
+        // draftId only ever exists locally (links back to the TripDraft
+        // this trip was generated from, e.g. for isSelfMode below) —
+        // buildGeneratedTripFromBackendTrip has no draft to read it from,
+        // so it defaults to the trip's own id. Keep the real one instead of
+        // clobbering it, or a self-mode trip would stop being recognized as
+        // self-mode after every reconcile.
+        if (local) loaded.draftId = local.draftId;
+        if (local) updateGeneratedTrip(loaded.id, loaded);
         setTrip(loaded);
-        if (loaded && loaded.status === "confirmed") setTab("plan");
+        if (loaded.status === "confirmed") setTab("plan");
       })
       .catch((err) => {
-        console.warn(err);
-        if (!cancelled) setTrip(null);
+        console.warn("รีเฟรชข้อมูลทริปจาก backend ไม่สำเร็จ", err);
+        // Keep showing the local copy already set above over a transient
+        // network error instead of blanking the page.
+        if (!cancelled && !local) setTrip(null);
       });
     return () => {
       cancelled = true;
