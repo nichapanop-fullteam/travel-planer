@@ -641,7 +641,15 @@ const CONSTRAINT_TO_CONDITION = invert(CONDITION_TO_CONSTRAINT);
 // `draftId` has no real draft behind it, so isSelfMode on the detail page
 // always resolves to false for these — a backend trip always renders as a
 // regular (non-"build it yourself") plan, regardless of its planMode.
-export function buildGeneratedTripFromBackendTrip(trip: BackendTrip): GeneratedTrip {
+// `existingRemixedFrom` lets a caller carry forward the richer
+// sourceTitle/sourceCreatorName captured right after a remix (see
+// useRemixTrip's buildRemixedTripShell) across a later GET/PATCH refetch —
+// the backend's own trip response only ever has the flat `sourceTripId`
+// (see BackendTrip in trips-api.ts), never the source's title or owner.
+export function buildGeneratedTripFromBackendTrip(
+  trip: BackendTrip,
+  existingRemixedFrom?: GeneratedTrip["remixedFrom"]
+): GeneratedTrip {
   const { schedule, brief } = trip;
   const nights = schedule.durationNights ?? Math.max((schedule.durationDays ?? trip.days.length) - 1, 0);
   const durationDays = schedule.durationDays ?? trip.days.length;
@@ -681,6 +689,21 @@ export function buildGeneratedTripFromBackendTrip(trip: BackendTrip): GeneratedT
     backendSynced: true,
     backendDayIds: trip.days.map((d) => d.id),
     backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
+    ownerId: trip.ownerId,
+    creator: trip.customer
+      ? { id: trip.customer.id, name: trip.customer.name, avatarUrl: trip.customer.avatarUrl }
+      : undefined,
+    planMode: trip.planMode,
+    saveCount: trip.saveCount,
+    remixCount: trip.remixCount,
+    remixedFrom: trip.sourceTripId
+      ? existingRemixedFrom?.sourceTripId === trip.sourceTripId
+        ? existingRemixedFrom
+        : { sourceTripId: trip.sourceTripId }
+      : undefined,
+    visibility: trip.visibility,
+    publishedAt: trip.publishedAt,
+    totalBudget: trip.totalBudget,
   };
 }
 

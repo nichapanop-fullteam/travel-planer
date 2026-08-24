@@ -1,15 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, LoaderCircle, Lock, Mail } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 import { loginWithEmail } from "@/lib/auth";
 
+// Only same-origin relative paths are honored — "//evil.com" or an absolute
+// URL in ?redirect= must never be followed (open-redirect risk).
+function safeRedirectTarget(raw: string | null): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  return "/main";
+}
+
+// Static prerendering of this page requires useSearchParams (used here for
+// ?redirect=, and inside GoogleLoginButton for the same reason) to sit
+// under a Suspense boundary — otherwise Next bails out the whole page from
+// static generation at build time.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,7 +46,7 @@ export default function LoginPage() {
       setError(result.error);
       return;
     }
-    router.push("/main");
+    router.push(safeRedirectTarget(searchParams.get("redirect")));
   }
 
   return (

@@ -1,7 +1,15 @@
-import { Bell, Menu, Search, SlidersHorizontal } from "lucide-react";
+"use client";
 
-// Visual only — search/filter/notifications aren't wired up in this demo.
+import Link from "next/link";
+import { Bell, Menu, Search, SlidersHorizontal } from "lucide-react";
+import { useAuth } from "@/providers/AuthProvider";
+
+// Search/filter/notifications are visual only — not wired up in this demo.
+// The avatar/name is real: it links to /account (see app/account/page.tsx)
+// and reflects the signed-in backendUser, same source as Sidebar/my-trips.
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
+  const { backendUser } = useAuth();
+  const name = backendUser?.name || "ผู้ใช้ PunGuide";
   return (
     <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border)]/40 bg-white px-4 py-3 sm:px-6">
       <button
@@ -32,15 +40,20 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
             style={{ backgroundColor: "var(--color-accent-orange)" }}
           />
         </button>
-        <div className="flex items-center gap-2">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold text-white"
-            style={{ backgroundColor: "var(--color-primary)" }}
-          >
-            S
-          </div>
-          <span className="text-sm font-medium">Sofia</span>
-        </div>
+        <Link href="/account" className="flex items-center gap-2 rounded-full hover:opacity-80">
+          {backendUser?.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={backendUser.avatarUrl} alt={name} className="h-8 w-8 rounded-full object-cover" />
+          ) : (
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold text-white"
+              style={{ backgroundColor: "var(--color-primary)" }}
+            >
+              {name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <span className="hidden text-sm font-medium sm:inline">{name}</span>
+        </Link>
       </div>
     </div>
   );

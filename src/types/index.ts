@@ -227,6 +227,11 @@ export interface GeneratedTrip {
   // seeded from the itinerary's existing costs (see lib/trip-expenses.ts).
   expenses?: TripExpense[];
   budgetGoal?: number; // THB, set via "ตั้งงบประมาณ"
+  // Server-computed real total spend (activity + travel costs × travelers,
+  // plus accommodation and standalone expenses — see BackendTrip.totalBudget
+  // in lib/trips-api.ts). Undefined only for a local-only draft that's never
+  // been synced to the backend, since there's nothing to compute it from yet.
+  totalBudget?: number;
   // Set only for trips generated via POST /trips/generate-plan (real AI
   // generation) — absent for the older mocked-template trips. Surfaced as a
   // "this plan may need a look" banner when resolvedWithoutErrors is false;
@@ -255,6 +260,32 @@ export interface GeneratedTrip {
   backendSynced?: boolean;
   backendDayIds?: string[];
   backendItemIds?: string[];
+  // Ownership/social metadata threaded from BackendTrip (see
+  // buildGeneratedTripFromBackendTrip in lib/generated-trips.ts) — absent for
+  // local-only/never-synced trips, which are always the current browser's own.
+  ownerId?: string;
+  creator?: { id: string; name: string; avatarUrl?: string };
+  planMode?: string;
+  saveCount?: number;
+  remixCount?: number;
+  // Set when this trip was created via POST /trips/:sourceTripId/remix — see
+  // lib/trip-remix-api.ts. Only ever points at the immediate source (never a
+  // chain), so attribution UI never has to render nested "remix of a remix".
+  // sourceTitle/sourceCreatorName start populated (from the remix response's
+  // rich `sourceTrip` attribution) right after remixing in this browser, but
+  // a later GET/PATCH /trips/:id only ever echoes the flat `sourceTripId` —
+  // see generated-plan/[id]/page.tsx's mount effect, which backfills them
+  // with a one-shot GET /trips/:sourceTripId when they're missing.
+  remixedFrom?: {
+    sourceTripId: string;
+    sourceTitle?: string;
+    sourceCreatorName?: string;
+  };
+  // "private" unless the owner has explicitly published via PATCH /trips/:id
+  // { visibility: "public" } — a trip must be public before anyone besides
+  // its owner can remix it (see lib/trip-remix-api.ts).
+  visibility?: "private" | "public";
+  publishedAt?: string;
 }
 
 // Accommodation details editable via "แก้ไขทริป" → "เปลี่ยนที่พัก" on the trip
