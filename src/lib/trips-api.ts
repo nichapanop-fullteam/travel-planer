@@ -28,6 +28,11 @@ export interface BackendTripSchedule {
 
 export type BackendBudgetTier = "economy" | "comfort" | "premium" | "luxury" | "custom";
 
+// Set via PATCH /trips/:id { visibility } — a trip must be flipped to
+// "public" before anyone besides its owner can remix it (see
+// lib/trip-remix-api.ts). Defaults to "private" server-side for new trips.
+export type TripVisibility = "private" | "public";
+
 // Compact shape returned by GET /trips. It intentionally does not contain
 // days, customer, brief, or mediaSummary; cards must not treat it as a full
 // BackendTrip and should fetch GET /trips/:id after navigation. Carries both
@@ -49,6 +54,10 @@ export interface BackendTripListItem {
   coverImage?: Media;
   createdAt: string;
   updatedAt: string;
+  visibility?: TripVisibility;
+  remixCount?: number;
+  sourceTripId?: string;
+  publishedAt?: string;
 }
 
 // Chips under the trip title ("Active · รถสาธารณะท้องถิ่น · เงื่อนไข") — as
@@ -72,6 +81,11 @@ export interface BackendTrip {
   destination: string;
   status: string; // "draft" | "confirmed" | "shared" | ... — kept as string, backend's enum isn't finalized yet
   schedule: BackendTripSchedule;
+  // Server-computed real total: (activity + travel costs) × travelers, plus
+  // accommodation nights and standalone trip_expenses rows — see
+  // TripsService.hydrateTotalBudgets on the backend. Always present (0 when
+  // nothing costed yet), same as on BackendTripListItem.
+  totalBudget: number;
   budgetLimit?: number;
   budgetTier?: string;
   planMode?: string;
@@ -82,13 +96,16 @@ export interface BackendTrip {
   days: BackendTripDay[];
   createdAt: string;
   updatedAt: string;
-  // Social/remix metadata — optional since no backend environment sends
-  // these yet; the UI degrades gracefully (counts hidden, isRemix falsy)
-  // until the Remix API (see lib/trip-remix-api.ts) ships them for real.
+  // saveCount has no backend field yet in any environment — stays optional,
+  // UI hides the count when absent. The rest are confirmed real fields (see
+  // TripResponseDto.fromEntity on the backend): sourceTripId is a flat id
+  // only, no source title/owner — that richer attribution is returned once,
+  // in POST /trips/:sourceTripId/remix's response, not on every trip fetch.
   saveCount?: number;
+  visibility?: TripVisibility;
   remixCount?: number;
-  isRemix?: boolean;
-  remixSource?: { id: string; title: string; ownerName?: string };
+  sourceTripId?: string;
+  publishedAt?: string;
 }
 
 // GET /trips is the public, cross-owner feed and intentionally sends no

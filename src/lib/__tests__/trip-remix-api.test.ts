@@ -58,7 +58,15 @@ describe("remixTrip", () => {
   });
 
   it("maps 400 to a duration_mismatch validation error with the expected day count", async () => {
-    authenticatedFetch.mockResolvedValue(jsonResponse(400, { expectedDurationDays: 3 }));
+    // Real body shape: Nest's plain BadRequestException, no dedicated field —
+    // see assertCompatibleDuration on the backend.
+    authenticatedFetch.mockResolvedValue(
+      jsonResponse(400, {
+        statusCode: 400,
+        message: "New duration (5 day(s)) must match the source trip's duration (3 day(s))",
+        error: "Bad Request",
+      })
+    );
     await expect(remixTrip("source-1", payload, "k")).rejects.toMatchObject({
       kind: "validation",
       expectedDurationDays: 3,

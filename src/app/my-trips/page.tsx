@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, MapPin, Plus, Trash2 } from "lucide-react";
+import { LoaderCircle, MapPin, Pencil, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { ConsumerShell } from "@/components/consumer/ConsumerShell";
 import LogoutButton from "@/components/LogoutButton";
@@ -106,7 +106,17 @@ export default function MyTripsPage() {
               <p className="text-sm text-[var(--color-muted)]">{backendUser.email}</p>
             </div>
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/account"
+              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <Pencil size={14} />
+              แก้ไขโปรไฟล์
+            </Link>
+            <LogoutButton />
+          </div>
         </div>
 
         <div className="mt-10">

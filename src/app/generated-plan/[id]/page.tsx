@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -18,14 +18,14 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Car,
   Clock,
   CloudSun,
   Compass,
-  Download,
   Footprints,
+  Globe2,
   ImagePlus,
   LoaderCircle,
+  Lock,
   Mountain,
   Maximize2,
   MapPin,
@@ -37,7 +37,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pencil,
-  Plane,
   Plus,
   RefreshCcw,
   Repeat2,
@@ -48,9 +47,7 @@ import {
   Ticket,
   Trash2,
   TriangleAlert,
-  Waves,
   Wallet,
-  Wifi,
   X,
 } from "lucide-react";
 import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
@@ -98,11 +95,13 @@ import {
   getDayRouteEstimate,
   getDayTotalCost,
   getGoogleMapsUrl,
+  getTripRouteSummary,
+  getTripTotalCost,
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
-import { SelfPlanBuilderTab, DayTab, EditLockToggle, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
+import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/consumer/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
@@ -113,20 +112,15 @@ import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-
 type TabKey = "overview" | "plan" | "weather" | "budget" | "chat";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-// "สร้างด้วยตัวเอง" (self mode) trips start from an empty shell and get built
-// up on the "overview" tab instead of reviewing an AI-generated summary — so
-// that tab (and the next one) are relabeled to match what's actually there.
-const AI_TABS: { key: TabKey; label: string }[] = [
+// One tab set for every trip regardless of planMode — the "overview" tab
+// used to switch its whole layout (and these labels) based on a local-only
+// "was this built in self mode" flag, which showed a different design to
+// anyone who didn't create the trip in this same browser. See OverviewTab,
+// which now renders the same accommodation/place-discovery/itinerary layout
+// for every trip, gated only by canEdit/isOwner.
+const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "ภาพรวมทริป" },
   { key: "plan", label: "แพลนทริป" },
-  { key: "weather", label: "สภาพอากาศ" },
-  { key: "budget", label: "สรุปงบ" },
-  { key: "chat", label: "ห้องแชท" },
-];
-
-const SELF_TABS: { key: TabKey; label: string }[] = [
-  { key: "overview", label: "จัดแพลน" },
-  { key: "plan", label: "ทริปของฉัน" },
   { key: "weather", label: "สภาพอากาศ" },
   { key: "budget", label: "สรุปงบ" },
   { key: "chat", label: "ห้องแชท" },
@@ -190,14 +184,17 @@ export default function GeneratedPlanPage() {
   );
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
   const { backendUser } = useAuth();
   const { showToast } = useToast();
   const remix = useRemixTrip();
   // Every trip opens read-only (no add/delete/edit affordances) so it
-  // doesn't look editable by accident — "แก้ไขแพลน"/"แก้ไขทริป" reveals them
-  // again — see canEdit below. The one exception: arriving straight from
-  // "สร้างแพลน" on create-trip (?edit=1) starts unlocked, since the traveler
-  // just created this trip and is about to build it out.
+  // doesn't look editable by accident — see canEdit below. The one
+  // exception: arriving straight from "สร้างแพลน" on create-trip (?edit=1)
+  // starts unlocked, since the traveler just created this trip and is about
+  // to build it out. There's no visible "แก้ไขแพลน"/"เสร็จสิ้น" button
+  // anymore (removed per product decision), but the underlying lock state
+  // stays — a trip only ever unlocks via that one entry point.
   const [editUnlocked, setEditUnlocked] = useState(() => searchParams.get("edit") === "1");
 
   // Backend-wins once a trip has a real server row: a local-only draft
@@ -243,13 +240,12 @@ export default function GeneratedPlanPage() {
           if (!local) setTrip(null);
           return;
         }
-        const loaded = buildGeneratedTripFromBackendTrip(backendTrip);
-        // draftId only ever exists locally (links back to the TripDraft
-        // this trip was generated from, e.g. for isSelfMode below) —
-        // buildGeneratedTripFromBackendTrip has no draft to read it from,
-        // so it defaults to the trip's own id. Keep the real one instead of
-        // clobbering it, or a self-mode trip would stop being recognized as
-        // self-mode after every reconcile.
+        const loaded = buildGeneratedTripFromBackendTrip(backendTrip, local?.remixedFrom);
+        // draftId only ever exists locally (links back to the TripDraft this
+        // trip was generated from, e.g. for handleRegenerate's "AI plan I can
+        // redo from its original brief" lookup) — buildGeneratedTripFromBackendTrip
+        // has no draft to read it from, so it defaults to the trip's own id.
+        // Keep the real one instead of clobbering it on every reconcile.
         if (local) loaded.draftId = local.draftId;
         if (local) updateGeneratedTrip(loaded.id, loaded);
         setTrip(loaded);
@@ -266,10 +262,41 @@ export default function GeneratedPlanPage() {
     };
   }, [params.id]);
 
+  // GET/PATCH /trips/:id only ever carries the flat `sourceTripId` (see
+  // BackendTrip in lib/trips-api.ts) — no source title or owner name. Those
+  // only arrive once, in the remix response itself (buildRemixedTripShell in
+  // useRemixTrip.ts), and buildGeneratedTripFromBackendTrip above carries
+  // that forward across a refetch in *this* browser. Opening a remixed trip
+  // fresh (another device, cleared storage, shared link) has no such shell
+  // to carry forward, so this fills the banner in with one extra read of the
+  // source trip — silently left with just the id/link if that read fails.
+  useEffect(() => {
+    if (!trip?.remixedFrom || trip.remixedFrom.sourceTitle) return;
+    const sourceTripId = trip.remixedFrom.sourceTripId;
+    let cancelled = false;
+    getTrip(sourceTripId)
+      .then((source) => {
+        if (cancelled || !source) return;
+        applyPatch({
+          remixedFrom: {
+            sourceTripId,
+            sourceTitle: source.title || source.destination,
+            sourceCreatorName: source.customer?.name,
+          },
+        });
+      })
+      .catch(() => {
+        // No title to show — RemixSourceBanner falls back to a plain link.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.remixedFrom?.sourceTripId, trip?.remixedFrom?.sourceTitle]);
+
   // Strip ?edit=1 once its one-time effect (unlocking editUnlocked's initial
   // state above) has been read — otherwise reloading/bookmarking this URL
-  // would keep forcing edit mode back open regardless of the traveler having
-  // since pressed "เสร็จสิ้น".
+  // would keep forcing edit mode back open.
   useEffect(() => {
     if (searchParams.get("edit") === "1") {
       router.replace(`/generated-plan/${params.id}`, { scroll: false });
@@ -318,14 +345,15 @@ export default function GeneratedPlanPage() {
     );
   }
 
-  const isSelfMode = getTripDrafts().find((d) => d.id === trip.draftId)?.mode === "self";
-  const tabs = isSelfMode ? SELF_TABS : AI_TABS;
-
   // Local-only/never-synced trips have no ownerId at all (see
   // buildGeneratedTripFromBackendTrip) and are always this browser's own —
   // default to owner in that case. Otherwise ownership is decided purely by
   // comparing against the signed-in backend user, never by edit-lock state.
   const isOwner = !trip.ownerId || (!!backendUser && backendUser.id === trip.ownerId);
+  // Non-owners can only remix a trip once it's public — see PATCH /trips/:id
+  // { visibility } and POST /trips/:sourceTripId/remix in lib/trip-remix-api.ts.
+  // Owners can always remix their own trip regardless of visibility.
+  const canRemix = isOwner || trip.visibility === "public";
   const remixSourceMeta: RemixSourceMeta = {
     sourceTripId: trip.id,
     sourceTitle: trip.title || trip.destination,
@@ -401,9 +429,9 @@ export default function GeneratedPlanPage() {
       }
       setSaveState("saved");
       // Saving is the "I'm done editing for now" gesture — lock back to
-      // read-only afterward instead of leaving edit affordances open, same
-      // as pressing "เสร็จสิ้น" directly. Left unlocked on error/failure
-      // since nothing was actually persisted.
+      // read-only afterward, same as the (now-removed) "เสร็จสิ้น" button used
+      // to. Left unlocked on error/failure since nothing was actually
+      // persisted.
       setEditUnlocked(false);
     } catch (err) {
       console.warn(err);
@@ -412,17 +440,33 @@ export default function GeneratedPlanPage() {
     window.setTimeout(() => setSaveState("idle"), 2500);
   }
 
-  // "แก้ไขแพลน"/"เสร็จสิ้น" toggle — unlocking is just local state (nothing
-  // to push yet), but locking back down ("เสร็จสิ้น") means the traveler is
-  // done editing, so it pushes this session's changes to the backend the
-  // same way "บันทึก" does (handleSaveToServer already locks on success and
-  // stays unlocked on failure, so a failed sync doesn't silently drop edits).
-  function handleToggleEditLock() {
-    if (editUnlocked) {
-      handleSaveToServer();
-    } else {
-      setEditUnlocked(true);
+  // "ส่วนตัว"/"เผยแพร่" toggle in TripAttributionBar — a trip must be public
+  // before anyone besides its owner can remix it (see canRemix above and
+  // POST /trips/:sourceTripId/remix in lib/trip-remix-api.ts). Only ever
+  // called for a trip that already has a real backend row (see
+  // TripAttributionBar's onChangeVisibility guard) since PATCH /trips/:id
+  // has nothing to target otherwise.
+  async function handleChangeVisibility(next: "private" | "public") {
+    if (!trip || visibilitySaving) return;
+    setVisibilitySaving(true);
+    try {
+      await updateTripOnServer(trip.id, { visibility: next });
+      applyPatch({ visibility: next, publishedAt: next === "public" ? new Date().toISOString() : trip.publishedAt });
+      showToast(next === "public" ? "เผยแพร่ทริปนี้แล้ว คนอื่นนำไปทำสำเนาได้" : "เปลี่ยนเป็นทริปส่วนตัวแล้ว");
+    } catch (err) {
+      console.warn(err);
+      showToast("เปลี่ยนสถานะการแชร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     }
+    setVisibilitySaving(false);
+  }
+
+  // "แก้ไขทริป" — visible to the owner regardless of the current lock state
+  // (see canEdit) since it's the only entry point left into "generate plan"
+  // mode now that the standalone "แก้ไขแพลน" toggle is gone. Unlocks editing
+  // for the whole page and opens the metadata dialog at the same time.
+  function handleEditTripClick() {
+    setEditUnlocked(true);
+    setEditDialogOpen(true);
   }
 
   function handleRegenerate() {
@@ -585,18 +629,20 @@ export default function GeneratedPlanPage() {
   }
 
   const isConfirmed = trip.status === "confirmed";
-  // Read-only by default regardless of draft/confirmed status — "แก้ไขทริป"/
-  // "แก้ไขแพลน" must be pressed to unlock editing, same gesture either way.
-  // Viewing a trip from /main never carries ?edit=1, so it always lands here
-  // read-only; only arriving straight from create-trip starts unlocked. Self
-  // mode still autosaves every add/edit once unlocked (see
-  // handleAddDay/handleSaveActivity/handleUpdateActivityTravel above) — it
-  // just has no "เสร็จสิ้น"/"บันทึก" step to lock back down with (see
-  // SelfPlanBuilderTab's and PlanTab's `!canEdit` gate on EditLockToggle).
-  const canEdit = editUnlocked;
+  // Read-only by default regardless of draft/confirmed status. Viewing a
+  // trip from /main never carries ?edit=1, so it always lands here
+  // read-only; only arriving straight from create-trip starts unlocked (see
+  // editUnlocked above), and "บันทึก" locks it back down on success.
+  // isOwner-gated defensively so a non-owner can never end up with edit
+  // affordances even via a stray ?edit=1 on a shared link.
+  const canEdit = isOwner && editUnlocked;
 
   return (
-    <div className={`min-h-screen bg-white ${!isOwner ? "pb-28 sm:pb-0" : ""}`}>
+    <div
+      className={`min-h-screen bg-white ${
+        tab === "overview" && canEdit ? "pb-28" : !isOwner && canRemix ? "pb-28 sm:pb-0" : ""
+      }`}
+    >
       <div
         className={`fixed inset-0 z-50 flex transition-opacity duration-300 ${
           sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -618,7 +664,6 @@ export default function GeneratedPlanPage() {
         onMenuClick={() => setSidebarOpen(true)}
         onSave={handleSaveToServer}
         saveState={saveState}
-        hideSaveButton={isSelfMode}
       />
 
       <div
@@ -626,13 +671,11 @@ export default function GeneratedPlanPage() {
         style={{ borderColor: "var(--color-border)" }}
       >
         <div className="mx-auto max-w-2xl">
-          <PlanTabs tabs={tabs} tab={tab} setTab={setTab} />
+          <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
         </div>
       </div>
 
       <Hero trip={trip} canEdit={canEdit} onManagePhotos={() => setGalleryDialogOpen(true)} />
-
-      <TripAttributionBar trip={trip} isOwner={isOwner} onRemixClick={handleRemixClick} />
 
       {galleryDialogOpen && (
         <TripGalleryDialog
@@ -643,58 +686,54 @@ export default function GeneratedPlanPage() {
       )}
 
       <div className="relative -mt-6 rounded-t-[32px] bg-white sm:-mt-8">
+        <TripAttributionBar
+          trip={trip}
+          isOwner={isOwner}
+          visibilitySaving={visibilitySaving}
+          onChangeVisibility={trip.backendSynced ? handleChangeVisibility : undefined}
+        />
+
         <div className="mx-auto max-w-7xl px-6 py-8 sm:px-10">
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
           {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
 
-          {tab === "overview" && isSelfMode && (
-            <SelfPlanBuilderTab
+          {tab === "overview" && (
+            <OverviewTab
               trip={trip}
+              isConfirmed={isConfirmed}
+              isOwner={isOwner}
+              canRemix={canRemix}
+              onRemixClick={handleRemixClick}
               canEdit={canEdit}
-              onToggleEditLock={handleToggleEditLock}
-              onAddActivityDirect={handleSaveActivity}
-              onOpenAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
+              bannerDismissed={bannerDismissed}
+              regenerating={regenerating}
+              onDismissBanner={() => setBannerDismissed(true)}
+              onRegenerate={handleRegenerate}
+              onConfirm={handleConfirm}
+              onEditTrip={handleEditTripClick}
+              onEditAccommodation={() => setAccommodationDialogOpen(true)}
+              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
+              onAddActivityDirect={handleSaveActivity}
               onSaveAccommodation={(accommodation) => applyPatch({ accommodation })}
               onAddDay={handleAddDay}
               onGoToPlanTab={() => setTab("plan")}
               onUpdateActivityTravel={handleUpdateActivityTravel}
             />
           )}
-          {tab === "overview" && !isSelfMode && (
-            <OverviewTab
-              trip={trip}
-              isConfirmed={isConfirmed}
-              canEdit={canEdit}
-              onToggleEditLock={handleToggleEditLock}
-              bannerDismissed={bannerDismissed}
-              regenerating={regenerating}
-              onDismissBanner={() => setBannerDismissed(true)}
-              onRegenerate={handleRegenerate}
-              onConfirm={handleConfirm}
-              onEditTrip={() => setEditDialogOpen(true)}
-              onEditAccommodation={() => setAccommodationDialogOpen(true)}
-              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
-              onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
-              onDeleteActivity={handleDeleteActivity}
-              onSaveTrip={handleSaveToServer}
-              saveState={saveState}
-            />
-          )}
           {tab === "plan" && (
             <PlanTab
               trip={trip}
+              isOwner={isOwner}
+              canRemix={canRemix}
+              onRemixClick={handleRemixClick}
               canEdit={canEdit}
-              onToggleEditLock={handleToggleEditLock}
               onAddDay={handleAddDay}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivityTravel={handleUpdateActivityTravel}
-              onSaveTrip={handleSaveToServer}
-              saveState={saveState}
-              hideManualControls={isSelfMode}
             />
           )}
           {tab === "weather" && <WeatherTab />}
@@ -739,7 +778,53 @@ export default function GeneratedPlanPage() {
         />
       )}
 
-      {!isOwner && <MobileRemixBar onRemixClick={handleRemixClick} />}
+      {!isOwner && canRemix && <MobileRemixBar onRemixClick={handleRemixClick} />}
+      {tab === "overview" && canEdit && <EditingSummaryBar trip={trip} onSave={handleSaveToServer} saveState={saveState} />}
+    </div>
+  );
+}
+
+// Sticky bottom bar while actively building/editing the overview tab — quick
+// counts (same categories as TripStatsCard) plus the primary "บันทึกแพลน"
+// action, always reachable without scrolling back up to the top-bar save
+// button.
+function EditingSummaryBar({
+  trip,
+  onSave,
+  saveState,
+}: {
+  trip: GeneratedTrip;
+  onSave: () => void;
+  saveState: SaveState;
+}) {
+  const activities = trip.days.flatMap((d) => d.activities);
+  const countOf = (categories: ActivityCategory[]) =>
+    activities.filter((a) => categories.includes(a.category)).length;
+  const label =
+    saveState === "saving" ? "กำลังบันทึก..." : saveState === "saved" ? "บันทึกแล้ว" : saveState === "error" ? "บันทึกไม่สำเร็จ" : "บันทึกแพลน";
+
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t bg-white px-4 py-3 sm:px-6"
+      style={{ borderColor: "var(--color-border)", paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+    >
+      <p className="min-w-0 truncate text-xs font-semibold text-[var(--color-muted)]">
+        <b style={{ color: "var(--foreground)" }}>{countOf(["sightseeing", "activity"])}</b> ที่เที่ยว ·{" "}
+        <b style={{ color: "var(--foreground)" }}>{countOf(["food"])}</b> ร้านอาหาร ·{" "}
+        <b style={{ color: "var(--foreground)" }}>{countOf(["hotel"])}</b> ที่พัก
+      </p>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saveState === "saving"}
+        className="shrink-0 rounded-full px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-70"
+        style={{
+          backgroundColor:
+            saveState === "saved" ? "var(--color-brand-green)" : saveState === "error" ? "var(--color-danger)" : "var(--color-accent-orange)",
+        }}
+      >
+        {label}
+      </button>
     </div>
   );
 }
@@ -749,13 +834,11 @@ function TopBar({
   onMenuClick,
   onSave,
   saveState,
-  hideSaveButton,
 }: {
   onBack: () => void;
   onMenuClick: () => void;
   onSave: () => void;
   saveState: SaveState;
-  hideSaveButton?: boolean;
 }) {
   const SaveIcon = saveState === "saving" ? LoaderCircle : saveState === "saved" ? Check : Save;
   const saveLabel =
@@ -784,56 +867,28 @@ function TopBar({
       <p className="hidden text-base font-extrabold text-white sm:block sm:text-lg">PunGuide</p>
 
       <div className="flex shrink-0 items-center gap-2">
-        {!hideSaveButton && (
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saveState === "saving"}
-            title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
-            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
-            style={{
-              backgroundColor:
-                saveState === "saved"
-                  ? "var(--color-brand-green)"
-                  : saveState === "error"
-                    ? "var(--color-danger)"
-                    : "rgba(255,255,255,0.15)",
-            }}
-          >
-            <SaveIcon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
-            <span className="hidden sm:inline">{saveLabel}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saveState === "saving"}
+          title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
+          style={{
+            backgroundColor:
+              saveState === "saved"
+                ? "var(--color-brand-green)"
+                : saveState === "error"
+                  ? "var(--color-danger)"
+                  : "rgba(255,255,255,0.15)",
+          }}
+        >
+          <SaveIcon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
+          <span className="hidden sm:inline">{saveLabel}</span>
+        </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/images/profile-avatar.jpg" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
       </div>
     </div>
-  );
-}
-
-// Same save action as TopBar's button, styled as an outline pill to match
-// the แชร์/บันทึกรูป row on the overview/plan tabs instead of the dark topbar.
-function SaveTripButton({ onSave, saveState }: { onSave: () => void; saveState: SaveState }) {
-  const Icon = saveState === "saving" ? LoaderCircle : saveState === "saved" ? Check : Save;
-  const label =
-    saveState === "saving" ? "กำลังบันทึก..." : saveState === "saved" ? "บันทึกแล้ว" : saveState === "error" ? "บันทึกไม่สำเร็จ" : "บันทึก";
-
-  return (
-    <button
-      type="button"
-      onClick={onSave}
-      disabled={saveState === "saving"}
-      title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
-      className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
-      style={{
-        borderColor: saveState === "error" ? "var(--color-danger)" : "var(--color-border)",
-        color:
-          saveState === "saved" ? "var(--color-brand-green)" : saveState === "error" ? "var(--color-danger)" : undefined,
-      }}
-    >
-      <Icon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
-      {label}
-    </button>
   );
 }
 
@@ -1038,16 +1093,18 @@ function HeroImageCarousel({ images, title }: { images: string[]; title: string 
 function TripAttributionBar({
   trip,
   isOwner,
-  onRemixClick,
+  visibilitySaving,
+  onChangeVisibility,
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
-  onRemixClick: () => void;
+  visibilitySaving: boolean;
+  onChangeVisibility?: (next: "private" | "public") => void;
 }) {
   const showRealExperienceBadge = !isOwner && (trip.planMode === "self" || trip.planMode === "manual");
   const hasCounts = trip.saveCount != null || trip.remixCount != null;
 
-  if (!trip.creator && !showRealExperienceBadge && !hasCounts && isOwner) return null;
+  if (!trip.creator && !showRealExperienceBadge && !hasCounts && isOwner && !onChangeVisibility) return null;
 
   return (
     <div className="mx-auto max-w-7xl px-6 pt-6 sm:px-10">
@@ -1096,23 +1153,73 @@ function TripAttributionBar({
           )}
         </div>
 
-        {!isOwner && (
-          <div className="hidden flex-col items-end gap-1 sm:flex">
-            <button
-              type="button"
-              onClick={onRemixClick}
-              className="inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-bold text-white"
-              style={{ backgroundColor: "var(--color-brand-green)" }}
-            >
-              <Repeat2 size={14} />
-              นำไปปรับเป็นทริปของฉัน
-            </button>
-            <p className="max-w-[240px] text-right text-[11px] text-[var(--color-muted)]">
-              ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ
-            </p>
-          </div>
+        {isOwner && onChangeVisibility && (
+          <VisibilityControl
+            visibility={trip.visibility ?? "private"}
+            saving={visibilitySaving}
+            onChange={onChangeVisibility}
+          />
         )}
       </div>
+    </div>
+  );
+}
+
+// Owner-only "ส่วนตัว"/"เผยแพร่" segmented control — a trip must be flipped
+// to public before anyone besides its owner can remix it (see canRemix in
+// the page component and POST /trips/:sourceTripId/remix in
+// lib/trip-remix-api.ts). Only rendered once the trip has a real backend row
+// (onChangeVisibility is undefined until then — PATCH /trips/:id has
+// nothing to target for a draft that's never been saved).
+function VisibilityControl({
+  visibility,
+  saving,
+  onChange,
+}: {
+  visibility: "private" | "public";
+  saving: boolean;
+  onChange: (next: "private" | "public") => void;
+}) {
+  const options: { value: "private" | "public"; label: string; icon: typeof Lock }[] = [
+    { value: "private", label: "ส่วนตัว", icon: Lock },
+    { value: "public", label: "เผยแพร่", icon: Globe2 },
+  ];
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div
+        className="inline-flex items-center rounded-full border p-1"
+        style={{ borderColor: "var(--color-border)" }}
+        role="radiogroup"
+        aria-label="สถานะการแชร์ทริปนี้"
+      >
+        {options.map(({ value, label, icon: Icon }) => {
+          const active = visibility === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={saving || active}
+              onClick={() => onChange(value)}
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: active ? "var(--color-brand-green)" : "transparent",
+                color: active ? "#fff" : "var(--color-muted)",
+              }}
+            >
+              {saving && active ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="max-w-[240px] text-right text-[11px] text-[var(--color-muted)]">
+        {visibility === "public"
+          ? "ทริปนี้เผยแพร่อยู่ ผู้อื่นที่เห็นสามารถนำไปทำสำเนาเป็นของตัวเองได้"
+          : "ทริปนี้เป็นส่วนตัว มีแค่คุณที่เห็นและนำไปทำสำเนาได้"}
+      </p>
     </div>
   );
 }
@@ -1126,8 +1233,14 @@ function RemixSourceBanner({ remixedFrom }: { remixedFrom: NonNullable<Generated
       style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
     >
       <p>
-        Remix จาก &ldquo;{remixedFrom.sourceTitle}&rdquo;
-        {remixedFrom.sourceCreatorName ? ` โดย ${remixedFrom.sourceCreatorName}` : ""}
+        {remixedFrom.sourceTitle ? (
+          <>
+            Remix จาก &ldquo;{remixedFrom.sourceTitle}&rdquo;
+            {remixedFrom.sourceCreatorName ? ` โดย ${remixedFrom.sourceCreatorName}` : ""}
+          </>
+        ) : (
+          "Remix จากทริปอื่น"
+        )}
       </p>
       <Link
         href={`/generated-plan/${remixedFrom.sourceTripId}`}
@@ -1340,8 +1453,10 @@ function PlanTabs({
 function OverviewTab({
   trip,
   isConfirmed,
+  isOwner,
+  canRemix,
+  onRemixClick,
   canEdit,
-  onToggleEditLock,
   bannerDismissed,
   regenerating,
   onDismissBanner,
@@ -1352,13 +1467,18 @@ function OverviewTab({
   onAddActivity,
   onEditActivity,
   onDeleteActivity,
-  onSaveTrip,
-  saveState,
+  onAddActivityDirect,
+  onSaveAccommodation,
+  onAddDay,
+  onGoToPlanTab,
+  onUpdateActivityTravel,
 }: {
   trip: GeneratedTrip;
   isConfirmed: boolean;
+  isOwner: boolean;
+  canRemix: boolean;
+  onRemixClick: () => void;
   canEdit: boolean;
-  onToggleEditLock: () => void;
   bannerDismissed: boolean;
   regenerating: boolean;
   onDismissBanner: () => void;
@@ -1369,9 +1489,18 @@ function OverviewTab({
   onAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
-  onSaveTrip: () => void;
-  saveState: SaveState;
+  onAddActivityDirect: (dayId: string, activity: Activity) => void;
+  onSaveAccommodation: (accommodation: TripAccommodation) => void;
+  onAddDay: () => void;
+  onGoToPlanTab: () => void;
+  onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
 }) {
+  // "ยอมรับแพลนนี้ไหม?" only makes sense for a plan the AI actually
+  // generated — a self-built/manual trip (or a remix, whose days were copied
+  // verbatim from its source) has nothing to "regenerate" against (see
+  // handleRegenerate's TripDraft lookup, which only ever exists for "ai").
+  const showConfirmBanner = trip.planMode !== "manual" && trip.planMode !== "remixed";
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1385,17 +1514,18 @@ function OverviewTab({
             <Share2 size={14} />
             แชร์
           </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <Download size={14} />
-            บันทึกรูป
-          </button>
-          <SaveTripButton onSave={onSaveTrip} saveState={saveState} />
-          <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
-          {canEdit && (
+          {!isOwner && canRemix && (
+            <button
+              type="button"
+              onClick={onRemixClick}
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
+              style={{ backgroundColor: "var(--color-brand-green)" }}
+            >
+              <Repeat2 size={14} />
+              นำไปปรับเป็นทริปของฉัน
+            </button>
+          )}
+          {isOwner && (
             <button
               type="button"
               onClick={onEditTrip}
@@ -1409,7 +1539,7 @@ function OverviewTab({
         </div>
       </div>
 
-      {!isConfirmed && !bannerDismissed && (
+      {showConfirmBanner && !isConfirmed && !bannerDismissed && (
         <ConfirmBanner
           regenerating={regenerating}
           onDismiss={onDismissBanner}
@@ -1418,14 +1548,26 @@ function OverviewTab({
         />
       )}
 
-      <TripStatsCard trip={trip} />
-      <AccommodationAccordion trip={trip} canEdit={canEdit} onEdit={onEditAccommodation} />
+      {/* Moved to the top of "ตารางแพลน" while actively editing — see
+          ItineraryAccordion — so it reads as that section's header instead
+          of floating disconnected above the accommodation/discovery panels. */}
+      {!canEdit && <TripStatsCard trip={trip} />}
+      <PlaceDiscoveryPanel
+        trip={trip}
+        canEdit={canEdit}
+        onAddActivityDirect={onAddActivityDirect}
+        onSaveAccommodation={onSaveAccommodation}
+        onAddDay={onAddDay}
+        onManualEditAccommodation={onEditAccommodation}
+      />
       <ItineraryAccordion
         trip={trip}
         canEdit={canEdit}
         onAddActivity={onAddActivity}
         onEditActivity={onEditActivity}
         onDeleteActivity={onDeleteActivity}
+        onGoToPlanTab={onGoToPlanTab}
+        onUpdateActivityTravel={onUpdateActivityTravel}
       />
       <TripModeBar />
     </div>
@@ -1436,13 +1578,29 @@ function OverviewTab({
 // today's data model (ActivityCategory has no cafe/bar split, and distance is
 // only ever a per-day estimate) — shown as placeholders until that's wired up.
 function TripStatsCard({ trip }: { trip: GeneratedTrip }) {
+  const activities = trip.days.flatMap((d) => d.activities);
+  const countOf = (categories: ActivityCategory[]) =>
+    activities.filter((a) => categories.includes(a.category)).length;
+  // Real counts from the categories the data model actually has (see
+  // ActivityCategory in types/index.ts) — no cafe/bar split exists below
+  // "food", so those are grouped together rather than faked as separate tiles.
+  const { distanceKm } = getTripRouteSummary(trip);
+  // Prefer the backend's own total (activity/travel costs × travelers, plus
+  // accommodation and standalone trip_expenses rows — see
+  // BackendTrip.totalBudget) over summing just activity.cost client-side,
+  // which under-counts as soon as anything's logged straight into the budget
+  // tab instead of an itinerary stop. Only a never-synced local draft (no
+  // totalBudget from a server response yet) falls back to the local sum.
+  const totalCost = trip.totalBudget ?? getTripTotalCost(trip);
+  const avgCostPerDay = trip.days.length > 0 ? Math.round(totalCost / trip.days.length) : 0;
+
   const stats = [
-    { label: "ที่เที่ยว", value: "XX" },
-    { label: "ร้านอาหาร", value: "XX" },
-    { label: "คาเฟ่", value: "XX" },
-    { label: "บาร์ / ผับ", value: "X" },
-    { label: "รวมงบ/วัน", value: "฿XX" },
-    { label: "Total Distance", value: "XXX km" },
+    { label: "ที่เที่ยว", value: String(countOf(["sightseeing", "activity"])) },
+    { label: "ร้านอาหาร", value: String(countOf(["food"])) },
+    { label: "ที่พัก", value: String(countOf(["hotel"])) },
+    { label: "อื่นๆ", value: String(countOf(["transport", "other"])) },
+    { label: "รวมงบ/วัน", value: formatTHB(avgCostPerDay) },
+    { label: "Total Distance", value: `${distanceKm} km` },
   ];
 
   return (
@@ -1470,202 +1628,10 @@ function findHotelActivity(trip: GeneratedTrip): Activity | undefined {
   return trip.days.flatMap((d) => d.activities).find((a) => a.category === "hotel" && a.location?.imageUrl);
 }
 
-interface AccommodationOption {
-  key: string;
-  dayNumber: number;
-  hotel: Activity;
-}
-
-// One entry per day that actually has a hotel-category stop, deduped by
-// place name — a trip staying at the same hotel for several nights in a row
-// only gets one chip, not one per day.
-function collectAccommodationOptions(trip: GeneratedTrip): AccommodationOption[] {
-  const seen = new Set<string>();
-  const options: AccommodationOption[] = [];
-  for (const day of trip.days) {
-    const hotel = day.activities.find((a) => a.category === "hotel");
-    if (!hotel) continue;
-    const key = hotel.location?.name || hotel.title;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    options.push({ key, dayNumber: day.dayNumber, hotel });
-  }
-  return options;
-}
-
-// Falls back to the first hotel-category Activity (and static placeholder
-// copy) when `trip.accommodation` hasn't been set via "เปลี่ยนที่พัก" yet —
-// keeps older trips saved before this field existed looking the same as
-// before. When more than one day has its own hotel stop, a chip row lets the
-// traveler flip through each one instead of only ever seeing the first.
-function AccommodationAccordion({
-  trip,
-  canEdit,
-  onEdit,
-}: {
-  trip: GeneratedTrip;
-  canEdit: boolean;
-  onEdit: () => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const options = useMemo(() => collectAccommodationOptions(trip), [trip]);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const selectedOption = options.find((o) => o.key === selectedKey) ?? options[0];
-  const hotel = selectedOption?.hotel ?? findHotelActivity(trip);
-
-  // trip.accommodation (set via "เปลี่ยนที่พัก") only ever describes one,
-  // trip-wide stay — it only overrides name/image/description when there's
-  // just a single accommodation option, so switching chips always reflects
-  // that day's actual hotel instead of getting stuck on the same override.
-  const acc = options.length <= 1 ? trip.accommodation : undefined;
-  const name = acc?.name || hotel?.location?.name || "ที่พัก";
-  const imageUrl = acc?.imageUrl || hotel?.location?.imageUrl || "/images/luang-prabang.jpg";
-  const description = acc?.description || "Boutique Luxury Resort · เขตนอกเมือง · ท่าเรือกลางเมือง · ตลาดมืดตรงข้าม · เดินถึงภูสี";
-  const checkInOutLabel =
-    acc?.checkIn || acc?.checkOut
-      ? `เช็คอิน ${acc?.checkIn ?? "-"} · เช็คเอาท์ ${acc?.checkOut ?? "-"}`
-      : "เช็คอิน 14:00 · เช็คเอาท์ 12:00 — ฝากกระเป๋าได้";
-
-  const amenities =
-    acc?.amenities && acc.amenities.length > 0
-      ? acc.amenities.map((label) => ({ icon: Check, label }))
-      : [
-          { icon: Wifi, label: "อินเทอร์เน็ตฟรี" },
-          { icon: Car, label: "รถรับส่งฟรี" },
-          { icon: Waves, label: "สระ 82 ฟุต" },
-          { icon: Plane, label: "สนามบิน 15 นาที" },
-        ];
-
-  return (
-    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4"
-      >
-        <div className="flex items-center gap-2.5">
-          <h3 className="text-base font-bold sm:text-lg">ข้อมูลที่พัก</h3>
-          <span
-            className="rounded-full border px-3 py-1 text-xs font-semibold"
-            style={{ borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}
-          >
-            {name}
-          </span>
-        </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        </span>
-      </button>
-
-      {expanded && (
-        <>
-          {options.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto px-5 pb-3 [scrollbar-width:none]">
-              {options.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setSelectedKey(option.key)}
-                  className="shrink-0 overflow-hidden rounded-2xl border-2 text-left transition"
-                  style={{
-                    borderColor: option.key === selectedOption?.key ? "var(--color-brand-green)" : "transparent",
-                  }}
-                >
-                  <div className="flex items-center gap-2 bg-white px-3 py-2">
-                    <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#edf0ee]">
-                      {option.hotel.location?.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={option.hotel.location.imageUrl} alt="" className="h-full w-full object-cover" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="whitespace-nowrap text-xs font-bold">{option.hotel.location?.name || option.hotel.title}</p>
-                      <p className="text-[10px] text-[var(--color-muted)]">วันที่ {option.dayNumber}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row">
-            <div className="h-40 w-full shrink-0 overflow-hidden rounded-2xl sm:h-auto sm:w-56">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-            </div>
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <span
-                  className="mb-1.5 inline-block rounded-full px-2.5 py-1 text-[10px] font-bold uppercase"
-                  style={{ backgroundColor: "#FFF3D6", color: "#B8860B" }}
-                >
-                  Recommend
-                </span>
-                <p className="text-base font-bold sm:text-lg">{name}</p>
-                <p className="text-xs text-[var(--color-muted)] sm:text-sm">{description}</p>
-              </div>
-              <div className="shrink-0 text-right">
-                {acc?.pricePerNight ? (
-                  <p className="text-lg font-extrabold sm:text-xl">{formatTHB(acc.pricePerNight)}/คืน</p>
-                ) : (
-                  <>
-                    <p className="text-lg font-extrabold sm:text-xl">$XXXXX</p>
-                    <p className="text-xs text-[var(--color-muted)]">฿XXXXXX/คืน</p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {amenities.map((a) => (
-                <span
-                  key={a.label}
-                  className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium"
-                  style={{ borderColor: "var(--color-border)" }}
-                >
-                  <a.icon size={11} />
-                  {a.label}
-                </span>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-                <Clock size={13} />
-                {checkInOutLabel}
-              </p>
-              <div className="flex items-center gap-2">
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={onEdit}
-                    className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
-                    style={{ borderColor: "var(--color-border)" }}
-                  >
-                    <RefreshCcw size={12} />
-                    เปลี่ยนที่พัก
-                  </button>
-                )}
-                <HotelBookingButton
-                  name={name}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
-                />
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
-                  style={{ backgroundColor: "var(--color-accent-orange)" }}
-                >
-                  ดูรายละเอียด
-                  <ChevronRight size={12} />
-                </button>
-              </div>
-            </div>
-          </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
+function dayDateLabel(day: Day): string {
+  const date = new Date(day.date);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", day: "2-digit", month: "short" }).format(date);
 }
 
 function ItineraryAccordion({
@@ -1674,12 +1640,16 @@ function ItineraryAccordion({
   onAddActivity,
   onEditActivity,
   onDeleteActivity,
+  onGoToPlanTab,
+  onUpdateActivityTravel,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
   onAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
+  onGoToPlanTab: () => void;
+  onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -1690,13 +1660,87 @@ function ItineraryAccordion({
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-3 px-5 py-4"
       >
-        <h3 className="text-base font-bold sm:text-lg">ตารางแพลนทั้งหมด</h3>
+        <h3 className="text-base font-bold sm:text-lg">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
           {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </span>
       </button>
 
-      {expanded && (
+      {expanded && canEdit && (
+        // Fuller, one-column day list while actively building/editing — place
+        // count + date per day, plus a jump straight to the Plan tab for the
+        // per-day travel-connector view, which this compact card doesn't have.
+        <div className="flex flex-col gap-3 px-5 pb-5">
+          <TripStatsCard trip={trip} />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onGoToPlanTab}
+              className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              ดูแพลนรายวัน
+              <ChevronRight size={11} className="ml-0.5 inline" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {trip.days.map((day) => (
+              <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
+                <div
+                  className="flex items-center justify-between px-4 py-3"
+                  style={{ backgroundColor: "var(--color-sel-bg)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold">วันที่ {day.dayNumber}</h4>
+                    <span
+                      className="flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      <MapPin size={10} />
+                      {day.activities.length} จุด
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
+                </div>
+                <div className="flex flex-col gap-1 p-3">
+                  <button
+                    type="button"
+                    onClick={() => onAddActivity(day.id)}
+                    className="mb-1 rounded-xl border-2 border-dashed py-2.5 text-xs font-bold"
+                    style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                  >
+                    + เพิ่มสถานที่
+                  </button>
+                  {day.activities.map((a, i) => {
+                    const next = day.activities[i + 1];
+                    return (
+                      <div key={a.id}>
+                        <ItineraryRow
+                          activity={a}
+                          index={i + 1}
+                          canEdit={canEdit}
+                          onEdit={() => onEditActivity(day.id, a)}
+                          onDelete={() => onDeleteActivity(day.id, a.id)}
+                        />
+                        {next && (
+                          <TravelConnectorRow
+                            toActivity={next}
+                            canEdit={canEdit}
+                            onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {expanded && !canEdit && (
         <div className="grid grid-cols-1 gap-4 px-5 pb-5 md:grid-cols-3">
           {trip.days.map((day) => (
             <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
@@ -1720,16 +1764,6 @@ function ItineraryAccordion({
                     onDelete={() => onDeleteActivity(day.id, a.id)}
                   />
                 ))}
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => onAddActivity(day.id)}
-                    className="mt-1 rounded-xl border-2 border-dashed py-2.5 text-xs font-bold"
-                    style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
-                  >
-                    + เพิ่มสถานที่
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -1842,31 +1876,26 @@ function WeatherTab() {
 
 function PlanTab({
   trip,
+  isOwner,
+  canRemix,
+  onRemixClick,
   canEdit,
-  onToggleEditLock,
   onAddDay,
   onAddActivity,
   onEditActivity,
   onDeleteActivity,
   onUpdateActivityTravel,
-  onSaveTrip,
-  saveState,
-  hideManualControls,
 }: {
   trip: GeneratedTrip;
+  isOwner: boolean;
+  canRemix: boolean;
+  onRemixClick: () => void;
   canEdit: boolean;
-  onToggleEditLock: () => void;
   onAddDay: () => void;
   onAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
-  onSaveTrip: () => void;
-  saveState: SaveState;
-  // Self mode autosaves every add/edit immediately — no manual "บันทึก" or
-  // "เสร็จสิ้น"/"แก้ไขแพลน" lock toggle to show there (see canEdit in the page
-  // component, which is always true for self mode).
-  hideManualControls?: boolean;
 }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
@@ -1883,24 +1912,16 @@ function PlanTab({
           <Share2 size={14} />
           แชร์
         </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <Download size={14} />
-          บันทึกรูป
-        </button>
-        {!hideManualControls ? (
-          <>
-            <SaveTripButton onSave={onSaveTrip} saveState={saveState} />
-            <div className="h-6 w-px" style={{ backgroundColor: "var(--color-border)" }} />
-            <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
-          </>
-        ) : (
-          // Self mode autosaves every add/edit once unlocked — no "เสร็จสิ้น"
-          // step to lock back down with, so this only ever offers the way in.
-          !canEdit && <EditLockToggle canEdit={canEdit} onToggle={onToggleEditLock} />
+        {!isOwner && canRemix && (
+          <button
+            type="button"
+            onClick={onRemixClick}
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            <Repeat2 size={14} />
+            นำไปปรับเป็นทริปของฉัน
+          </button>
         )}
       </div>
     </div>

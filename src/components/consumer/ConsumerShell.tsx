@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Sidebar } from "@/components/consumer/Sidebar";
 import { Topbar } from "@/components/consumer/Topbar";
 
-type NavKey = "home" | "my-trips";
+type NavKey = "home" | "my-trips" | "account";
 
 export function ConsumerShell({
   active,

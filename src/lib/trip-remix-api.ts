@@ -1,12 +1,10 @@
 import { authenticatedFetch, BackendAuthenticationError } from "@/lib/authenticated-fetch";
 import { BACKEND_URL } from "@/lib/backend-url";
 
-// POST /trips/:sourceTripId/remix — NOT yet implemented on the backend as of
-// this writing (no such route exists in the API docs this app codes
-// against). This client is built against the agreed contract so the
-// frontend flow is ready the moment the backend ships it; until then every
-// call here will fail with a network/404 error, surfaced through
-// RemixApiError("server"/"not_found") like any other unreachable endpoint.
+// POST /trips/:sourceTripId/remix — matches RemixTripRequestDto on the
+// backend (see remix-trip.request.dto.ts). startDate/endDate are sent as a
+// pair or omitted entirely; this client always computes and sends both once
+// a start date is picked (see useRemixTrip's addDays).
 export interface RemixTripRequest {
   title: string;
   startDate: string; // ISO date, "2026-09-12"
@@ -16,10 +14,26 @@ export interface RemixTripRequest {
   copyBudget: boolean;
 }
 
-// Response shape kept loose (like CreateTripResponse in trips-create-api.ts)
-// — this app only actually needs `id` to navigate to the new Planner.
+// Matches RemixTripResponseDto on the backend — deliberately narrow (no
+// budget, no media, no schedule breakdown). `sourceTrip` is the one place
+// this app gets the source's title/owner name for the "Remix จาก ..." banner
+// without a second request — see buildRemixedTripShell in useRemixTrip.ts
+// and the sourceTripId-only fallback in generated-trips.ts for why every
+// other trip response can't provide it.
 export interface RemixTripResponse {
   id: string;
+  ownerId: string;
+  title: string;
+  planMode: string;
+  status: string;
+  visibility: "private" | "public";
+  sourceTrip: {
+    id: string;
+    title: string;
+    ownerId: string;
+    ownerDisplayName?: string;
+  };
+  createdAt: string;
   [key: string]: unknown;
 }
 
@@ -46,10 +60,18 @@ export class RemixApiError extends Error {
   }
 }
 
+// The real 400 body is Nest's plain BadRequestException shape — no
+// dedicated numeric field, just a message string: "New duration (N day(s))
+// must match the source trip's duration (M day(s))" (see
+// assertCompatibleDuration on the backend). M — the count the caller needs
+// to match — is pulled out of that sentence; a mismatched startDate/endDate
+// pair with no day count in the message (e.g. only one of the two sent)
+// leaves this undefined and the caller falls back to a generic message.
 async function readExpectedDurationDays(response: Response): Promise<number | undefined> {
   try {
-    const body = (await response.clone().json()) as { expectedDurationDays?: number; durationDays?: number };
-    const value = body.expectedDurationDays ?? body.durationDays;
+    const body = (await response.clone().json()) as { message?: string };
+    const match = body.message?.match(/source trip'?s duration \((\d+)\s*day/i);
+    const value = match ? Number(match[1]) : undefined;
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   } catch {
     return undefined;
@@ -106,11 +128,14 @@ export async function remixTrip(
     throw new RemixApiError("not_found", "ไม่พบแผนต้นฉบับ หรือแผนอาจถูกลบแล้ว");
   }
   if (response.status === 409) {
-    // Idempotency-key replay: the backend may echo back the trip that was
-    // already created for this key so the caller can just use it instead
-    // of erroring — read `id` the same speculative way readExpectedDurationDays
-    // reads the 400 body, and attach it so the hook can treat this as a
-    // success rather than a conflict when it's present.
+    // Not what a same-key retry actually does on the backend today — that
+    // replays transparently as a normal 201 with the original trip (see
+    // TripsService.remixTrip's idempotency fast path), never a 409. Kept as
+    // a defensive fallback in case a future backend change (or a proxy in
+    // front of it) ever does surface a real conflict here: read `id` the
+    // same speculative way readExpectedDurationDays reads the 400 body, and
+    // attach it so the hook can treat this as a success rather than a
+    // conflict when it's present.
     const error = new RemixApiError("conflict", "คำขอนี้ถูกส่งไปแล้ว กำลังตรวจสอบทริปที่สร้างไว้...");
     try {
       const body = (await response.clone().json()) as { id?: string };

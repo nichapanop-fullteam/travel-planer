@@ -8,11 +8,12 @@ import { onGeneratedTripsChanged } from "@/lib/generated-trips";
 import { useAuth } from "@/providers/AuthProvider";
 import { getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
 
-type NavKey = "home" | "my-trips";
+type NavKey = "home" | "my-trips" | "account";
 
-// Sidebar nav — only "หน้าหลัก" (Home) links anywhere real right now; "Account",
-// "Bookmark", and "Create Group" are visual placeholders (see CONTRIBUTING.md
-// for what's real vs. visual). Groups list links to real trip-detail pages,
+// Sidebar nav — "หน้าหลัก" (Home) and "Account" (see app/account/page.tsx)
+// link somewhere real; "Bookmark" and "Create Group" are still visual
+// placeholders (see CONTRIBUTING.md for what's real vs. visual). Groups list
+// links to real trip-detail pages,
 // and "ทริปของฉัน" reads the signed-in user's real trips from GET /trips/mine
 // (see lib/trips-api.ts) — same source as /my-trips, so a trip created/deleted
 // on another device or via /my-trips shows up here correctly too.
@@ -70,7 +71,7 @@ export function Sidebar({
 
       <nav className="mb-6 flex flex-col gap-1">
         <NavItem item={{ label: "หน้าหลัก", icon: Home, href: "/main" }} isActive={active === "home"} />
-        <NavItem item={{ label: "Account", icon: User, href: "/my-trips" }} isActive={active === "my-trips"} />
+        <NavItem item={{ label: "Account", icon: User, href: "/account" }} isActive={active === "account"} />
         <NavItem item={{ label: "Bookmark", icon: Bookmark }} />
       </nav>
 

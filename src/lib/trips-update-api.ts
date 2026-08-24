@@ -1,6 +1,7 @@
 import { authenticatedFetch } from "@/lib/authenticated-fetch";
 import { BACKEND_URL } from "@/lib/backend-url";
 import type { CreateTripActivity } from "@/lib/trips-create-api";
+import type { TripVisibility } from "@/lib/trips-api";
 import type { TravelType } from "@/types";
 
 // Partial-update endpoints for a trip that already has a real row on the
@@ -20,6 +21,9 @@ export interface UpdateTripRequest {
   startDate?: string;
   endDate?: string;
   budgetLimit?: number;
+  // Must be flipped to "public" before anyone besides the owner can remix
+  // this trip (see POST /trips/:sourceTripId/remix in lib/trip-remix-api.ts).
+  visibility?: TripVisibility;
 }
 
 // PATCH /trips/:tripId

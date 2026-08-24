@@ -37,6 +37,7 @@ const publicSourceTrip: BackendTrip = {
   destination: "หลวงพระบาง, ลาว",
   status: "confirmed",
   schedule: { durationDays: 3, isDateFlexible: false },
+  totalBudget: 0,
   days: [
     { id: "d1", dayNumber: 1, date: "2026-11-20", activities: [] },
     { id: "d2", dayNumber: 2, date: "2026-11-21", activities: [] },
@@ -46,6 +47,7 @@ const publicSourceTrip: BackendTrip = {
   updatedAt: "2026-08-01T00:00:00.000Z",
   customer: { id: "creator-1", name: "TravelWithTawn", groupSize: 1 },
   planMode: "manual",
+  visibility: "public",
 };
 
 let getTripImpl = () => Promise.resolve(publicSourceTrip);
@@ -135,13 +137,18 @@ describe("Remix on the trip detail/Planner page", () => {
         ...publicSourceTrip,
         id: "remixed-trip-1",
         ownerId: "some-other-user",
-        isRemix: true,
-        remixSource: { id: "public-trip-1", title: "หลวงพระบาง 3 วัน 2 คืน", ownerName: "TravelWithTawn" },
+        sourceTripId: "public-trip-1",
       });
     render(<GeneratedPlanPage />);
 
-    const banner = await screen.findByText(/Remix จาก/);
-    expect(banner.textContent).toContain("หลวงพระบาง 3 วัน 2 คืน");
+    // The banner renders instantly off the flat sourceTripId (generic "Remix
+    // จากทริปอื่น" text) and then backfills the real title/creator with one
+    // extra GET /trips/:sourceTripId — wait for that second render rather
+    // than grabbing the first (generic) one findByText would otherwise match.
+    await waitFor(() => {
+      expect(screen.getByText(/Remix จาก/).textContent).toContain("หลวงพระบาง 3 วัน 2 คืน");
+    });
+    const banner = screen.getByText(/Remix จาก/);
     expect(banner.textContent).toContain("TravelWithTawn");
   });
 
