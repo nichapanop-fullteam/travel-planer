@@ -23,6 +23,7 @@ import {
   Compass,
   Footprints,
   Globe2,
+  GripVertical,
   ImagePlus,
   LoaderCircle,
   Lock,
@@ -50,6 +51,18 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DraggableAttributes,
+} from "@dnd-kit/core";
+import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
@@ -612,6 +625,14 @@ export default function GeneratedPlanPage() {
     updateDay(dayId, (d) => ({ ...d, activities: d.activities.filter((a) => a.id !== activityId) }));
   }
 
+  // Drag-reordered stop order — like the other free-form edits above
+  // (title/time/cost/notes), there's no confirmed backend field for item
+  // order yet, so this stays local-only (persisted via updateDay's
+  // updateGeneratedTrip call, same as everything else here).
+  function handleReorderActivities(dayId: string, activities: Activity[]) {
+    updateDay(dayId, (d) => ({ ...d, activities }));
+  }
+
   function handleUpdateActivityTravel(dayId: string, activityId: string, travel: TravelFromPrevious) {
     updateDay(dayId, (d) => ({
       ...d,
@@ -639,9 +660,7 @@ export default function GeneratedPlanPage() {
 
   return (
     <div
-      className={`min-h-screen bg-white ${
-        tab === "overview" && canEdit ? "pb-28" : !isOwner && canRemix ? "pb-28 sm:pb-0" : ""
-      }`}
+      className={`min-h-screen bg-white ${!isOwner && canRemix ? "pb-28 sm:pb-0" : ""}`}
     >
       <div
         className={`fixed inset-0 z-50 flex transition-opacity duration-300 ${
@@ -720,6 +739,7 @@ export default function GeneratedPlanPage() {
               onAddDay={handleAddDay}
               onGoToPlanTab={() => setTab("plan")}
               onUpdateActivityTravel={handleUpdateActivityTravel}
+              onReorderActivities={handleReorderActivities}
             />
           )}
           {tab === "plan" && (
@@ -779,52 +799,6 @@ export default function GeneratedPlanPage() {
       )}
 
       {!isOwner && canRemix && <MobileRemixBar onRemixClick={handleRemixClick} />}
-      {tab === "overview" && canEdit && <EditingSummaryBar trip={trip} onSave={handleSaveToServer} saveState={saveState} />}
-    </div>
-  );
-}
-
-// Sticky bottom bar while actively building/editing the overview tab — quick
-// counts (same categories as TripStatsCard) plus the primary "บันทึกแพลน"
-// action, always reachable without scrolling back up to the top-bar save
-// button.
-function EditingSummaryBar({
-  trip,
-  onSave,
-  saveState,
-}: {
-  trip: GeneratedTrip;
-  onSave: () => void;
-  saveState: SaveState;
-}) {
-  const activities = trip.days.flatMap((d) => d.activities);
-  const countOf = (categories: ActivityCategory[]) =>
-    activities.filter((a) => categories.includes(a.category)).length;
-  const label =
-    saveState === "saving" ? "กำลังบันทึก..." : saveState === "saved" ? "บันทึกแล้ว" : saveState === "error" ? "บันทึกไม่สำเร็จ" : "บันทึกแพลน";
-
-  return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t bg-white px-4 py-3 sm:px-6"
-      style={{ borderColor: "var(--color-border)", paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-    >
-      <p className="min-w-0 truncate text-xs font-semibold text-[var(--color-muted)]">
-        <b style={{ color: "var(--foreground)" }}>{countOf(["sightseeing", "activity"])}</b> ที่เที่ยว ·{" "}
-        <b style={{ color: "var(--foreground)" }}>{countOf(["food"])}</b> ร้านอาหาร ·{" "}
-        <b style={{ color: "var(--foreground)" }}>{countOf(["hotel"])}</b> ที่พัก
-      </p>
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={saveState === "saving"}
-        className="shrink-0 rounded-full px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-70"
-        style={{
-          backgroundColor:
-            saveState === "saved" ? "var(--color-brand-green)" : saveState === "error" ? "var(--color-danger)" : "var(--color-accent-orange)",
-        }}
-      >
-        {label}
-      </button>
     </div>
   );
 }
@@ -1472,6 +1446,7 @@ function OverviewTab({
   onAddDay,
   onGoToPlanTab,
   onUpdateActivityTravel,
+  onReorderActivities,
 }: {
   trip: GeneratedTrip;
   isConfirmed: boolean;
@@ -1494,6 +1469,7 @@ function OverviewTab({
   onAddDay: () => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+  onReorderActivities: (dayId: string, activities: Activity[]) => void;
 }) {
   // "ยอมรับแพลนนี้ไหม?" only makes sense for a plan the AI actually
   // generated — a self-built/manual trip (or a remix, whose days were copied
@@ -1568,6 +1544,7 @@ function OverviewTab({
         onDeleteActivity={onDeleteActivity}
         onGoToPlanTab={onGoToPlanTab}
         onUpdateActivityTravel={onUpdateActivityTravel}
+        onReorderActivities={onReorderActivities}
       />
       <TripModeBar />
     </div>
@@ -1642,6 +1619,7 @@ function ItineraryAccordion({
   onDeleteActivity,
   onGoToPlanTab,
   onUpdateActivityTravel,
+  onReorderActivities,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1650,6 +1628,7 @@ function ItineraryAccordion({
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+  onReorderActivities: (dayId: string, activities: Activity[]) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -1712,27 +1691,14 @@ function ItineraryAccordion({
                   >
                     + เพิ่มสถานที่
                   </button>
-                  {day.activities.map((a, i) => {
-                    const next = day.activities[i + 1];
-                    return (
-                      <div key={a.id}>
-                        <ItineraryRow
-                          activity={a}
-                          index={i + 1}
-                          canEdit={canEdit}
-                          onEdit={() => onEditActivity(day.id, a)}
-                          onDelete={() => onDeleteActivity(day.id, a.id)}
-                        />
-                        {next && (
-                          <TravelConnectorRow
-                            toActivity={next}
-                            canEdit={canEdit}
-                            onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+                  <SortableItineraryList
+                    activities={day.activities}
+                    canEdit={canEdit}
+                    onEdit={(a) => onEditActivity(day.id, a)}
+                    onDelete={(a) => onDeleteActivity(day.id, a.id)}
+                    onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
+                    onReorder={(activities) => onReorderActivities(day.id, activities)}
+                  />
                 </div>
               </div>
             ))}
@@ -1773,24 +1739,143 @@ function ItineraryAccordion({
   );
 }
 
+// Drag-and-drop reordering for one day's stop list (see ItineraryAccordion's
+// "ตารางแพลน" card) — @dnd-kit rather than native HTML5 drag/drop since the
+// latter has no real touch support, and this list needs to work on mobile.
+// The grip handle (not the whole row) owns the drag listeners so taps on the
+// title, edit, and delete buttons keep working normally.
+function SortableItineraryList({
+  activities,
+  canEdit,
+  onEdit,
+  onDelete,
+  onSaveTravel,
+  onReorder,
+}: {
+  activities: Activity[];
+  canEdit: boolean;
+  onEdit: (activity: Activity) => void;
+  onDelete: (activity: Activity) => void;
+  onSaveTravel: (activityId: string, travel: TravelFromPrevious) => void;
+  onReorder: (activities: Activity[]) => void;
+}) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = activities.findIndex((a) => a.id === active.id);
+    const newIndex = activities.findIndex((a) => a.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorder(arrayMove(activities, oldIndex, newIndex));
+  }
+
+  if (!canEdit) {
+    return (
+      <>
+        {activities.map((a, i) => {
+          const next = activities[i + 1];
+          return (
+            <div key={a.id}>
+              <ItineraryRow activity={a} index={i + 1} canEdit={canEdit} onEdit={() => onEdit(a)} onDelete={() => onDelete(a)} />
+              {next && <TravelConnectorRow toActivity={next} canEdit={canEdit} onSave={(travel) => onSaveTravel(next.id, travel)} />}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+        {activities.map((a, i) => {
+          const next = activities[i + 1];
+          return (
+            <SortableItineraryEntry
+              key={a.id}
+              activity={a}
+              index={i + 1}
+              next={next}
+              onEdit={() => onEdit(a)}
+              onDelete={() => onDelete(a)}
+              onSaveTravel={next ? (travel) => onSaveTravel(next.id, travel) : undefined}
+            />
+          );
+        })}
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableItineraryEntry({
+  activity,
+  index,
+  next,
+  onEdit,
+  onDelete,
+  onSaveTravel,
+}: {
+  activity: Activity;
+  index: number;
+  next?: Activity;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSaveTravel?: (travel: TravelFromPrevious) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <ItineraryRow
+        activity={activity}
+        index={index}
+        canEdit
+        onEdit={onEdit}
+        onDelete={onDelete}
+        dragHandleProps={{ attributes, listeners }}
+      />
+      {next && onSaveTravel && <TravelConnectorRow toActivity={next} canEdit onSave={onSaveTravel} />}
+    </div>
+  );
+}
+
 function ItineraryRow({
   activity,
   index,
   canEdit,
   onEdit,
   onDelete,
+  dragHandleProps,
 }: {
   activity: Activity;
   index: number;
   canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  dragHandleProps?: { attributes: DraggableAttributes; listeners: SyntheticListenerMap | undefined };
 }) {
   const Icon = (activity.icon && ACTIVITY_ICON_OVERRIDE[activity.icon]) || categoryIcon[activity.category];
   const color = categoryColorVar[activity.category];
 
   return (
     <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+      {dragHandleProps && (
+        <button
+          type="button"
+          {...dragHandleProps.attributes}
+          {...dragHandleProps.listeners}
+          className="flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[var(--color-muted)] active:cursor-grabbing"
+          aria-label={`ลากเพื่อจัดลำดับ ${activity.title}`}
+        >
+          <GripVertical size={14} />
+        </button>
+      )}
       <span
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
         style={{ backgroundColor: "var(--color-brand-green)" }}
