@@ -21,6 +21,7 @@ import {
   Car,
   Clock,
   CloudSun,
+  Coffee,
   Compass,
   Download,
   Footprints,
@@ -66,6 +67,7 @@ const ACTIVITY_ICON_OVERRIDE: Record<string, typeof Anchor> = {
   mountain: Mountain,
   ticket: Ticket,
   beer: Beer,
+  coffee: Coffee,
   pulse: PulseIcon,
 };
 import {
@@ -93,9 +95,13 @@ import { getTripDrafts } from "@/lib/trip-drafts";
 import {
   formatDuration,
   formatTHB,
+  getAverageDailyCost,
   getDayRouteEstimate,
   getDayTotalCost,
   getGoogleMapsUrl,
+  getTripDistanceKm,
+  getTripPlaceStats,
+  resolveNightlyRate,
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
@@ -1219,17 +1225,22 @@ function OverviewTab({
   );
 }
 
-// The four category counts and the cost/distance figures aren't derivable from
-// today's data model (ActivityCategory has no cafe/bar split, and distance is
-// only ever a per-day estimate) — shown as placeholders until that's wired up.
+// All six figures are derived from the itinerary itself — see
+// getTripPlaceStats (distinct places per kind, so a hotel or market visited
+// twice isn't double-counted), getAverageDailyCost and getTripDistanceKm in
+// lib/trip-utils.ts.
 function TripStatsCard({ trip }: { trip: GeneratedTrip }) {
+  const places = useMemo(() => getTripPlaceStats(trip), [trip]);
+  const costPerDay = useMemo(() => getAverageDailyCost(trip), [trip]);
+  const distanceKm = useMemo(() => getTripDistanceKm(trip), [trip]);
+
   const stats = [
-    { label: "ที่เที่ยว", value: "XX" },
-    { label: "ร้านอาหาร", value: "XX" },
-    { label: "คาเฟ่", value: "XX" },
-    { label: "บาร์ / ผับ", value: "X" },
-    { label: "รวมงบ/วัน", value: "฿XX" },
-    { label: "Total Distance", value: "XXX km" },
+    { label: "ที่เที่ยว", value: `${places.attractions}` },
+    { label: "ร้านอาหาร", value: `${places.restaurants}` },
+    { label: "คาเฟ่", value: `${places.cafes}` },
+    { label: "บาร์ / ผับ", value: `${places.bars}` },
+    { label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
+    { label: "Total Distance", value: `${distanceKm} km` },
   ];
 
   return (
@@ -1305,6 +1316,7 @@ function AccommodationAccordion({
   // just a single accommodation option, so switching chips always reflects
   // that day's actual hotel instead of getting stuck on the same override.
   const acc = options.length <= 1 ? trip.accommodation : undefined;
+  const { pricePerNight, nights } = resolveNightlyRate(trip, acc, hotel);
   const name = acc?.name || hotel?.location?.name || "ที่พัก";
   const imageUrl = acc?.imageUrl || hotel?.location?.imageUrl || "/images/luang-prabang.jpg";
   const description = acc?.description || "Boutique Luxury Resort · เขตนอกเมือง · ท่าเรือกลางเมือง · ตลาดมืดตรงข้าม · เดินถึงภูสี";
@@ -1392,13 +1404,15 @@ function AccommodationAccordion({
                 <p className="text-xs text-[var(--color-muted)] sm:text-sm">{description}</p>
               </div>
               <div className="shrink-0 text-right">
-                {acc?.pricePerNight ? (
-                  <p className="text-lg font-extrabold sm:text-xl">{formatTHB(acc.pricePerNight)}/คืน</p>
-                ) : (
+                {pricePerNight ? (
                   <>
-                    <p className="text-lg font-extrabold sm:text-xl">$XXXXX</p>
-                    <p className="text-xs text-[var(--color-muted)]">฿XXXXXX/คืน</p>
+                    <p className="text-lg font-extrabold sm:text-xl">{formatTHB(pricePerNight)}/คืน</p>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      {nights} คืน · รวม {formatTHB(pricePerNight * nights)}
+                    </p>
                   </>
+                ) : (
+                  <p className="text-xs text-[var(--color-muted)]">ราคาตามช่วงวันที่เข้าพัก</p>
                 )}
               </div>
             </div>

@@ -101,7 +101,7 @@ export default function MainPage() {
   const visibleTrips = useMemo(() => {
     if (!trips) return trips;
     if (activeCategory === "ทั้งหมด") return trips;
-    return trips.filter((trip) => trip.tags.some((tag) => tag.toLowerCase().includes(activeCategory.toLowerCase())));
+    return trips.filter((trip) => (trip.tags ?? []).some((tag) => tag.toLowerCase().includes(activeCategory.toLowerCase())));
   }, [trips, activeCategory]);
 
   return (
@@ -393,7 +393,7 @@ function MasonryFeed({ trips }: { trips: BackendTripListItem[] }) {
 // e.g. "culture" → "วัฒนธรรม"), duration, and draft/confirmed status.
 function LemonCard({ trip }: { trip: BackendTripListItem }) {
   const href = `/generated-plan/${trip.id}`;
-  const durationDays = trip.schedule.durationDays;
+  const durationDays = trip.schedule?.durationDays;
 
   // GET /trips doesn't return a coverImage until PUT /trips/:tripId/cover has
   // been called (see resolveCoverImageUrl's doc comment) — a trip built from
@@ -437,9 +437,9 @@ function LemonCard({ trip }: { trip: BackendTripListItem }) {
           {trip.destination}
         </p>
 
-        {trip.tags.length > 0 && (
+        {(trip.tags?.length ?? 0) > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {trip.tags.map((tag) => (
+            {trip.tags!.map((tag) => (
               <span key={tag} className="rounded-full bg-[#f2f5f3] px-2 py-0.5 text-[10px] font-semibold text-[#5f6964]">
                 {feedCategoryLabel[tag as FeedCategory] ?? tag}
               </span>

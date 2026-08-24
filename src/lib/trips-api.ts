@@ -41,11 +41,11 @@ export interface BackendTripListItem {
   title: string;
   destination: string;
   status: "draft" | "shared" | "confirmed" | "completed";
-  schedule: BackendTripSchedule;
+  schedule?: BackendTripSchedule; // absent on some real GET /trips rows — never assume it's there
   totalBudget: number;
   budgetLimit?: number;
   budgetTier?: BackendBudgetTier;
-  tags: string[];
+  tags?: string[]; // also absent on some real GET /trips rows, same as schedule above
   coverImage?: Media;
   createdAt: string;
   updatedAt: string;

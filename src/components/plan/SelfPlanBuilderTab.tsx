@@ -35,7 +35,7 @@ import {
 } from "@/lib/external-places-api";
 import { CATEGORY_LABEL_TH, enrichPlace, EXTERNAL_TO_ACTIVITY_CATEGORY, type EnrichedPlace } from "@/lib/place-mock-metadata";
 import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
-import { formatDuration, formatTHB, getTripRouteSummary } from "@/lib/trip-utils";
+import { formatDuration, formatTHB, getTripRouteSummary, resolveNightlyRate } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 
@@ -1033,6 +1033,7 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
   // there's just a single accommodation option, so switching chips always
   // reflects that day's actual hotel instead of getting stuck on the override.
   const acc = options.length <= 1 ? trip.accommodation : undefined;
+  const { pricePerNight, nights } = resolveNightlyRate(trip, acc, selected.hotel);
   const name = acc?.name || selected.hotel.location?.name || selected.hotel.title;
   const imageUrl = acc?.imageUrl || selected.hotel.location?.imageUrl || "/images/luang-prabang.jpg";
   const description =
@@ -1098,13 +1099,15 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
               <p className="text-xs text-[var(--color-muted)] sm:text-sm">{description}</p>
             </div>
             <div className="shrink-0 text-right">
-              {acc?.pricePerNight ? (
-                <p className="text-lg font-extrabold sm:text-xl">{formatTHB(acc.pricePerNight)}/คืน</p>
-              ) : (
+              {pricePerNight ? (
                 <>
-                  <p className="text-lg font-extrabold sm:text-xl">$XXXXX</p>
-                  <p className="text-xs text-[var(--color-muted)]">฿XXXXXX/คืน</p>
+                  <p className="text-lg font-extrabold sm:text-xl">{formatTHB(pricePerNight)}/คืน</p>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    {nights} คืน · รวม {formatTHB(pricePerNight * nights)}
+                  </p>
                 </>
+              ) : (
+                <p className="text-xs text-[var(--color-muted)]">ราคาตามช่วงวันที่เข้าพัก</p>
               )}
             </div>
           </div>

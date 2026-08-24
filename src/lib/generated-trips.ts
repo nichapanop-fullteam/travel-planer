@@ -1,4 +1,4 @@
-import type { Day, GeneratedTrip, TripDraft } from "@/types";
+import type { Day, GeneratedTrip, TripAccommodation, TripDraft } from "@/types";
 import type { GeneratePlanResponse } from "./generate-plan-api";
 import type { BackendTrip } from "./trips-api";
 import {
@@ -177,6 +177,34 @@ function isLuangPrabang(destination: string): boolean {
   return destination.includes("หลวงพระบาง");
 }
 
+// The hand-authored Luang Prabang demo itinerary — the one plan in this app
+// that has to look like a finished, real trip (it's what the demo walks
+// through), so every stop carries its actual figures: what it costs, and the
+// structured `travelFromPrevious` leg that gets it from the previous stop.
+//
+// Two rules to keep when editing this:
+//  • No place appears twice. The only repeat is the hotel, on purpose — the
+//    check-out stop reuses the exact check-in name so the accommodation card
+//    dedupes them into one stay instead of showing two.
+//  • Travel legs carry distance/duration only, never costAmount — every baht
+//    already sits in the stop's own `cost` (a ride to a stop is priced into
+//    that stop), and counting it twice would inflate the budget summary.
+//
+// `travelNote` repeats the leg in words because that's what the itinerary
+// rows render today; the structured object is what the distance figures are
+// summed from (see getDayRouteEstimate in lib/trip-utils.ts).
+const LUANG_PRABANG_HOTEL = "Xieng Thong Retreat Hotel";
+
+export const LUANG_PRABANG_ACCOMMODATION: TripAccommodation = {
+  name: LUANG_PRABANG_HOTEL,
+  imageUrl: "/images/luang-prabang.jpg",
+  pricePerNight: 4200,
+  amenities: ["อินเทอร์เน็ตฟรี", "รถรับส่งสนามบินฟรี", "สระว่ายน้ำ", "อาหารเช้าบุฟเฟ่ต์"],
+  checkIn: "14:00",
+  checkOut: "12:00",
+  description: "Boutique Luxury Resort · ริมน้ำคาน · เดินถึงวัดเชียงทอง 8 นาที · ตลาดมืด 5 นาที",
+};
+
 function luangPrabangDays(): Day[] {
   return [
     {
@@ -184,13 +212,101 @@ function luangPrabangDays(): Day[] {
       dayNumber: 1,
       date: "2026-11-20",
       activities: [
-        { id: "ga1", time: "14:00", title: "เช็คอินโรงแรม", category: "hotel", location: { name: "Xieng Thong Retreat Hotel", rating: 5.0, imageUrl: "/images/luang-prabang.jpg" }, cost: 0, travelNote: "จากสนามบิน ~15 นาที" },
-        { id: "ga2", time: "15:00", title: "วัดเชียงทอง (Wat Xieng Thong)", category: "sightseeing", location: { name: "Wat Xieng Thong", rating: 4.8, imageUrl: "/images/wat-xieng-thong.png" }, cost: 100, travelNote: "เดิน ~8 นาที", icon: "anchor" },
-        { id: "ga3", time: "16:30", title: "ปั่นจักรยานเลียบเมืองเก่า", category: "activity", location: { name: "Old Town" }, cost: 100, travelNote: "อยู่ย่านเดียวกัน", icon: "bike" },
-        { id: "ga4", time: "17:30", title: "ขึ้นภูสี (Mount Phousi) ชมพระอาทิตย์ตก", category: "sightseeing", location: { name: "Mount Phousi" }, cost: 100, travelNote: "เดิน ~10 นาที", icon: "mountain" },
-        { id: "ga5", time: "19:00", title: "ตลาดกลางคืน (Night Market)", category: "food", location: { name: "Luang Prabang Night Market", rating: 4.6, imageUrl: "/images/night-market.png" }, cost: 250, travelNote: "เดิน ~5 นาที", icon: "ticket" },
-        { id: "ga6", time: "21:30", title: "บาร์ค็อกเทล Icon Klub", category: "food", location: { name: "Icon Klub" }, cost: 900, travelNote: "เดิน ~6 นาที", icon: "beer" },
-        { id: "ga7", time: "00:00", title: "โบว์ลิ่งหลวงพระบาง", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, cost: 400, travelNote: "ตุ๊กตุ๊ก ~10 นาที", icon: "pulse" },
+        {
+          id: "ga1",
+          time: "14:00",
+          title: "เช็คอินโรงแรม",
+          category: "hotel",
+          location: { name: LUANG_PRABANG_HOTEL, rating: 4.8, imageUrl: "/images/luang-prabang.jpg" },
+          cost: 8400,
+          notes: "ห้อง River View 2 คืน (฿4,200/คืน) รวมอาหารเช้า",
+          travelNote: "รถรับส่งโรงแรมจากสนามบิน ~15 นาที · 4.2 กม.",
+          travelFromPrevious: { type: "private_transfer", durationMin: 15, distanceKm: 4.2, notes: "รถรับส่งสนามบินฟรีของโรงแรม" },
+        },
+        {
+          id: "ga2",
+          time: "15:00",
+          title: "วัดเชียงทอง (Wat Xieng Thong)",
+          category: "sightseeing",
+          location: { name: "Wat Xieng Thong", rating: 4.8, imageUrl: "/images/wat-xieng-thong.png" },
+          cost: 100,
+          notes: "ค่าเข้า 20,000 กีบ/คน (~฿50 × 2 คน)",
+          travelNote: "เดิน ~8 นาที · 0.6 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 8, distanceKm: 0.6 },
+          icon: "anchor",
+        },
+        {
+          id: "ga3",
+          time: "16:30",
+          title: "ปั่นจักรยานเลียบเมืองเก่า",
+          category: "activity",
+          location: { name: "Sakkaline Road (เมืองเก่า)", rating: 4.6 },
+          cost: 120,
+          notes: "เช่าจักรยาน ฿60/คัน/วัน × 2 คัน",
+          travelNote: "เดิน ~5 นาที · 0.4 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.4 },
+          icon: "bike",
+        },
+        {
+          id: "ga4",
+          time: "17:30",
+          title: "ขึ้นภูสี (Mount Phousi) ชมพระอาทิตย์ตก",
+          category: "sightseeing",
+          location: { name: "Mount Phousi", rating: 4.7 },
+          cost: 100,
+          notes: "ค่าขึ้น 25,000 กีบ/คน (~฿50 × 2 คน) · บันได 328 ขั้น",
+          travelNote: "ปั่นจักรยาน ~6 นาที · 0.8 กม.",
+          travelFromPrevious: { type: "bicycle", durationMin: 6, distanceKm: 0.8 },
+          icon: "mountain",
+        },
+        {
+          id: "ga5",
+          time: "18:45",
+          title: "คาเฟ่ริมโขง Joma Bakery Café",
+          category: "food",
+          location: { name: "Joma Bakery Café", rating: 4.5, imageUrl: "/images/joma-cafe.png" },
+          cost: 180,
+          notes: "กาแฟลาว + เบเกอรี่ ~฿90/คน",
+          travelNote: "เดิน ~6 นาที · 0.5 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 6, distanceKm: 0.5 },
+          icon: "coffee",
+        },
+        {
+          id: "ga6",
+          time: "19:30",
+          title: "ตลาดกลางคืน (Night Market)",
+          category: "food",
+          location: { name: "Luang Prabang Night Market", rating: 4.6, imageUrl: "/images/night-market.png" },
+          cost: 250,
+          notes: "มื้อเย็นข้าวเหนียวไก่ย่าง + ของหวาน ~฿125/คน",
+          travelNote: "เดิน ~5 นาที · 0.3 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.3 },
+          icon: "ticket",
+        },
+        {
+          id: "ga7",
+          time: "21:30",
+          title: "บาร์ค็อกเทล Icon Klub",
+          category: "food",
+          location: { name: "Icon Klub", rating: 4.6 },
+          cost: 900,
+          notes: "ค็อกเทลซิกเนเจอร์ ~฿225/แก้ว × 4",
+          travelNote: "เดิน ~6 นาที · 0.5 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 6, distanceKm: 0.5 },
+          icon: "beer",
+        },
+        {
+          id: "ga8",
+          time: "23:00",
+          title: "โบว์ลิ่งหลวงพระบาง",
+          category: "activity",
+          location: { name: "Luang Prabang Bowling Alley", rating: 4.3 },
+          cost: 520,
+          notes: "ค่าเลน 2 เกม ฿400 + ตุ๊กตุ๊กไป-กลับ ฿120",
+          travelNote: "ตุ๊กตุ๊ก ~10 นาที · 3.4 กม.",
+          travelFromPrevious: { type: "tuk_tuk", durationMin: 10, distanceKm: 3.4 },
+          icon: "pulse",
+        },
       ],
     },
     {
@@ -198,10 +314,95 @@ function luangPrabangDays(): Day[] {
       dayNumber: 2,
       date: "2026-11-21",
       activities: [
-        { id: "ga8", time: "08:00", title: "น้ำตกกวางสี", category: "activity", location: { name: "Kuang Si Falls" }, cost: 900, travelNote: "จากโรงแรม ~15 นาที" },
-        { id: "ga9", time: "12:00", title: "สปาสมุนไพรลาว", category: "activity", location: { name: "Luang Prabang" }, cost: 550, travelNote: "เดิน ~10 นาที" },
-        { id: "ga10", time: "17:00", title: "ล่องเรือแม่น้ำโขงยามเย็น", category: "food", location: { name: "Mekong River", rating: 4.7, imageUrl: "/images/mekong-boat.png" }, cost: 1300, travelNote: "เดิน ~10 นาที" },
-        { id: "ga11", time: "20:00", title: "Lao Lao Garden", category: "food", location: { name: "Lao Lao Garden" }, cost: 450, travelNote: "เดิน ~10 นาที" },
+        {
+          id: "ga9",
+          time: "06:00",
+          title: "ตักบาตรข้าวเหนียว ถนนสีสะหว่างวง",
+          category: "sightseeing",
+          location: { name: "Sisavangvong Road", rating: 4.7 },
+          cost: 100,
+          notes: "ชุดข้าวเหนียวใส่บาตร ฿50/ชุด × 2",
+          travelNote: "เดินจากโรงแรม ~7 นาที · 0.6 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 7, distanceKm: 0.6 },
+        },
+        {
+          id: "ga10",
+          time: "07:30",
+          title: "มื้อเช้าตลาดเช้าหลวงพระบาง",
+          category: "food",
+          location: { name: "Luang Prabang Morning Market", rating: 4.4 },
+          cost: 160,
+          notes: "ข้าวเปียกเส้น + ปาท่องโก๋ ~฿80/คน",
+          travelNote: "เดิน ~5 นาที · 0.4 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.4 },
+        },
+        {
+          id: "ga11",
+          time: "09:30",
+          title: "น้ำตกกวางสี (Kuang Si Falls)",
+          category: "activity",
+          location: { name: "Kuang Si Falls", rating: 4.9 },
+          cost: 900,
+          notes: "เหมารถตู้ไป-กลับ ฿600 + ค่าเข้า ฿150/คน",
+          travelNote: "รถส่วนตัว ~45 นาที · 29.5 กม.",
+          travelFromPrevious: { type: "private_transfer", durationMin: 45, distanceKm: 29.5 },
+        },
+        {
+          id: "ga12",
+          time: "12:30",
+          title: "มื้อกลางวัน Kuang Si Buffalo Dairy",
+          category: "food",
+          location: { name: "Kuang Si Buffalo Dairy", rating: 4.7 },
+          cost: 350,
+          notes: "เซ็ตอาหาร + ไอศกรีมนมควาย ฿175/คน",
+          travelNote: "รถส่วนตัว ~10 นาที · 3.6 กม.",
+          travelFromPrevious: { type: "private_transfer", durationMin: 10, distanceKm: 3.6 },
+        },
+        {
+          id: "ga13",
+          time: "15:30",
+          title: "สปาสมุนไพรลาว Lao Red Cross",
+          category: "activity",
+          location: { name: "Lao Red Cross Herbal Sauna", rating: 4.5 },
+          cost: 550,
+          notes: "อบสมุนไพร + นวดลาว 60 นาที ฿275/คน",
+          travelNote: "รถส่วนตัว ~40 นาที · 27.8 กม.",
+          travelFromPrevious: { type: "private_transfer", durationMin: 40, distanceKm: 27.8 },
+        },
+        {
+          id: "ga14",
+          time: "17:30",
+          title: "ล่องเรือแม่น้ำโขงยามเย็น",
+          category: "activity",
+          location: { name: "Mekong River", rating: 4.7, imageUrl: "/images/mekong-boat.png" },
+          cost: 1300,
+          notes: "เรือเหมา 2 ชั่วโมง พร้อมของว่างและเครื่องดื่ม",
+          travelNote: "เดิน ~12 นาที · 0.9 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 12, distanceKm: 0.9 },
+        },
+        {
+          id: "ga15",
+          time: "20:00",
+          title: "มื้อเย็น Lao Lao Garden",
+          category: "food",
+          location: { name: "Lao Lao Garden", rating: 4.5 },
+          cost: 450,
+          notes: "ปิ้งย่างลาว + ลาบปลา ~฿225/คน",
+          travelNote: "เดิน ~10 นาที · 0.7 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 10, distanceKm: 0.7 },
+        },
+        {
+          id: "ga16",
+          time: "21:30",
+          title: "บาร์ริมน้ำคาน Utopia",
+          category: "food",
+          location: { name: "Utopia Bar", rating: 4.4 },
+          cost: 380,
+          notes: "เบียร์ลาว + เมาเทนวิว ~฿190/คน",
+          travelNote: "เดิน ~6 นาที · 0.4 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 6, distanceKm: 0.4 },
+          icon: "beer",
+        },
       ],
     },
     {
@@ -209,9 +410,73 @@ function luangPrabangDays(): Day[] {
       dayNumber: 3,
       date: "2026-11-22",
       activities: [
-        { id: "ga12", time: "08:00", title: "เช็คเอาท์โรงแรม", category: "hotel", location: { name: "Old Town, Luang Prabang" }, cost: 0 },
-        { id: "ga13", time: "09:00", title: "คาเฟ่ริมโขง มื้อเช้า", category: "food", location: { name: "Luang Prabang" }, cost: 200, travelNote: "เดิน ~5 นาที" },
-        { id: "ga14", time: "11:00", title: "เดินทางสู่สนามบิน", category: "transport", location: { name: "Luang Prabang Airport" }, cost: 0, travelNote: "รถส่วนตัว ~20 นาที" },
+        {
+          id: "ga17",
+          time: "07:30",
+          title: "มื้อเช้าคาเฟ่ Le Banneton",
+          category: "food",
+          location: { name: "Le Banneton Café", rating: 4.6 },
+          cost: 220,
+          notes: "ครัวซองต์ + กาแฟฝรั่งเศส ~฿110/คน",
+          travelNote: "เดินจากโรงแรม ~5 นาที · 0.4 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.4 },
+          icon: "coffee",
+        },
+        {
+          id: "ga18",
+          time: "09:00",
+          title: "วัดวิชุนราช & พระธาตุหมากโม",
+          category: "sightseeing",
+          location: { name: "Wat Visounnarath", rating: 4.5 },
+          cost: 100,
+          notes: "ค่าเข้า 20,000 กีบ/คน (~฿50 × 2 คน)",
+          travelNote: "เดิน ~14 นาที · 1.1 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 14, distanceKm: 1.1 },
+        },
+        {
+          id: "ga19",
+          time: "10:30",
+          title: "ซื้อของฝาก Ock Pop Tok Living Crafts Centre",
+          category: "activity",
+          location: { name: "Ock Pop Tok Living Crafts Centre", rating: 4.8 },
+          cost: 300,
+          notes: "ชมสาธิตทอผ้า (ฟรี) + ผ้าพันคอทอมือ ฿300",
+          travelNote: "ตุ๊กตุ๊ก ~8 นาที · 1.8 กม.",
+          travelFromPrevious: { type: "tuk_tuk", durationMin: 8, distanceKm: 1.8 },
+        },
+        {
+          id: "ga20",
+          time: "11:45",
+          title: "เช็คเอาท์โรงแรม",
+          category: "hotel",
+          location: { name: LUANG_PRABANG_HOTEL, rating: 4.8, imageUrl: "/images/luang-prabang.jpg" },
+          cost: 0,
+          notes: "ฝากกระเป๋าที่ล็อบบี้ได้ถึงเย็น",
+          travelNote: "ตุ๊กตุ๊ก ~9 นาที · 2.0 กม.",
+          travelFromPrevious: { type: "tuk_tuk", durationMin: 9, distanceKm: 2 },
+        },
+        {
+          id: "ga21",
+          time: "12:30",
+          title: "มื้อกลางวัน Tamarind Restaurant",
+          category: "food",
+          location: { name: "Tamarind Restaurant", rating: 4.6 },
+          cost: 480,
+          notes: "เซ็ตอาหารลาว 5 อย่าง ฿240/คน",
+          travelNote: "เดิน ~6 นาที · 0.4 กม.",
+          travelFromPrevious: { type: "walk", durationMin: 6, distanceKm: 0.4 },
+        },
+        {
+          id: "ga22",
+          time: "14:30",
+          title: "เดินทางสู่สนามบิน",
+          category: "transport",
+          location: { name: "Luang Prabang International Airport" },
+          cost: 150,
+          notes: "ตุ๊กตุ๊กเหมา ฿150 · เช็คอินก่อนบิน 1 ชั่วโมง",
+          travelNote: "ตุ๊กตุ๊ก ~20 นาที · 4.6 กม.",
+          travelFromPrevious: { type: "tuk_tuk", durationMin: 20, distanceKm: 4.6 },
+        },
       ],
     },
   ];
@@ -295,6 +560,7 @@ export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
     styles: draft.styles,
     status: "generated",
     days: luangPrabang ? luangPrabangDays() : genericDays(draft.destination),
+    accommodation: luangPrabang ? LUANG_PRABANG_ACCOMMODATION : undefined,
   };
 }
 
@@ -423,9 +689,20 @@ export function buildGeneratedTripFromBackendTrip(trip: BackendTrip): GeneratedT
 // create-trip form first.
 export const DEMO_LUANG_PRABANG_ID = "demo-luang-prabang";
 
+// A copy saved before this itinerary carried its real figures (per-stop
+// travel legs + accommodation pricing) is re-seeded instead of shown as-is:
+// the demo trip is only ever written on first open, so without this a browser
+// that opened it once would keep showing the old figure-less version forever.
+function hasRealFigures(trip: GeneratedTrip): boolean {
+  return (
+    trip.accommodation?.pricePerNight !== undefined &&
+    trip.days.some((d) => d.activities.some((a) => a.travelFromPrevious?.distanceKm !== undefined))
+  );
+}
+
 export function getOrCreateDemoLuangPrabangTrip(): GeneratedTrip {
   const existing = getGeneratedTrip(DEMO_LUANG_PRABANG_ID);
-  if (existing) return existing;
+  if (existing && hasRealFigures(existing)) return existing;
 
   const trip: GeneratedTrip = {
     id: DEMO_LUANG_PRABANG_ID,
@@ -440,7 +717,9 @@ export function getOrCreateDemoLuangPrabangTrip(): GeneratedTrip {
     styles: ["วัฒนธรรม", "อาหาร", "ไนท์ไลฟ์"],
     status: "confirmed",
     days: luangPrabangDays(),
+    accommodation: LUANG_PRABANG_ACCOMMODATION,
   };
-  saveGeneratedTrip(trip);
+  if (existing) replaceGeneratedTripId(DEMO_LUANG_PRABANG_ID, trip);
+  else saveGeneratedTrip(trip);
   return trip;
 }
