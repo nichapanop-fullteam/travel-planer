@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -20,6 +20,7 @@ import {
   ChevronUp,
   Clock,
   CloudSun,
+  Coffee,
   Compass,
   Footprints,
   Globe2,
@@ -79,6 +80,7 @@ const ACTIVITY_ICON_OVERRIDE: Record<string, typeof Anchor> = {
   mountain: Mountain,
   ticket: Ticket,
   beer: Beer,
+  coffee: Coffee,
   pulse: PulseIcon,
 };
 import {
@@ -113,7 +115,8 @@ import {
   getDayRouteEstimate,
   getDayTotalCost,
   getGoogleMapsUrl,
-  getTripRouteSummary,
+  getTripDistanceKm,
+  getTripPlaceStats,
   getTripTotalCost,
 } from "@/lib/trip-utils";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
@@ -1572,32 +1575,31 @@ function OverviewTab({
   );
 }
 
-// The four category counts and the cost/distance figures aren't derivable from
-// today's data model (ActivityCategory has no cafe/bar split, and distance is
-// only ever a per-day estimate) — shown as placeholders until that's wired up.
+// All six figures are derived from the itinerary itself — see
+// getTripPlaceStats (distinct places per kind, so a hotel or market visited
+// twice isn't double-counted) and getTripDistanceKm in lib/trip-utils.ts.
 function TripStatsCard({ trip }: { trip: GeneratedTrip }) {
-  const activities = trip.days.flatMap((d) => d.activities);
-  const countOf = (categories: ActivityCategory[]) =>
-    activities.filter((a) => categories.includes(a.category)).length;
-  // Real counts from the categories the data model actually has (see
-  // ActivityCategory in types/index.ts) — no cafe/bar split exists below
-  // "food", so those are grouped together rather than faked as separate tiles.
-  const { distanceKm } = getTripRouteSummary(trip);
+  const places = useMemo(() => getTripPlaceStats(trip), [trip]);
+  const distanceKm = useMemo(() => getTripDistanceKm(trip), [trip]);
   // Prefer the backend's own total (activity/travel costs × travelers, plus
   // accommodation and standalone trip_expenses rows — see
   // BackendTrip.totalBudget) over summing just activity.cost client-side,
   // which under-counts as soon as anything's logged straight into the budget
   // tab instead of an itinerary stop. Only a never-synced local draft (no
-  // totalBudget from a server response yet) falls back to the local sum.
-  const totalCost = trip.totalBudget ?? getTripTotalCost(trip);
-  const avgCostPerDay = trip.days.length > 0 ? Math.round(totalCost / trip.days.length) : 0;
+  // totalBudget from a server response yet) falls back to the local sum —
+  // same "planned days only" divisor as getAverageDailyCost.
+  const costPerDay = useMemo(() => {
+    const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
+    if (plannedDays === 0) return 0;
+    return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
+  }, [trip]);
 
   const stats = [
-    { label: "ที่เที่ยว", value: String(countOf(["sightseeing", "activity"])) },
-    { label: "ร้านอาหาร", value: String(countOf(["food"])) },
-    { label: "ที่พัก", value: String(countOf(["hotel"])) },
-    { label: "อื่นๆ", value: String(countOf(["transport", "other"])) },
-    { label: "รวมงบ/วัน", value: formatTHB(avgCostPerDay) },
+    { label: "ที่เที่ยว", value: `${places.attractions}` },
+    { label: "ร้านอาหาร", value: `${places.restaurants}` },
+    { label: "คาเฟ่", value: `${places.cafes}` },
+    { label: "บาร์ / ผับ", value: `${places.bars}` },
+    { label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
     { label: "Total Distance", value: `${distanceKm} km` },
   ];
 
@@ -1626,6 +1628,11 @@ function findHotelActivity(trip: GeneratedTrip): Activity | undefined {
   return trip.days.flatMap((d) => d.activities).find((a) => a.category === "hotel" && a.location?.imageUrl);
 }
 
+// AI-mode's own accommodation card lived here before it was folded into
+// PlaceDiscoveryPanel's unified overview (see that panel's own
+// AccommodationAccordion in components/plan/SelfPlanBuilderTab.tsx, which
+// every trip — self-built or AI-generated — renders now) — kept only
+// dayDateLabel, which the itinerary card below still needs.
 function dayDateLabel(day: Day): string {
   const date = new Date(day.date);
   if (Number.isNaN(date.getTime())) return "";

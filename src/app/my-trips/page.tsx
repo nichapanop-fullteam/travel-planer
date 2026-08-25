@@ -198,7 +198,7 @@ export default function MyTripsPage() {
                     <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
                       <MapPin size={12} className="shrink-0" />
                       <span className="truncate">
-                        {trip.destination} · {trip.schedule.durationDays ?? "–"} วัน
+                        {trip.destination} · {trip.schedule?.durationDays ?? "–"} วัน
                       </span>
                     </p>
                   </div>
