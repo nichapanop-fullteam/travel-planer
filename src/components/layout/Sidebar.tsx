@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Bookmark, Home, MapPin, Menu, Plus, User, Users } from "lucide-react";
 import { myGroups } from "@/lib/groups";
 import { onGeneratedTripsChanged } from "@/lib/generated-trips";
 import { useAuth } from "@/providers/AuthProvider";
 import { getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
 
-type NavKey = "home" | "my-trips" | "account";
+type NavKey = "home" | "account";
 
 // Sidebar nav — "หน้าหลัก" (Home) and "Account" (see app/account/page.tsx)
 // link somewhere real; "Bookmark" and "Create Group" are still visual
@@ -22,10 +23,17 @@ export function Sidebar({
   activeGroupId,
   onClose,
 }: {
+  // Optional override — every caller now gets the right item highlighted
+  // automatically from the current route (see below), so this only exists
+  // for the rare case a route doesn't map 1:1 onto a NavKey.
   active?: NavKey;
   activeGroupId?: string;
   onClose?: () => void;
 }) {
+  const pathname = usePathname();
+  const resolvedActive: NavKey | undefined =
+    active ?? (pathname === "/main" ? "home" : pathname?.startsWith("/account") ? "account" : undefined);
+
   const groups = myGroups;
   const { backendUser } = useAuth();
   // Discarded via the `backendUser ? ... : []` fallback below on logout,
@@ -70,8 +78,8 @@ export function Sidebar({
       </div>
 
       <nav className="mb-6 flex flex-col gap-1">
-        <NavItem item={{ label: "หน้าหลัก", icon: Home, href: "/main" }} isActive={active === "home"} />
-        <NavItem item={{ label: "Account", icon: User, href: "/account" }} isActive={active === "account"} />
+        <NavItem item={{ label: "หน้าหลัก", icon: Home, href: "/main" }} isActive={resolvedActive === "home"} />
+        <NavItem item={{ label: "Account", icon: User, href: "/account" }} isActive={resolvedActive === "account"} />
         <NavItem item={{ label: "Bookmark", icon: Bookmark }} />
       </nav>
 

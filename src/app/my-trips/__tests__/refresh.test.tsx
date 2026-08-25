@@ -15,8 +15,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => stableRouter,
 }));
 
-vi.mock("@/components/consumer/ConsumerShell", () => ({
-  ConsumerShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+vi.mock("@/components/layout/AppShell", () => ({
+  AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/components/LogoutButton", () => ({ default: () => <button>logout</button> }));

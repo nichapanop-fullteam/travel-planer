@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Check, LoaderCircle, Lock, Save } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
-import { ConsumerShell } from "@/components/consumer/ConsumerShell";
+import { AppShell } from "@/components/layout/AppShell";
 import LogoutButton from "@/components/LogoutButton";
 import { useToast } from "@/providers/ToastProvider";
 import { getBackendAccessToken, setBackendSession } from "@/lib/backend-user";
@@ -33,7 +33,7 @@ export default function AccountPage() {
   if (!backendUser) return null;
 
   return (
-    <ConsumerShell active="account">
+    <AppShell active="account">
       <div className="mx-auto max-w-2xl px-6 py-10 sm:px-10">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -54,7 +54,7 @@ export default function AccountPage() {
           avatarUrl={backendUser.avatarUrl}
         />
       </div>
-    </ConsumerShell>
+    </AppShell>
   );
 }
 

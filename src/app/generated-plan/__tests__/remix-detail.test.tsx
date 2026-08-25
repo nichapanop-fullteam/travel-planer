@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("@/components/consumer/Sidebar", () => ({ Sidebar: () => <div /> }));
+vi.mock("@/components/layout/Sidebar", () => ({ Sidebar: () => <div /> }));
 
 let mockBackendUser: { id: string; name: string } | null = null;
 vi.mock("@/providers/AuthProvider", () => ({

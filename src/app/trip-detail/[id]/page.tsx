@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { getFeedTripById } from "@/lib/feed-data";
 import { isMyGroupTrip } from "@/lib/groups";
-import { ConsumerShell } from "@/components/consumer/ConsumerShell";
+import { AppShell } from "@/components/layout/AppShell";
+import { PageContainer } from "@/components/layout/PageContainer";
+import { SectionContainer } from "@/components/layout/SectionContainer";
 import { TripDetailHeader } from "@/components/consumer/TripDetailHeader";
 import { TripDetailTabs } from "@/components/consumer/TripDetailTabs";
 import { GroupChatPanel } from "@/components/consumer/GroupChatPanel";
@@ -19,20 +21,22 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const isJoined = isMyGroupTrip(trip.id);
 
   return (
-    <ConsumerShell activeGroupId={trip.id}>
+    <AppShell activeGroupId={trip.id}>
       <div className="min-h-screen bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
-          <TripDetailHeader trip={trip} isJoined={isJoined} />
+        <PageContainer>
+          <SectionContainer>
+            <TripDetailHeader trip={trip} isJoined={isJoined} />
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
-            <TripDetailTabs trip={trip} />
-            <div className="flex flex-col gap-5">
-              {isJoined && <GroupChatPanel members={trip.members} />}
-              <TripInfoPanel trip={trip} isJoined={isJoined} />
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
+              <TripDetailTabs trip={trip} />
+              <div className="flex flex-col gap-5">
+                {isJoined && <GroupChatPanel members={trip.members} />}
+                <TripInfoPanel trip={trip} isJoined={isJoined} />
+              </div>
             </div>
-          </div>
-        </div>
+          </SectionContainer>
+        </PageContainer>
       </div>
-    </ConsumerShell>
+    </AppShell>
   );
 }

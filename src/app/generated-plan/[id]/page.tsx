@@ -124,7 +124,7 @@ import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
-import { Sidebar } from "@/components/consumer/Sidebar";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";

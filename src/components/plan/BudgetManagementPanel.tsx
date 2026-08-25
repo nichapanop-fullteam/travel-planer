@@ -1,30 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  Bed,
+  Car,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Filter,
+  Footprints,
   LoaderCircle,
   Plus,
   Pencil,
-  Receipt,
   Share2,
+  ShoppingBag,
   Trash2,
   TriangleAlert,
+  UtensilsCrossed,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/providers/AuthProvider";
 import type { ExpenseCategory, GeneratedTrip } from "@/types";
-import { categoryIcon } from "@/lib/category-styles";
-import {
-  ACTIVITY_TO_EXPENSE_CATEGORY,
-  EXPENSE_CATEGORY_GRID,
-  expenseCategoryIcon,
-  expenseCategoryLabel,
-} from "@/lib/expense-styles";
+import { ACTIVITY_TO_EXPENSE_CATEGORY } from "@/lib/expense-styles";
 import { formatExpenseDate } from "@/lib/trip-expenses";
 import { formatTHB } from "@/lib/trip-utils";
 import { getTripDrafts } from "@/lib/trip-drafts";
@@ -55,6 +56,18 @@ const BUCKET_LABEL: Record<BudgetBucket, string> = {
   food: "ค่าอาหาร / ของกิน",
   shopping: "ช้อปปิ้ง",
   transport: "ค่าเดินทาง",
+  other: "อื่นๆ",
+};
+
+// Shorter labels for the "รายการค่าใช้จ่าย" filter dropdown's checkbox list
+// (reference design drops the "ค่า" prefix there) — kept separate from
+// BUCKET_LABEL so the "สัดส่วนค่าใช้จ่าย" legend's wording doesn't shift too.
+const FILTER_CATEGORY_LABEL: Record<BudgetBucket, string> = {
+  accommodation: "ที่พัก",
+  food: "อาหาร",
+  transport: "การเดินทาง",
+  activity: "กิจกรรม",
+  shopping: "ช้อปปิ้ง",
   other: "อื่นๆ",
 };
 
@@ -91,6 +104,10 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
   const [budget, setBudget] = useState<TripBudget | null>(null);
   const [loadError, setLoadError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  // Lifted out of AddExpenseDialog (rather than its own useState) so a draft
+  // survives closing the dialog without saving (ยกเลิก/X) — it only clears
+  // once "เพิ่มค่าใช้จ่าย" actually succeeds (see the onSaved handler below).
+  const [expenseDraft, setExpenseDraft] = useState<DraftExpenseItem[]>(() => [emptyDraftItem()]);
   const [goalOpen, setGoalOpen] = useState(false);
   // "ค่าใช้จ่ายต่อคน" toggle — divides every amount below by the traveler
   // count. GeneratedTrip carries no traveler count of its own (see
@@ -196,8 +213,7 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
     return { bucket, label: BUCKET_LABEL[bucket], color: BUCKET_COLOR[bucket], amount, percentage: total > 0 ? Math.round((amount / total) * 100) : 0 };
   });
 
-  const draft = getTripDrafts().find((d) => d.id === trip.draftId);
-  const travelerCount = draft ? Math.max(draft.adults + draft.children, 1) : 1;
+  const travelerCount = getTravelerCount(trip);
   const per = (amount: number) => (perPerson ? Math.round(amount / travelerCount) : amount);
   const perSuffix = perPerson ? " / ต่อคน" : "";
 
@@ -355,9 +371,12 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
       {addOpen && (
         <AddExpenseDialog
           trip={trip}
+          items={expenseDraft}
+          onItemsChange={setExpenseDraft}
           onClose={() => setAddOpen(false)}
           onSaved={() => {
             setAddOpen(false);
+            setExpenseDraft([emptyDraftItem()]);
             loadBudget();
           }}
         />
@@ -377,6 +396,17 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
   );
 }
 
+// GeneratedTrip carries no traveler count of its own (see types/index.ts) —
+// this falls back to the TripDraft the trip was generated from
+// (adults+children). A trip with no matching draft (e.g. loaded straight
+// from a shared link) counts as 1 traveler, same as the "ต่อคน" toggle/inputs
+// being a no-op. Shared by the summary's "ค่าใช้จ่ายต่อคน" toggle and
+// AddExpenseDialog's per-person amount field.
+function getTravelerCount(trip: GeneratedTrip): number {
+  const draft = getTripDrafts().find((d) => d.id === trip.draftId);
+  return draft ? Math.max(draft.adults + draft.children, 1) : 1;
+}
+
 function EmptyStateCard({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-3xl border p-10 text-center" style={{ borderColor: "var(--color-border)" }}>
@@ -388,11 +418,17 @@ function EmptyStateCard({ title, description, action }: { title: string; descrip
   );
 }
 
-// Background fill scaled to the highest-spending day, so at a glance you can
-// see which day burned through the most — a plain number-per-row list makes
-// that comparison require reading every value. Turns red (instead of the
-// usual brand-green tint) when a day ran over its even split of the trip
-// goal, since that's the one thing worth flagging without opening the ledger.
+// null for "other" — rendered as the same "···" glyph used elsewhere in this
+// file (see SelectExpenseItemDialog's category grid) rather than a real icon.
+const BUCKET_ICON: Record<BudgetBucket, LucideIcon | null> = {
+  accommodation: Bed,
+  activity: Footprints,
+  food: UtensilsCrossed,
+  shopping: ShoppingBag,
+  transport: Car,
+  other: null,
+};
+
 // Expandable per-day row — replaces the old flat ledger-plus-progress-bar
 // layout with one accordion per day, each opening to that day's own expense
 // rows (reusing ExpenseRow). Day 1 starts open (see DayAccordionRow's
@@ -411,10 +447,26 @@ function DayAccordionRow({
   onDeleteItem: (item: TripBudgetLineItem) => void;
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
+  // Empty set == "ทั้งหมด" (show everything) — checking any individual
+  // category switches out of that mode; unchecking the last one switches
+  // back automatically rather than landing on an ambiguous "nothing shown".
+  const [categoryFilter, setCategoryFilter] = useState<Set<BudgetBucket>>(() => new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const filteredItems = categoryFilter.size === 0 ? items : items.filter((i) => categoryFilter.has(CATEGORY_TO_BUCKET[i.category]));
+
+  function toggleBucketFilter(b: BudgetBucket) {
+    setCategoryFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(b)) next.delete(b);
+      else next.add(b);
+      return next;
+    });
+  }
 
   return (
-    <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "var(--color-surface)" }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left">
+    <div className="overflow-hidden rounded-2xl p-1" style={{ backgroundColor: "var(--color-surface)" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
         <span className="text-sm font-bold">{label}</span>
         <span className="flex items-center gap-2.5">
           <span className="text-sm font-extrabold">{formatTHB(amount)}</span>
@@ -424,19 +476,84 @@ function DayAccordionRow({
         </span>
       </button>
       {open && (
-        <div className="flex flex-col bg-white">
-          {items.length === 0 ? (
-            <p className="p-5 text-center text-sm text-[var(--color-muted)]">ยังไม่มีค่าใช้จ่ายวันนี้</p>
-          ) : (
-            items.map((item, i) => (
-              <ExpenseRow
-                key={item.id}
-                item={item}
-                showDivider={i > 0}
-                onDelete={item.source === "expense" || item.source === "activity" ? () => onDeleteItem(item) : undefined}
-              />
-            ))
-          )}
+        <div className="rounded-xl bg-white p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h4 className="text-sm font-bold">รายการค่าใช้จ่าย</h4>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setFilterOpen((v) => !v)}
+                className="flex items-center gap-1.5 rounded-full border bg-white py-1.5 pl-3 pr-3 text-xs font-semibold"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Filter size={11} className="text-[var(--color-muted)]" />
+                {categoryFilter.size === 0 ? "ทุกหมวด" : `${categoryFilter.size} หมวด`}
+              </button>
+
+              {filterOpen && (
+                <>
+                  {/* Same outside-click catcher as AddExpenseDialog's
+                      รูปแบบการจ่าย/วันที่จ่าย dropdowns. */}
+                  <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+                  <div className="absolute right-0 top-full z-20 mt-2 w-40 overflow-hidden rounded-2xl bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => setCategoryFilter(new Set())}
+                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium hover:bg-[var(--color-surface)]"
+                    >
+                      <span
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                        style={
+                          categoryFilter.size === 0
+                            ? { borderColor: "var(--color-accent-orange)", backgroundColor: "var(--color-accent-orange)" }
+                            : { borderColor: "var(--color-border)" }
+                        }
+                      >
+                        {categoryFilter.size === 0 && <Check size={11} className="text-white" />}
+                      </span>
+                      ทั้งหมด
+                    </button>
+                    {CATEGORY_PICKER_ORDER.map((b) => {
+                      const isOn = categoryFilter.has(b);
+                      return (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => toggleBucketFilter(b)}
+                          className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium hover:bg-[var(--color-surface)]"
+                        >
+                          <span
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                            style={isOn ? { borderColor: "var(--color-accent-orange)", backgroundColor: "var(--color-accent-orange)" } : { borderColor: "var(--color-border)" }}
+                          >
+                            {isOn && <Check size={11} className="text-white" />}
+                          </span>
+                          {FILTER_CATEGORY_LABEL[b]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col">
+            {filteredItems.length === 0 ? (
+              <p className="py-6 text-center text-sm text-[var(--color-muted)]">
+                {items.length === 0 ? "ยังไม่มีค่าใช้จ่ายวันนี้" : "ไม่มีค่าใช้จ่ายในหมวดนี้"}
+              </p>
+            ) : (
+              filteredItems.map((item, i) => (
+                <ExpenseRow
+                  key={item.id}
+                  item={item}
+                  showDivider={i > 0}
+                  onDelete={item.source === "expense" || item.source === "activity" ? () => onDeleteItem(item) : undefined}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -452,24 +569,24 @@ function ExpenseRow({
   showDivider: boolean;
   onDelete?: () => void;
 }) {
-  const Icon = expenseCategoryIcon[item.category];
+  const bucket = CATEGORY_TO_BUCKET[item.category];
+  const color = BUCKET_COLOR[bucket];
+  const Icon = BUCKET_ICON[bucket];
+
   return (
-    <div
-      className={`flex items-center gap-3 p-4 ${showDivider ? "border-t" : ""}`}
-      style={{ borderColor: "var(--color-border)" }}
-    >
-      <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-        style={{ backgroundColor: "var(--color-surface)" }}
-      >
-        <Icon size={16} className="text-[var(--color-muted)]" />
+    <div className={`flex items-center gap-3 py-3 ${showDivider ? "border-t" : ""}`} style={{ borderColor: "var(--color-border)" }}>
+      {/* "22" appended to the bucket's hex gives a light tint background
+          without a second color table to keep in sync with BUCKET_COLOR. */}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: `${color}22` }}>
+        {Icon ? <Icon size={16} style={{ color }} /> : <span className="text-sm font-bold" style={{ color }}>···</span>}
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold">{item.title}</p>
-        <p className="text-xs text-[var(--color-muted)]">
-          {item.date ? formatExpenseDate(item.date) : "ไม่ระบุวันที่"} • {expenseCategoryLabel[item.category]}
+        <p className="text-xs font-semibold" style={{ color }}>
+          {BUCKET_LABEL[bucket]}
         </p>
       </div>
+      <span className="shrink-0 text-sm font-extrabold">{formatTHB(item.amount)}</span>
       {onDelete && (
         <button
           type="button"
@@ -477,21 +594,9 @@ function ExpenseRow({
           aria-label="ลบค่าใช้จ่าย"
           className="shrink-0 rounded-full p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
         >
-          <Trash2 size={14} />
+          <Trash2 size={13} />
         </button>
       )}
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="text-sm font-extrabold">{formatTHB(item.amount)}</span>
-        {item.paidBy && (
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
-            style={{ backgroundColor: "var(--color-primary)" }}
-            title={item.paidBy}
-          >
-            {item.paidBy.charAt(0)}
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -504,41 +609,48 @@ function DialogShell({
   onBack,
   children,
   footer,
+  size = "default",
 }: {
   title: string;
   onClose: () => void;
   onBack?: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  size?: "default" | "wide";
 }) {
+  const isWide = size === "wide";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
+        className={`max-h-[95vh] w-full overflow-y-auto rounded-3xl bg-white shadow-2xl ${isWide ? "max-w-[1000px] p-6 sm:p-7" : "max-w-md p-6"}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className={`flex items-center justify-between ${isWide ? "mb-6 border-b pb-4" : "mb-4"}`} style={isWide ? { borderColor: "var(--color-border)" } : undefined}>
           {onBack ? (
             <button type="button" onClick={onBack} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
               <ChevronLeft size={18} />
             </button>
-          ) : (
+          ) : !isWide ? (
             <span className="w-8" />
-          )}
-          <h3 className="text-lg font-bold">{title}</h3>
+          ) : null}
+          <h3 className={`${isWide ? "mr-auto text-2xl sm:text-[28px]" : "text-lg"} font-bold`}>{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            className={`flex shrink-0 items-center justify-center rounded-full ${isWide ? "h-10 w-10" : "h-8 w-8"}`}
             style={{ backgroundColor: "var(--color-surface)" }}
           >
-            <X size={16} />
+            <X size={isWide ? 22 : 16} />
           </button>
         </div>
 
         <div className="flex flex-col gap-4">{children}</div>
 
-        {footer && <div className="mt-6">{footer}</div>}
+        {footer && (
+          <div className={`${isWide ? "mt-6 pt-5" : "mt-6 pt-4"} border-t`} style={{ borderColor: "var(--color-border)" }}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -555,50 +667,92 @@ type ExpenseSelection = {
   date?: string;
 };
 
+type PaymentMode = "self" | "split";
+
+const PAYMENT_MODE_LABEL: Record<PaymentMode, string> = {
+  self: "จ่ายเอง",
+  split: "หารเท่า",
+};
+
+interface DraftExpenseItem {
+  key: string;
+  amount: string;
+  selected: ExpenseSelection | null;
+  paymentMode: PaymentMode | null;
+  date: string;
+}
+
+function emptyDraftItem(): DraftExpenseItem {
+  return { key: crypto.randomUUID(), amount: "", selected: null, paymentMode: null, date: "" };
+}
+
+// Reference design adds several expense rows in one go ("รายการที่ 1/2/...",
+// each independently removable) instead of one row per open. The amount
+// field is explicitly "ต่อคน" (per person) — multiplied by the trip's
+// traveler count (see getTravelerCount) into the actual total sent to the
+// backend, since costAmount/createExpense's `amount` are both whole-trip
+// totals, not per-person.
 function AddExpenseDialog({
   trip,
+  items,
+  onItemsChange,
   onClose,
   onSaved,
 }: {
   trip: GeneratedTrip;
+  items: DraftExpenseItem[];
+  // Draft state lives in the parent (see BudgetManagementPanel's
+  // expenseDraft) so it survives ยกเลิก/X — this dialog just reads/writes it.
+  onItemsChange: (update: (prev: DraftExpenseItem[]) => DraftExpenseItem[]) => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [amount, setAmount] = useState("");
-  const [selected, setSelected] = useState<ExpenseSelection | null>(null);
-  const [date, setDate] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickingKey, setPickingKey] = useState<string | null>(null);
+  const [paymentDropdownKey, setPaymentDropdownKey] = useState<string | null>(null);
+  const [dateDropdownKey, setDateDropdownKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const dateInputRef = useRef<HTMLInputElement>(null);
 
-  const numericAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
-  const SelectedIcon = selected ? expenseCategoryIcon[selected.category] : Receipt;
+  const travelerCount = getTravelerCount(trip);
+  const validItems = items.filter((it) => (Number(it.amount) || 0) > 0);
+
+  function updateItem(key: string, patch: Partial<DraftExpenseItem>) {
+    onItemsChange((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+  }
+
+  function removeItem(key: string) {
+    onItemsChange((prev) => prev.filter((it) => it.key !== key));
+  }
 
   async function handleSave() {
-    if (numericAmount <= 0) return;
+    if (validItems.length === 0) return;
     setSaving(true);
     setSaveError("");
     try {
-      if (selected?.linkedActivityId) {
-        // Linking to an existing itinerary stop — this cost belongs to that
-        // activity, so it goes through PATCH /items/:itemId, not a standalone
-        // expense row (posting both would double-count it in the budget).
-        await updateTripItemOnServer(selected.linkedActivityId, {
-          costAmount: numericAmount,
-          paidBy: "คุณ",
-          splitLabel: "ไม่แบ่ง",
-        });
-      } else {
-        await createExpense(trip.id, {
-          title: selected?.title ?? "ค่าใช้จ่ายอื่นๆ",
-          amount: numericAmount,
-          category: selected ? toBackendExpenseCategory(selected.category) : "other",
-          date: date || undefined,
-          paidBy: "คุณ",
-          splitLabel: "ไม่แบ่ง",
-        });
-      }
+      await Promise.all(
+        validItems.map((it) => {
+          const totalAmount = Math.round((Number(it.amount) || 0) * travelerCount);
+          const splitLabel = it.paymentMode === "split" ? "หารเท่า" : "ไม่แบ่ง";
+          if (it.selected?.linkedActivityId) {
+            // Linking to an existing itinerary stop — this cost belongs to
+            // that activity, so it goes through PATCH /items/:itemId, not a
+            // standalone expense row (posting both would double-count it).
+            return updateTripItemOnServer(it.selected.linkedActivityId, {
+              costAmount: totalAmount,
+              paidBy: "คุณ",
+              splitLabel,
+            });
+          }
+          return createExpense(trip.id, {
+            title: it.selected?.title ?? "ค่าใช้จ่ายอื่นๆ",
+            amount: totalAmount,
+            category: it.selected ? toBackendExpenseCategory(it.selected.category) : "other",
+            date: it.date || undefined,
+            paidBy: "คุณ",
+            splitLabel,
+          });
+        })
+      );
       onSaved();
     } catch (error) {
       setSaveError(error instanceof BackendAuthenticationError ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
@@ -607,196 +761,401 @@ function AddExpenseDialog({
     }
   }
 
-  if (pickerOpen) {
-    return (
-      <SelectExpenseItemDialog
-        trip={trip}
-        onClose={onClose}
-        onBack={() => setPickerOpen(false)}
-        onSelect={(next) => {
-          setSelected(next);
-          if (next.date) setDate(next.date);
-          setPickerOpen(false);
-        }}
-      />
-    );
-  }
-
   return (
-    <DialogShell
-      title="เพิ่มค่าใช้จ่าย"
-      onClose={onClose}
-      footer={
-        <div className="flex flex-col gap-2">
-          {saveError && <p className="text-center text-xs font-semibold text-[var(--color-danger)]">{saveError}</p>}
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={numericAmount <= 0 || saving}
-            className="flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ backgroundColor: "var(--color-accent-orange)" }}
-          >
-            {saving && <LoaderCircle size={14} className="animate-spin" />}
-            บันทึก
-          </button>
-        </div>
-      }
-    >
-      <div
-        className="flex items-center gap-2 rounded-2xl border-2 px-4 py-3.5 focus-within:border-[var(--color-primary)]"
-        style={{ borderColor: "var(--color-border)" }}
+    <>
+      <DialogShell
+        title="เพิ่มค่าใช้จ่าย"
+        onClose={onClose}
+        size="wide"
+        footer={
+          <div className="flex flex-col gap-2">
+            {saveError && <p className="text-center text-xs font-semibold text-[var(--color-danger)]">{saveError}</p>}
+            <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full flex-1 rounded-full border py-3.5 text-lg font-bold text-[var(--color-muted)]"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={validItems.length === 0 || saving}
+                className="flex w-full flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-lg font-bold text-white disabled:cursor-not-allowed disabled:bg-[#dedede] disabled:text-[#aaa69f]"
+                style={validItems.length > 0 && !saving ? { backgroundColor: "var(--color-accent-orange)" } : undefined}
+              >
+                {saving && <LoaderCircle size={14} className="animate-spin" />}
+                เพิ่มค่าใช้จ่าย
+              </button>
+            </div>
+          </div>
+        }
       >
-        <span className="flex items-center gap-1 text-lg font-bold text-[var(--color-muted)]">฿</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="0"
-          autoFocus
-          className="w-full bg-transparent text-lg font-bold focus:outline-none"
+        {items.map((item, index) => {
+          const selectedBucket = item.selected ? CATEGORY_TO_BUCKET[toBackendExpenseCategory(item.selected.category)] : null;
+          return (
+            <div key={item.key} className="overflow-visible rounded-3xl border" style={{ borderColor: "var(--color-border)" }}>
+              <div className="flex items-center justify-between rounded-t-3xl px-4 py-3 sm:px-5" style={{ backgroundColor: "#f8f6f1" }}>
+                <h4 className="text-xl font-bold">รายการที่ {index + 1}</h4>
+                <button
+                  type="button"
+                  onClick={() => removeItem(item.key)}
+                  aria-label="ลบรายการนี้"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                  style={{ backgroundColor: "var(--color-danger-bg)", color: "var(--color-danger)" }}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
+
+              <div>
+                <label className="mb-2 block text-base text-[var(--color-muted)]">จำนวนเงิน</label>
+                <div
+                  className="flex min-h-[52px] items-center gap-2 rounded-2xl border bg-white px-4 focus-within:border-[var(--color-primary)]"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <span className="text-base">฿</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={item.amount}
+                    onChange={(e) => updateItem(item.key, { amount: e.target.value })}
+                    placeholder="0.00"
+                    autoFocus={index === items.length - 1}
+                    className="w-full bg-transparent text-base focus:outline-none"
+                  />
+                  <span className="shrink-0 text-base text-[#9da9bd]">ต่อคน</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-base text-[var(--color-muted)]">ประเภทค่าใช้จ่าย</label>
+                <button
+                  type="button"
+                  onClick={() => setPickingKey(item.key)}
+                  className="flex min-h-[52px] w-full items-center gap-3 rounded-2xl border bg-white px-4 text-left"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  {item.selected && selectedBucket ? (
+                    (() => {
+                      const BucketIconComp = BUCKET_ICON[selectedBucket];
+                      const bucketColor = BUCKET_COLOR[selectedBucket];
+                      return (
+                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                          {item.selected.linkedActivityId && (
+                            <>
+                              <span className="truncate text-sm font-semibold">{item.selected.title}</span>
+                              <span className="shrink-0 text-[var(--color-muted)]">·</span>
+                            </>
+                          )}
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: `${bucketColor}22` }}>
+                            {BucketIconComp ? (
+                              <BucketIconComp size={12} style={{ color: bucketColor }} />
+                            ) : (
+                              <span className="text-xs font-bold" style={{ color: bucketColor }}>···</span>
+                            )}
+                          </span>
+                          <span className="shrink-0 text-sm font-semibold">{BUCKET_LABEL[selectedBucket]}</span>
+                        </span>
+                      );
+                    })()
+                  ) : (
+                    <span className="flex-1 text-sm text-[var(--color-muted)]">ประเภทค่าใช้จ่าย</span>
+                  )}
+                  <ChevronRight size={16} className="shrink-0 text-[var(--color-muted)]" />
+                </button>
+              </div>
+
+              <div className="relative">
+                <label className="mb-2 block text-base text-[var(--color-muted)]">รูปแบบการจ่าย</label>
+                <button
+                  type="button"
+                  onClick={() => setPaymentDropdownKey((prev) => (prev === item.key ? null : item.key))}
+                  className="flex min-h-[52px] w-full items-center justify-between rounded-2xl border bg-white px-4 text-left"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <span className="text-sm font-semibold" style={item.paymentMode ? undefined : { color: "var(--color-muted)", fontWeight: 400 }}>
+                    {item.paymentMode ? PAYMENT_MODE_LABEL[item.paymentMode] : "รูปแบบการจ่าย"}
+                  </span>
+                  <ChevronDown size={14} className="shrink-0 text-[var(--color-muted)]" />
+                </button>
+
+                {paymentDropdownKey === item.key && (
+                  <>
+                    {/* Transparent full-screen catcher so clicking anywhere
+                        outside the option list below closes it — the dialog's
+                        own backdrop can't do this since clicks inside the
+                        modal are stopped from reaching it. */}
+                    <div className="fixed inset-0 z-10" onClick={() => setPaymentDropdownKey(null)} />
+                    <div className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl bg-white py-1 shadow-lg">
+                      {(["self", "split"] as const).map((mode) => {
+                        const isOn = item.paymentMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => {
+                              updateItem(item.key, { paymentMode: isOn ? null : mode });
+                              setPaymentDropdownKey(null);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium hover:bg-[var(--color-surface)]"
+                          >
+                            <span
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                              style={
+                                isOn
+                                  ? { borderColor: "var(--color-brand-green)", backgroundColor: "var(--color-brand-green)" }
+                                  : { borderColor: "var(--color-border)" }
+                              }
+                            >
+                              {isOn && <Check size={11} className="text-white" />}
+                            </span>
+                            {PAYMENT_MODE_LABEL[mode]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {!item.selected?.linkedActivityId && (
+                <div className="relative">
+                  <label className="mb-2 block text-base text-[var(--color-muted)]">วันที่จ่าย</label>
+                  <button
+                    type="button"
+                    onClick={() => setDateDropdownKey((prev) => (prev === item.key ? null : item.key))}
+                    className="flex min-h-[52px] w-full items-center justify-between rounded-2xl border bg-white px-4 text-left"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    <span className="text-sm font-semibold" style={item.date ? undefined : { color: "var(--color-muted)", fontWeight: 400 }}>
+                      {item.date
+                        ? (() => {
+                            const selectedDay = trip.days.find((d) => d.date === item.date);
+                            return selectedDay ? `วันที่ ${selectedDay.dayNumber} · ${formatExpenseDate(item.date)}` : formatExpenseDate(item.date);
+                          })()
+                        : "วันที่จ่าย"}
+                    </span>
+                    <ChevronDown size={14} className="shrink-0 text-[var(--color-muted)]" />
+                  </button>
+
+                  {dateDropdownKey === item.key && (
+                    <>
+                      {/* Same outside-click catcher as the payment-mode
+                          dropdown above. */}
+                      <div className="fixed inset-0 z-10" onClick={() => setDateDropdownKey(null)} />
+                      <div className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl bg-white py-1 shadow-lg">
+                        {trip.days.map((day) => {
+                          const isOn = item.date === day.date;
+                          return (
+                            <button
+                              key={day.id}
+                              type="button"
+                              onClick={() => {
+                                updateItem(item.key, { date: isOn ? "" : day.date });
+                                setDateDropdownKey(null);
+                              }}
+                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium hover:bg-[var(--color-surface)]"
+                            >
+                              <span
+                                className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                                style={
+                                  isOn
+                                    ? { borderColor: "var(--color-brand-green)", backgroundColor: "var(--color-brand-green)" }
+                                    : { borderColor: "var(--color-border)" }
+                                }
+                              >
+                                {isOn && <Check size={11} className="text-white" />}
+                              </span>
+                              <span>วันที่ {day.dayNumber}</span>
+                              <span className="text-[var(--color-muted)]">·</span>
+                              <span className="text-[var(--color-muted)]">{formatExpenseDate(day.date)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              </div>
+            </div>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => onItemsChange((prev) => [...prev, emptyDraftItem()])}
+          className="self-start flex items-center justify-center gap-2 rounded-full border px-6 py-3 text-base font-bold"
+          style={{ borderColor: "#ead1ab", color: "var(--color-accent-orange)", backgroundColor: "#fff8ed" }}
+        >
+          <Plus size={14} /> เพิ่มค่าใช้จ่าย
+        </button>
+      </DialogShell>
+
+      {pickingKey && (
+        <SelectExpenseItemDialog
+          trip={trip}
+          onClose={() => setPickingKey(null)}
+          onSelect={(next) => {
+            const key = pickingKey;
+            updateItem(key, { selected: next, date: next.date ?? items.find((it) => it.key === key)?.date ?? "" });
+            setPickingKey(null);
+          }}
         />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setPickerOpen(true)}
-        className="flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--color-surface)" }}>
-          <SelectedIcon size={15} className="text-[var(--color-muted)]" />
-        </div>
-        <span className="flex-1 truncate text-sm font-semibold">{selected?.title ?? "เลือกรายการ"}</span>
-        <ChevronRight size={16} className="shrink-0 text-[var(--color-muted)]" />
-      </button>
-
-      <div className="flex items-center justify-between rounded-xl border px-3.5 py-3" style={{ borderColor: "var(--color-border)" }}>
-        <span className="text-sm font-semibold">จ่ายโดย</span>
-        <span className="flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)]">
-          <span
-            className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white"
-            style={{ backgroundColor: "var(--color-primary)" }}
-          >
-            T
-          </span>
-          คุณ
-        </span>
-      </div>
-
-      <div
-        title={DEMO_DISABLED_TITLE}
-        className="flex cursor-default items-center justify-between rounded-xl border px-3.5 py-3 opacity-70"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        <span className="text-sm font-semibold">แบ่ง</span>
-        <span className="flex items-center gap-1 text-sm font-semibold text-[var(--color-muted)]">
-          ไม่แบ่ง <ChevronDown size={14} />
-        </span>
-      </div>
-
-      {!selected?.linkedActivityId && (
-        <div className="relative flex items-center gap-1.5 px-1">
-          <span className="text-sm text-[var(--color-muted)]">วันที่:</span>
-          <button
-            type="button"
-            onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.focus()}
-            className="flex items-center gap-1 text-sm font-semibold"
-          >
-            {date ? formatExpenseDate(date) : "ไม่บังคับ"} <ChevronDown size={14} />
-          </button>
-          <input
-            ref={dateInputRef}
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="absolute inset-y-0 left-0 h-full w-32 cursor-pointer opacity-0"
-          />
-        </div>
       )}
-    </DialogShell>
+    </>
   );
 }
 
+// Grid order for this specific picker — matches the reference design's
+// left-to-right/top-to-bottom order, which differs from BUCKET_ORDER (the
+// order the "สัดส่วนค่าใช้จ่าย" legend uses) — kept separate rather than
+// reordering BUCKET_ORDER and risking that legend silently shifting too.
+const CATEGORY_PICKER_ORDER: BudgetBucket[] = ["accommodation", "food", "transport", "activity", "shopping", "other"];
+
+// A representative BackendExpenseCategory for each bucket — stored on
+// ExpenseSelection.category (a plain category pick has no finer-grained
+// category to fall back on, unlike a picked itinerary item).
+const BUCKET_TO_CATEGORY: Record<BudgetBucket, ExpenseCategory> = {
+  accommodation: "hotel",
+  activity: "activity",
+  food: "food",
+  shopping: "shopping",
+  transport: "transport",
+  other: "other",
+};
+
+// Stacks on top of AddExpenseDialog (rendered as a sibling, not a
+// replacement — see its pickingKey branch) rather than swapping the whole
+// modal out, so the parent dialog stays visible (dimmed) behind it, matching
+// the reference. Picking a place and picking a category are mutually
+// exclusive — choosing one clears the other — and nothing is committed to
+// the parent until "ยืนยัน", unlike the old immediate-select-and-close list.
 function SelectExpenseItemDialog({
   trip,
   onClose,
-  onBack,
   onSelect,
 }: {
   trip: GeneratedTrip;
   onClose: () => void;
-  onBack: () => void;
   onSelect: (selection: ExpenseSelection) => void;
 }) {
-  const [showAllItems, setShowAllItems] = useState(false);
-
   const itineraryItems = trip.days.flatMap((day) =>
     day.activities.map((activity) => ({
       id: activity.id,
       title: activity.title,
       category: ACTIVITY_TO_EXPENSE_CATEGORY[activity.category],
-      icon: categoryIcon[activity.category],
       date: day.date,
     }))
   );
-  const visibleItems = showAllItems ? itineraryItems : itineraryItems.slice(0, 2);
+
+  const [placeId, setPlaceId] = useState("");
+  const [bucket, setBucket] = useState<BudgetBucket | null>(null);
+
+  const selectedPlace = itineraryItems.find((it) => it.id === placeId);
+  // A place is optional extra context, but the category is always required —
+  // picking a place no longer silently borrows its own category (the old
+  // behavior) or blocks picking one explicitly; it just pre-fills the grid
+  // below with the place's category as a starting guess the user can still
+  // override before confirming.
+  const canConfirm = bucket !== null;
+
+  function handleConfirm() {
+    if (!bucket) return;
+    const category = BUCKET_TO_CATEGORY[bucket];
+    if (selectedPlace) {
+      onSelect({ title: selectedPlace.title, category, linkedActivityId: selectedPlace.id, date: selectedPlace.date });
+    } else {
+      onSelect({ title: BUCKET_LABEL[bucket], category });
+    }
+    onClose();
+  }
 
   return (
-    <DialogShell title="เลือกรายการ" onClose={onClose} onBack={onBack}>
+    <DialogShell
+      title="ประเภทค่าใช้จ่าย"
+      onClose={onClose}
+      footer={
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onClose} className="flex-1 rounded-full border py-2.5 text-sm font-bold" style={{ borderColor: "var(--color-border)" }}>
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className="flex-1 rounded-full py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            ยืนยัน
+          </button>
+        </div>
+      }
+    >
       {itineraryItems.length > 0 && (
-        <div>
-          <p className="mb-2 text-sm font-bold">เลือกจากแผนการเดินทาง</p>
-          <div className="flex flex-col gap-1">
-            {visibleItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onSelect({ title: item.title, category: item.category, linkedActivityId: item.id, date: item.date })}
-                  className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--color-surface)]"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--color-surface)" }}>
-                    <Icon size={15} className="text-[var(--color-muted)]" />
-                  </div>
-                  <span className="truncate text-sm font-semibold">{item.title}</span>
-                </button>
-              );
-            })}
-            {!showAllItems && itineraryItems.length > 2 && (
-              <button
-                type="button"
-                onClick={() => setShowAllItems(true)}
-                className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--color-surface)]"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--color-surface)" }}>
-                  <span className="text-sm font-bold text-[var(--color-muted)]">···</span>
-                </div>
-                <span className="text-sm font-semibold text-[var(--color-muted)]">ดูทั้งหมด</span>
-              </button>
-            )}
+        <div className="rounded-2xl border p-4" style={{ borderColor: "var(--color-border)" }}>
+          <p className="mb-3 text-sm font-bold">
+            จากสถานที่ในแผน <span className="text-xs font-normal text-[var(--color-muted)]">(ไม่บังคับ)</span>
+          </p>
+          <div className="relative">
+            <select
+              value={placeId}
+              onChange={(e) => {
+                setPlaceId(e.target.value);
+                // Pre-fill the category grid with the place's own category
+                // as a starting guess — only when nothing's picked there
+                // yet, so it never overwrites a choice the user already made.
+                const place = itineraryItems.find((it) => it.id === e.target.value);
+                if (place && !bucket) setBucket(CATEGORY_TO_BUCKET[toBackendExpenseCategory(place.category)]);
+              }}
+              className="w-full appearance-none rounded-xl border bg-white px-3.5 py-3 text-sm font-semibold focus:outline-none"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <option value="">เลือกสถานที่</option>
+              {itineraryItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
           </div>
         </div>
       )}
 
-      <div>
-        {itineraryItems.length > 0 && <hr className="mb-4 border-[var(--color-border)]/60" />}
-        <p className="mb-2 text-sm font-bold">หรือเลือกจากหมวดหมู่</p>
-        <div className="grid grid-cols-4 gap-2.5">
-          {EXPENSE_CATEGORY_GRID.map((cat) => {
-            const Icon = expenseCategoryIcon[cat];
+      <div className="rounded-2xl border p-4" style={{ borderColor: "var(--color-border)" }}>
+        <p className="mb-3 text-sm font-bold">
+          เลือกหมวดหมู่ <span style={{ color: "var(--color-danger)" }}>*</span>
+        </p>
+        <div className="grid grid-cols-3 gap-2.5">
+          {CATEGORY_PICKER_ORDER.map((b) => {
+            const Icon = BUCKET_ICON[b];
+            const isOn = bucket === b;
+            const color = BUCKET_COLOR[b];
             return (
               <button
-                key={cat}
+                key={b}
                 type="button"
-                onClick={() => onSelect({ title: expenseCategoryLabel[cat], category: cat })}
-                className="flex flex-col items-center gap-1.5 rounded-xl p-2.5 hover:bg-[var(--color-surface)]"
+                onClick={() => setBucket((prev) => (prev === b ? null : b))}
+                className="flex flex-col items-center gap-1.5 rounded-xl border p-3"
+                style={isOn ? { borderColor: color, backgroundColor: `${color}14` } : { borderColor: "var(--color-border)" }}
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--color-surface)" }}>
-                  <Icon size={17} className="text-[var(--color-muted)]" />
-                </div>
-                <span className="text-center text-[11px] font-semibold leading-tight">{expenseCategoryLabel[cat]}</span>
+                {Icon ? (
+                  <Icon size={20} style={{ color: isOn ? color : "var(--color-muted)" }} />
+                ) : (
+                  <span className="text-lg font-bold" style={{ color: isOn ? color : "var(--color-muted)" }}>
+                    ···
+                  </span>
+                )}
+                <span className="text-xs font-semibold" style={isOn ? { color } : undefined}>
+                  {BUCKET_LABEL[b]}
+                </span>
               </button>
             );
           })}
