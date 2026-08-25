@@ -1295,6 +1295,12 @@ function AccommodationAccordion({
 }) {
   const [expanded, setExpanded] = useState(true);
 
+  // Nothing to show — no hotel stop in the itinerary yet and no manual
+  // override set via "แก้ไขรายละเอียด" — so hide the whole card instead of
+  // an accordion whose body (AccommodationGallery) renders empty anyway.
+  const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
+  if (!hasData) return null;
+
   return (
     <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
       <div className="flex w-full items-center justify-between gap-3 px-5 py-4">

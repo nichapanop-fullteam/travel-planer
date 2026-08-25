@@ -1,3 +1,5 @@
+import type { Intensity } from "@/lib/generate-plan-api";
+
 // ─── Account (login / create profile) ───
 // No real backend yet — persisted client-side only, same localStorage
 // pattern as everything else in this app (see lib/auth.ts).
@@ -216,8 +218,9 @@ export interface GeneratedTrip {
   mediaSummary?: MediaSummary;
   durationLabel: string; // "3 วัน 2 คืน"
   paceLabel: string; // "Chill เที่ยวสบาย"
+  pace?: Intensity; // raw enum behind paceLabel — the actual value PATCH /trips/:id sends, since paceLabel is display text and can't be parsed back reliably
   budgetLabel: string; // "฿3,000 / วัน"
-  conditionsLabel: string; // "มีรถส่วนตัว, เดินเยอะไม่ได้"
+  conditionsLabel: string; // "มีรถส่วนตัว, เดินเยอะไม่ได้" — also doubles as the raw specialNotes text sent to PATCH /trips/:id (see "แก้ไขทริป"'s "เงื่อนไข / ข้อจำกัด" field); unrelated to the backend's separate `constraints` enum array
   styles: string[];
   status: GeneratedTripStatus;
   days: Day[];

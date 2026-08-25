@@ -41,7 +41,6 @@ import {
   Plus,
   RefreshCcw,
   Repeat2,
-  Save,
   Share2,
   Sparkles,
   Star,
@@ -63,7 +62,9 @@ import {
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
+import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
+import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
+import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
@@ -87,15 +88,19 @@ import {
   generateTripFromDraft,
   getGeneratedTrip,
   getOrCreateDemoLuangPrabangTrip,
+  INTENSITY_TO_PACE,
+  PACE_DESCRIPTION,
   replaceGeneratedTripId,
   saveGeneratedTrip,
   updateGeneratedTrip,
 } from "@/lib/generated-trips";
+import { PACE_TO_INTENSITY } from "@/lib/generate-plan-mapping";
 import { buildActivity, createTripOnServer, reconcileTripWithServer } from "@/lib/trips-create-api";
 import { getTrip } from "@/lib/trips-api";
 import {
   createTripDayOnServer,
   createTripItemOnServer,
+  reorderTripItemsOnServer,
   updateTripDayOnServer,
   updateTripItemOnServer,
   updateTripOnServer,
@@ -123,7 +128,6 @@ import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
 
 type TabKey = "overview" | "plan" | "weather" | "budget" | "chat";
-type SaveState = "idle" | "saving" | "saved" | "error";
 
 // One tab set for every trip regardless of planMode — the "overview" tab
 // used to switch its whole layout (and these labels) based on a local-only
@@ -168,6 +172,41 @@ function durationLabelFor(days: Day[]): string {
   return `${days.length} วัน ${Math.max(days.length - 1, 0)} คืน`;
 }
 
+// DatePickerDialog's result.label is always "X วัน Y คืน" (see nightsLabel
+// there) regardless of which tab produced it — pull the nights count back
+// out instead of re-deriving it from start/endDate, since the "จำนวนคืน" tab
+// never sets those.
+function parseNightsFromLabel(label: string): number {
+  const match = label.match(/(\d+)\s*คืน/);
+  return match ? Number(match[1]) : 0;
+}
+
+// Pulls the bare digits out of a "฿7,500 / วัน"-style budgetLabel for
+// EditNumberField — "" (not "0") when there's nothing to parse (e.g.
+// "ยังไม่ระบุ"), so the input starts empty instead of showing a false 0.
+function parseBudgetAmount(label: string): string {
+  const digits = label.replace(/[^\d]/g, "");
+  return digits ? String(Number(digits)) : "";
+}
+
+// Only called when the user picked an explicit date range (DatePickerDialog's
+// "ระบุวันที่" tab) — re-sequences each day's date from that start date while
+// keeping dayNumber/activities untouched, so the itinerary's calendar actually
+// reflects the dates just chosen instead of silently keeping the old ones.
+function reanchorDayDates(days: Day[], startDateIso: string): Day[] {
+  const start = new Date(`${startDateIso.slice(0, 10)}T00:00:00Z`).getTime();
+  if (!Number.isFinite(start)) return days;
+  return days.map((day, i) => ({ ...day, date: new Date(start + i * 86_400_000).toISOString().slice(0, 10) }));
+}
+
+// Quick-toggle presets for "เงื่อนไข / ข้อจำกัด" — same copy as the create-trip
+// wizard's COND_OPTIONS/MORE_COND_OPTIONS (see app/create-trip/page.tsx), kept
+// separate since that file doesn't export them. Chips just add/remove
+// themselves from the comma-joined specialNotes text below; the free-text box
+// still accepts anything not covered by a chip.
+const EDIT_COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
+const EDIT_MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
+
 // Free-text fallback for the older `travelNote` display spots — kept in sync
 // with `travelFromPrevious` so both stay readable even where the structured
 // object isn't rendered yet.
@@ -186,7 +225,6 @@ export default function GeneratedPlanPage() {
   const [tab, setTab] = useState<TabKey>("overview");
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [accommodationDialogOpen, setAccommodationDialogOpen] = useState(false);
@@ -408,7 +446,12 @@ export default function GeneratedPlanPage() {
     // contract is explicit that plan-level saves don't touch trip status.
     await updateTripOnServer(current.id, {
       title: current.title || current.destination,
+      destination: current.destination,
+      durationDays: current.days.length,
+      durationNights: Math.max(current.days.length - 1, 0),
+      pace: current.pace,
       budgetLimit: current.budgetGoal,
+      specialNotes: current.conditionsLabel.slice(0, 2000),
     });
 
     const knownDayIds = new Set(current.backendDayIds ?? []);
@@ -425,32 +468,27 @@ export default function GeneratedPlanPage() {
     ]);
   }
 
-  async function handleSaveToServer() {
-    setSaveState("saving");
+  // Fire-and-forget, same as every other per-action autosave in this file
+  // (handleSaveActivity, handleUpdateActivityTravel, etc.) — called right
+  // after EditTripDialog's onSave applies the patch locally, since there's
+  // no more standalone "บันทึก" button to batch trip-level edits behind.
+  async function syncTripToServer(nextTrip: GeneratedTrip) {
     try {
-      if (trip!.backendSynced) {
-        await syncTripUpdatesToServer(trip!);
+      if (nextTrip.backendSynced) {
+        await syncTripUpdatesToServer(nextTrip);
       } else {
-        const created = await createTripOnServer(trip!);
-        const reconciled = reconcileTripWithServer(trip!, created);
-        replaceGeneratedTripId(trip!.id, reconciled);
+        const created = await createTripOnServer(nextTrip);
+        const reconciled = reconcileTripWithServer(nextTrip, created);
+        replaceGeneratedTripId(nextTrip.id, reconciled);
         setTrip(reconciled);
         // The URL still points at the old client-generated id — swap it for
         // the real one so a reload/bookmark doesn't 404 (getGeneratedTrip
         // can no longer find the old id; it was just renamed in storage).
         router.replace(`/generated-plan/${reconciled.id}`);
       }
-      setSaveState("saved");
-      // Saving is the "I'm done editing for now" gesture — lock back to
-      // read-only afterward, same as the (now-removed) "เสร็จสิ้น" button used
-      // to. Left unlocked on error/failure since nothing was actually
-      // persisted.
-      setEditUnlocked(false);
     } catch (err) {
-      console.warn(err);
-      setSaveState("error");
+      console.warn("บันทึกทริปไปเซิร์ฟเวอร์ไม่สำเร็จ", err);
     }
-    window.setTimeout(() => setSaveState("idle"), 2500);
   }
 
   // "ส่วนตัว"/"เผยแพร่" toggle in TripAttributionBar — a trip must be public
@@ -625,12 +663,22 @@ export default function GeneratedPlanPage() {
     updateDay(dayId, (d) => ({ ...d, activities: d.activities.filter((a) => a.id !== activityId) }));
   }
 
-  // Drag-reordered stop order — like the other free-form edits above
-  // (title/time/cost/notes), there's no confirmed backend field for item
-  // order yet, so this stays local-only (persisted via updateDay's
-  // updateGeneratedTrip call, same as everything else here).
+  // Drag-reordered stop order — PATCH /days/:dayId/items/order (see
+  // reorderTripItemsOnServer's doc comment). The backend 400s unless itemIds
+  // matches every item under that day exactly, so this only fires once the
+  // whole day (and every activity in it) already has a real backend row —
+  // otherwise it stays local-only, same as the other free-form edits above.
   function handleReorderActivities(dayId: string, activities: Activity[]) {
     updateDay(dayId, (d) => ({ ...d, activities }));
+
+    if (!trip!.backendSynced || !(trip!.backendDayIds ?? []).includes(dayId)) return;
+    const backendItemIds = trip!.backendItemIds ?? [];
+    if (!activities.every((a) => backendItemIds.includes(a.id))) return;
+
+    reorderTripItemsOnServer(
+      dayId,
+      activities.map((a) => a.id)
+    ).catch((err) => console.warn("เรียงลำดับกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
   }
 
   function handleUpdateActivityTravel(dayId: string, activityId: string, travel: TravelFromPrevious) {
@@ -652,8 +700,10 @@ export default function GeneratedPlanPage() {
   const isConfirmed = trip.status === "confirmed";
   // Read-only by default regardless of draft/confirmed status. Viewing a
   // trip from /main never carries ?edit=1, so it always lands here
-  // read-only; only arriving straight from create-trip starts unlocked (see
-  // editUnlocked above), and "บันทึก" locks it back down on success.
+  // read-only; only arriving straight from create-trip, or clicking
+  // "แก้ไขทริป" (see handleEditTripClick), unlocks it — and it stays unlocked
+  // for the rest of the session now that every edit autosaves on its own,
+  // with no more standalone "บันทึก" button to lock back down after.
   // isOwner-gated defensively so a non-owner can never end up with edit
   // affordances even via a stray ?edit=1 on a shared link.
   const canEdit = isOwner && editUnlocked;
@@ -678,12 +728,7 @@ export default function GeneratedPlanPage() {
         </div>
       </div>
 
-      <TopBar
-        onBack={() => router.back()}
-        onMenuClick={() => setSidebarOpen(true)}
-        onSave={handleSaveToServer}
-        saveState={saveState}
-      />
+      <TopBar onBack={() => router.back()} onMenuClick={() => setSidebarOpen(true)} />
 
       <div
         className="sticky top-0 z-40 border-b bg-[#FAF8F5]/95 px-4 py-3 backdrop-blur-sm sm:px-6"
@@ -763,7 +808,14 @@ export default function GeneratedPlanPage() {
       </div>
 
       {editDialogOpen && (
-        <EditTripDialog trip={trip} onClose={() => setEditDialogOpen(false)} onSave={applyPatch} />
+        <EditTripDialog
+          trip={trip}
+          onClose={() => setEditDialogOpen(false)}
+          onSave={(patch) => {
+            applyPatch(patch);
+            syncTripToServer({ ...trip, ...patch });
+          }}
+        />
       )}
       {accommodationDialogOpen && (
         <AccommodationEditDialog
@@ -803,21 +855,10 @@ export default function GeneratedPlanPage() {
   );
 }
 
-function TopBar({
-  onBack,
-  onMenuClick,
-  onSave,
-  saveState,
-}: {
-  onBack: () => void;
-  onMenuClick: () => void;
-  onSave: () => void;
-  saveState: SaveState;
-}) {
-  const SaveIcon = saveState === "saving" ? LoaderCircle : saveState === "saved" ? Check : Save;
-  const saveLabel =
-    saveState === "saving" ? "กำลังบันทึก..." : saveState === "saved" ? "บันทึกแล้ว" : saveState === "error" ? "บันทึกไม่สำเร็จ" : "บันทึก";
-
+// No more standalone "บันทึก" button — every edit (trip metadata included,
+// see EditTripDialog's onSave in the parent) autosaves on its own now, same
+// as the itinerary edits already did.
+function TopBar({ onBack, onMenuClick }: { onBack: () => void; onMenuClick: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6" style={{ backgroundColor: "#0F2419" }}>
       <div className="flex items-center gap-2">
@@ -840,28 +881,8 @@ function TopBar({
 
       <p className="hidden text-base font-extrabold text-white sm:block sm:text-lg">PunGuide</p>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saveState === "saving"}
-          title={saveState === "error" ? "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
-          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
-          style={{
-            backgroundColor:
-              saveState === "saved"
-                ? "var(--color-brand-green)"
-                : saveState === "error"
-                  ? "var(--color-danger)"
-                  : "rgba(255,255,255,0.15)",
-          }}
-        >
-          <SaveIcon size={14} className={saveState === "saving" ? "animate-spin" : ""} />
-          <span className="hidden sm:inline">{saveLabel}</span>
-        </button>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/profile-avatar.jpg" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/profile-avatar.jpg" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
     </div>
   );
 }
@@ -2632,9 +2653,97 @@ function EditField({
   );
 }
 
-// Covers trip name / destination / dates (as a nights count, since
-// GeneratedTrip has no date-range field — see resizeDays) / pace / budget /
-// conditions in one dialog, shared by both tabs' "แก้ไขทริป" buttons.
+// Digits-only variant for "งบประมาณ" — a bare number, no "฿"/"/ วัน" formatting
+// (that's reassembled around it on save, see EditTripDialog's handleSave).
+function EditNumberField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  suffix?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">{label}</label>
+      <div className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: "var(--color-border)" }}>
+        <span className="shrink-0 text-sm text-[var(--color-muted)]">฿</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full bg-transparent text-sm focus:outline-none"
+        />
+        {suffix && <span className="shrink-0 text-xs text-[var(--color-muted)]">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Small pill toggle shared by the pace/conditions pickers below — same
+// selected/unselected look as create-trip/page.tsx's private Tag component,
+// duplicated locally since that file doesn't export it.
+function EditTag({ label, isOn, onClick }: { label: string; isOn: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center rounded-[20px] border px-3.5 py-2 text-sm font-medium transition-transform hover:-translate-y-0.5 active:translate-y-0"
+      style={
+        isOn
+          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)", fontWeight: 700 }
+          : { borderColor: "var(--color-border)", color: "var(--foreground)" }
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+// A field that opens a picker dialog instead of editing inline — same shape
+// as the read-only fields on create-trip's Hero (destination/date), reused
+// here so "แก้ไขทริป" doesn't need its own bespoke input styles for these.
+function EditPickerField({
+  label,
+  value,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  icon: typeof MapPin;
+  onClick: () => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">{label}</label>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm font-semibold"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        <Icon size={15} style={{ color: "var(--color-muted)" }} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{value}</span>
+        <ChevronRight size={15} style={{ color: "var(--color-muted)" }} className="shrink-0" />
+      </button>
+    </div>
+  );
+}
+
+// Covers trip name / destination / duration / pace / budget / conditions in
+// one dialog, shared by both tabs' "แก้ไขทริป" buttons. Destination and
+// duration reuse the same picker dialogs as create-trip's Hero (consistent
+// look, and duration gets the full "ระบุวันที่ / จำนวนคืน" picker instead of a
+// bare +/- stepper); pace and conditions reuse create-trip's chip pattern.
 function EditTripDialog({
   trip,
   onClose,
@@ -2646,21 +2755,53 @@ function EditTripDialog({
 }) {
   const [title, setTitle] = useState(trip.title ?? trip.destination);
   const [destination, setDestination] = useState(trip.destination);
+  const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(trip.destinationPlace);
+  const [destDialogOpen, setDestDialogOpen] = useState(false);
   const [nights, setNights] = useState(Math.max(trip.days.length - 1, 0));
-  const [pace, setPace] = useState(trip.paceLabel);
-  const [budget, setBudget] = useState(trip.budgetLabel);
-  const [conditions, setConditions] = useState(trip.conditionsLabel);
+  const [pendingStartDate, setPendingStartDate] = useState<string | undefined>(undefined);
+  const [dateDialogOpen, setDateDialogOpen] = useState(false);
+  const [paceWord, setPaceWord] = useState<string | null>(trip.pace ? (INTENSITY_TO_PACE[trip.pace] ?? null) : null);
+  const [budgetAmount, setBudgetAmount] = useState(() => parseBudgetAmount(trip.budgetLabel));
+  const [conditionsText, setConditionsText] = useState(
+    trip.conditionsLabel === "ไม่มีเงื่อนไขพิเศษ" ? "" : trip.conditionsLabel
+  );
+  const [showMoreConds, setShowMoreConds] = useState(false);
+
+  const selectedConditions = conditionsText
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const condOptions = Array.from(
+    new Set([
+      ...EDIT_COND_OPTIONS,
+      ...(showMoreConds ? EDIT_MORE_COND_OPTIONS : []),
+      ...selectedConditions.filter((c) => !EDIT_COND_OPTIONS.includes(c) && !EDIT_MORE_COND_OPTIONS.includes(c)),
+    ])
+  );
+
+  function toggleCondition(tag: string) {
+    setConditionsText(
+      selectedConditions.includes(tag)
+        ? selectedConditions.filter((c) => c !== tag).join(", ")
+        : [...selectedConditions, tag].join(", ")
+    );
+  }
 
   function handleSave() {
-    const days = resizeDays(trip.days, nights);
+    let days = resizeDays(trip.days, nights);
+    if (pendingStartDate) days = reanchorDayDates(days, pendingStartDate);
+    const pace = paceWord ? PACE_TO_INTENSITY[paceWord] : trip.pace;
+    const paceLabel = paceWord ? `${paceWord} ${PACE_DESCRIPTION[paceWord] ?? ""}`.trim() : trip.paceLabel;
     onSave({
       title: title.trim() || destination.trim() || trip.destination,
       destination: destination.trim() || trip.destination,
+      destinationPlace,
       days,
       durationLabel: durationLabelFor(days),
-      paceLabel: pace.trim(),
-      budgetLabel: budget.trim(),
-      conditionsLabel: conditions.trim(),
+      pace,
+      paceLabel,
+      budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / วัน` : "ยังไม่ระบุ",
+      conditionsLabel: conditionsText.trim() || "ไม่มีเงื่อนไขพิเศษ",
     });
     onClose();
   }
@@ -2668,36 +2809,81 @@ function EditTripDialog({
   return (
     <EditDialogShell title="แก้ไขทริป" onClose={onClose} onSave={handleSave}>
       <EditField label="ชื่อทริป" value={title} onChange={setTitle} placeholder="ตั้งชื่อทริปของคุณ" />
-      <EditField label="ปลายทาง" value={destination} onChange={setDestination} />
+
+      <EditPickerField
+        label="ปลายทาง"
+        value={destination || "เลือกปลายทาง"}
+        icon={MapPin}
+        onClick={() => setDestDialogOpen(true)}
+      />
+
+      <EditPickerField
+        label="ระยะเวลา"
+        value={`${nights + 1} วัน ${nights} คืน`}
+        icon={CalendarDays}
+        onClick={() => setDateDialogOpen(true)}
+      />
 
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ระยะเวลา</label>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setNights((n) => Math.max(n - 1, 0))}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <Minus size={14} />
-          </button>
-          <span className="min-w-[96px] text-center text-sm font-bold">
-            {nights + 1} วัน {nights} คืน
-          </span>
-          <button
-            type="button"
-            onClick={() => setNights((n) => n + 1)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <Plus size={14} />
-          </button>
+        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ความเข้มข้นของทริป</label>
+        <div className="flex flex-wrap items-center gap-2">
+          {Object.keys(PACE_TO_INTENSITY).map((p) => (
+            <EditTag key={p} label={p} isOn={paceWord === p} onClick={() => setPaceWord((prev) => (prev === p ? null : p))} />
+          ))}
         </div>
       </div>
 
-      <EditField label="ความเข้มข้นของทริป" value={pace} onChange={setPace} />
-      <EditField label="งบประมาณ" value={budget} onChange={setBudget} />
-      <EditField label="เงื่อนไข / ข้อจำกัด" value={conditions} onChange={setConditions} />
+      <EditNumberField label="งบประมาณ" value={budgetAmount} onChange={setBudgetAmount} placeholder="เช่น 3000" suffix="/ วัน" />
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เงื่อนไข / ข้อจำกัด</label>
+        <div className="flex flex-wrap items-center gap-2">
+          {condOptions.map((c) => (
+            <EditTag key={c} label={c} isOn={selectedConditions.includes(c)} onClick={() => toggleCondition(c)} />
+          ))}
+          {!showMoreConds && (
+            <button
+              type="button"
+              onClick={() => setShowMoreConds(true)}
+              className="inline-flex items-center gap-1 rounded-[20px] border px-3.5 py-2 text-sm font-semibold"
+              style={{ borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }}
+            >
+              <Plus size={13} />
+              เพิ่มเติม
+            </button>
+          )}
+        </div>
+        <textarea
+          value={conditionsText}
+          onChange={(e) => setConditionsText(e.target.value)}
+          placeholder="พิมพ์เงื่อนไขอื่นๆ เพิ่มเติม เช่น แพ้อาหารทะเล"
+          rows={2}
+          className="mt-2.5 w-full resize-none rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none"
+          style={{ borderColor: "var(--color-border)" }}
+        />
+      </div>
+
+      <DestinationPickerDialog
+        isOpen={destDialogOpen}
+        onClose={() => setDestDialogOpen(false)}
+        onConfirm={(result) => {
+          setDestination(result.label);
+          setDestinationPlace(result.destination);
+          setDestDialogOpen(false);
+        }}
+      />
+
+      <DatePickerDialog
+        isOpen={dateDialogOpen}
+        initialStartDate={trip.days[0]?.date}
+        initialEndDate={trip.days[trip.days.length - 1]?.date}
+        onClose={() => setDateDialogOpen(false)}
+        onConfirm={(result) => {
+          setNights(parseNightsFromLabel(result.label));
+          setPendingStartDate(result.startDate);
+          setDateDialogOpen(false);
+        }}
+      />
     </EditDialogShell>
   );
 }

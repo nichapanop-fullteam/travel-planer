@@ -1,5 +1,5 @@
 import type { Day, GeneratedTrip, TripDraft } from "@/types";
-import type { GeneratePlanResponse } from "./generate-plan-api";
+import type { GeneratePlanResponse, Intensity } from "./generate-plan-api";
 import type { BackendTrip } from "./trips-api";
 import {
   BUDGET_KEY_TO_TIER,
@@ -155,7 +155,10 @@ function budgetLabel(draft: TripDraft): string {
   return "ยังไม่ระบุ";
 }
 
-const PACE_DESCRIPTION: Record<string, string> = {
+// Exported so EditTripDialog (generated-plan/[id]/page.tsx) can build the
+// same "Chill เที่ยวสบาย"-style label after the user picks a different pace
+// chip, instead of duplicating this copy.
+export const PACE_DESCRIPTION: Record<string, string> = {
   "Slow Life": "เที่ยวช้าๆ ไม่รีบ",
   Chill: "เที่ยวสบาย",
   Balance: "สมดุลพักผ่อน-กิจกรรม",
@@ -167,6 +170,10 @@ function paceLabel(draft: TripDraft): string {
   if (!draft.pace) return "ยังไม่ระบุ";
   const description = PACE_DESCRIPTION[draft.pace];
   return description ? `${draft.pace} ${description}` : draft.pace;
+}
+
+function paceFromDraft(draft: TripDraft): Intensity | undefined {
+  return draft.pace ? PACE_TO_INTENSITY[draft.pace] : undefined;
 }
 
 function conditionsLabel(draft: TripDraft): string {
@@ -268,6 +275,7 @@ export function createEmptyTripShell(draft: TripDraft): GeneratedTrip {
     coverImageUrl: isLuangPrabang(draft.destination) ? "/images/luang-prabang-aerial.png" : "/images/hero-mountain.jpg",
     durationLabel: draft.duration || "ยังไม่ระบุ",
     paceLabel: paceLabel(draft),
+    pace: paceFromDraft(draft),
     budgetLabel: budgetLabel(draft),
     conditionsLabel: conditionsLabel(draft),
     styles: draft.styles,
@@ -290,6 +298,7 @@ export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
     coverImageUrl: luangPrabang ? "/images/luang-prabang-aerial.png" : "/images/hero-mountain.jpg",
     durationLabel: draft.duration || "ยังไม่ระบุ",
     paceLabel: paceLabel(draft),
+    pace: paceFromDraft(draft),
     budgetLabel: budgetLabel(draft),
     conditionsLabel: conditionsLabel(draft),
     styles: draft.styles,
@@ -342,6 +351,7 @@ export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: Ge
     coverImageUrl: firstActivityImage ?? "/images/hero-mountain.jpg",
     durationLabel: `${response.resolvedBrief.durationDays} วัน ${nights} คืน`,
     paceLabel: paceLabel(draft),
+    pace: paceFromDraft(draft),
     budgetLabel: budgetLabel(draft),
     conditionsLabel: conditionsLabel(draft),
     styles: draft.styles,
@@ -362,7 +372,9 @@ function invert(map: Record<string, string>): Record<string, string> {
 }
 
 const ENUM_TO_STYLE_TAG = invert(STYLE_TAG_TO_ENUM);
-const INTENSITY_TO_PACE = invert(PACE_TO_INTENSITY);
+// Exported for EditTripDialog to preselect the right pace chip from a
+// backend-sourced trip's raw trip.pace.
+export const INTENSITY_TO_PACE = invert(PACE_TO_INTENSITY) as Record<Intensity, string>;
 const TIER_TO_BUDGET_KEY = invert(BUDGET_KEY_TO_TIER);
 const CONSTRAINT_TO_CONDITION = invert(CONDITION_TO_CONSTRAINT);
 
@@ -393,7 +405,7 @@ export function buildGeneratedTripFromBackendTrip(
     ...(brief?.customStyles ?? []),
   ];
 
-  const pace = brief?.intensity ? INTENSITY_TO_PACE[brief.intensity] : undefined;
+  const pace = brief?.intensity ? INTENSITY_TO_PACE[brief.intensity as Intensity] : undefined;
   const budgetKey = trip.budgetTier ? TIER_TO_BUDGET_KEY[trip.budgetTier] : undefined;
 
   const conditions = [
@@ -415,6 +427,7 @@ export function buildGeneratedTripFromBackendTrip(
     mediaSummary: trip.mediaSummary,
     durationLabel: `${durationDays} วัน ${nights} คืน`,
     paceLabel: pace ? `${pace} ${PACE_DESCRIPTION[pace] ?? ""}`.trim() : "ยังไม่ระบุ",
+    pace: brief?.intensity as Intensity | undefined,
     budgetLabel: budgetKey ? BUDGET_PRESET_LABEL[budgetKey] ?? budgetKey : "ยังไม่ระบุ",
     conditionsLabel: conditions.length ? conditions.join(", ") : "ไม่มีเงื่อนไขพิเศษ",
     styles,

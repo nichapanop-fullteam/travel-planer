@@ -1,5 +1,6 @@
 import { authenticatedFetch } from "@/lib/authenticated-fetch";
 import { BACKEND_URL } from "@/lib/backend-url";
+import type { Intensity } from "@/lib/generate-plan-api";
 import type { CreateTripActivity } from "@/lib/trips-create-api";
 import type { TripVisibility } from "@/lib/trips-api";
 import type { TravelType } from "@/types";
@@ -17,13 +18,26 @@ async function throwOnError(response: Response, action: string): Promise<void> {
 
 export interface UpdateTripRequest {
   title?: string;
+  destination?: string;
   status?: "draft" | "shared" | "confirmed" | "completed";
   startDate?: string;
   endDate?: string;
+  // Only takes effect when the trip has no startDate/endDate yet — once
+  // real dates are set, the backend always recomputes duration from them
+  // and silently ignores these instead (see PATCH /trips/:id docs). Safe to
+  // always send both; no need to gate on the frontend.
+  durationDays?: number;
+  durationNights?: number;
+  pace?: Intensity;
   budgetLimit?: number;
   // Must be flipped to "public" before anyone besides the owner can remix
   // this trip (see POST /trips/:sourceTripId/remix in lib/trip-remix-api.ts).
   visibility?: TripVisibility;
+  // Freeform text, max 2000 chars — the "เงื่อนไข / ข้อจำกัด" box in
+  // EditTripDialog. Distinct from the backend's `constraints` enum array
+  // (seniors/wheelchair/limited_walking/young_children); this endpoint only
+  // ever sends specialNotes, never constraints.
+  specialNotes?: string;
 }
 
 // PATCH /trips/:tripId
@@ -133,11 +147,11 @@ export async function createTripItemOnServer(
   return response.json();
 }
 
-// PATCH /days/:dayId/items/order — "เรียงกิจกรรม". Request body shape isn't
-// documented beyond the route itself; `itemIds` (full new order, top to
-// bottom) is the best-guess convention matching the other list-reorder APIs
-// in this codebase. Not called anywhere yet — no drag-to-reorder UI exists
-// on the activity list, so there's nothing to wire this up to today.
+// PATCH /days/:dayId/items/order — "เรียงกิจกรรม". itemIds is the full new
+// order (top to bottom) for every item under that day; the backend 400s if
+// the set doesn't match the day's items exactly (see ReorderItemsRequestDto /
+// itinerary-manager.service.ts on the backend). Called from the drag-to-
+// reorder activity list in generated-plan/[id]/page.tsx.
 export async function reorderTripItemsOnServer(dayId: string, itemIds: string[]): Promise<void> {
   const response = await authenticatedFetch(`${BACKEND_URL}/days/${dayId}/items/order`, {
     method: "PATCH",
