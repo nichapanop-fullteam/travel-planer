@@ -417,7 +417,7 @@ function LemonCard({ trip }: { trip: BackendTripListItem }) {
     return () => {
       cancelled = true;
     };
-  }, [trip]);
+  }, [trip.id]);
 
   return (
     <article className="overflow-hidden rounded-2xl bg-white">
