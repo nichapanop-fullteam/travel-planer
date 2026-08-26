@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNavigation } from "@/components/layout/MobileNavigation";
 
-type NavKey = "home" | "account";
+type NavKey = "home" | "explore" | "myTrips" | "saved" | "messages";
 
 // The one shared application shell for every signed-in-consumer-facing route
 // (/main, /my-trips, /trip-detail/[id], /account) — desktop sidebar, mobile
@@ -16,11 +16,11 @@ type NavKey = "home" | "account";
 // "consumer"-only pattern.
 export function AppShell({
   active,
-  activeGroupId,
+  hideDesktopTopbar = false,
   children,
 }: {
   active?: NavKey;
-  activeGroupId?: string;
+  hideDesktopTopbar?: boolean;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -30,18 +30,15 @@ export function AppShell({
       {/* Persistent on desktop (md+); on mobile/tablet it's the off-canvas
           MobileNavigation drawer opened via Topbar's menu button. */}
       <div className="hidden md:flex">
-        <Sidebar active={active} activeGroupId={activeGroupId} />
+        <Sidebar active={active} />
       </div>
 
-      <MobileNavigation
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        active={active}
-        activeGroupId={activeGroupId}
-      />
+      <MobileNavigation open={sidebarOpen} onClose={() => setSidebarOpen(false)} active={active} />
 
       <div className="flex flex-1 flex-col overflow-y-auto">
-        <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        <div className={hideDesktopTopbar ? "md:hidden" : ""}>
+          <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        </div>
         <main className="flex-1">{children}</main>
       </div>
     </div>

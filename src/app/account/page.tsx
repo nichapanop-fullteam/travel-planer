@@ -33,7 +33,7 @@ export default function AccountPage() {
   if (!backendUser) return null;
 
   return (
-    <AppShell active="account">
+    <AppShell>
       <div className="mx-auto max-w-2xl px-6 py-10 sm:px-10">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
