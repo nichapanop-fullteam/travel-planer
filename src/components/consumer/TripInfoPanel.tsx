@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { GitFork } from "lucide-react";
+import { BadgeCheck, GitFork } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { getTripDateRange, getTripTotalCost, formatTHB } from "@/lib/trip-utils";
 
@@ -8,11 +8,27 @@ export function TripInfoPanel({ trip, isJoined }: { trip: FeedTrip; isJoined: bo
     <div className="rounded-3xl border border-[var(--color-border)]/40 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-bold">Trip Info</h3>
+        <span
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+          style={{ backgroundColor: "var(--color-brand-green)" }}
+        >
+          <BadgeCheck size={11} />
+          ทริปจริง
+        </span>
       </div>
 
       <div className="flex flex-col gap-3 text-sm">
+        <Row
+          label="Shared by"
+          value={
+            <span className="flex items-center gap-1.5">
+              <span className="text-sm leading-none">{trip.creator.avatar}</span>
+              {trip.creator.name}
+            </span>
+          }
+        />
         <Row label="Destination" value={trip.destination} />
-        <Row label="Date" value={getTripDateRange(trip)} />
+        <Row label="Travel dates" value={getTripDateRange(trip)} />
         {isJoined && (
           <Row
             label="Members"

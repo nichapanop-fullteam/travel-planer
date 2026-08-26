@@ -1320,7 +1320,7 @@ function ConfirmBanner({
           className="rounded-full px-5 py-2.5 text-sm font-semibold text-white"
           style={{ backgroundColor: "var(--color-brand-green)" }}
         >
-          ใช้แพลนนี้เลย
+          นำไปปรับเป็นทริปของฉัน
         </button>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Bookmark, Star } from "lucide-react";
+import { BadgeCheck, Bookmark, Star } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { feedCategoryLabel } from "@/lib/feed-categories";
-import { getTripDurationLabel, getTripTotalCost, formatTHB } from "@/lib/trip-utils";
+import { getTripDateRange, getTripDurationLabel, getTripTotalCost, formatTHB } from "@/lib/trip-utils";
 
 export function TripCard({ trip }: { trip: FeedTrip }) {
   return (
@@ -17,12 +17,21 @@ export function TripCard({ trip }: { trip: FeedTrip }) {
           alt={trip.title}
           className="h-full w-full object-cover transition-transform group-hover:scale-105"
         />
-        <span
-          className="absolute left-2 top-2 rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-          style={{ backgroundColor: "var(--color-primary)" }}
-        >
-          {feedCategoryLabel[trip.category]}
-        </span>
+        <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+          <span
+            className="rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+            style={{ backgroundColor: "var(--color-primary)" }}
+          >
+            {feedCategoryLabel[trip.category]}
+          </span>
+          <span
+            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+            style={{ backgroundColor: "var(--color-brand-green)" }}
+          >
+            <BadgeCheck size={12} />
+            ทริปจริง
+          </span>
+        </div>
         <button
           className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90"
           aria-label="บันทึก"
@@ -34,6 +43,12 @@ export function TripCard({ trip }: { trip: FeedTrip }) {
       <div className="flex flex-col gap-1 p-3">
         <p className="text-sm font-semibold">{trip.title}</p>
         <p className="truncate text-xs text-[var(--color-muted)]">{trip.destination}</p>
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+          <span className="text-sm leading-none">{trip.creator.avatar}</span>
+          <span className="truncate font-medium">{trip.creator.name}</span>
+          <span>·</span>
+          <span className="truncate">{getTripDateRange(trip)}</span>
+        </div>
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="font-semibold">{formatTHB(getTripTotalCost(trip))}</span>
           <span className="text-[var(--color-muted)]">{getTripDurationLabel(trip)}</span>

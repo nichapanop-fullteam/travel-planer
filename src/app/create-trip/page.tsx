@@ -125,10 +125,9 @@ function CreateTripForm() {
   // form with the reference preferences instead of leaving it blank.
   const prefillDefaults = destinationParam.includes("หลวงพระบาง");
 
-  // AI mode is hidden for now (see ModeToggle below) — always self mode,
-  // regardless of ?mode=. The AI-mode code paths below stay in place, just
-  // unreachable, so this is a quick flip to bring back rather than a removal.
-  const [mode, setMode] = useState<TripCreationMode>("self");
+  const [mode, setMode] = useState<TripCreationMode>(
+    searchParams.get("mode") === "self" ? "self" : "ai"
+  );
   const [destination, setDestination] = useState(destinationParam);
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
@@ -507,8 +506,7 @@ function CreateTripForm() {
           }}
         />
 
-        {/* ModeToggle (PunGuide จัดแพลนให้ / สร้างด้วยตัวเอง) hidden while AI
-            mode is off — see the `mode` state above. */}
+        <ModeToggle mode={mode} setMode={setMode} />
 
         <div className="relative">
           {status === "error" && (

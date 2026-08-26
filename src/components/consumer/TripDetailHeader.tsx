@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bookmark, ChevronLeft, Luggage, UserPlus } from "lucide-react";
+import { BadgeCheck, Bookmark, ChevronLeft, Luggage, UserPlus } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { getTripDaysNightsLabel, getTripDateRange } from "@/lib/trip-utils";
 
@@ -17,9 +17,22 @@ export function TripDetailHeader({ trip, isJoined }: { trip: FeedTrip; isJoined:
           <ChevronLeft size={16} />
         </Link>
         <div>
-          <h1 className="text-xl font-extrabold">{trip.title}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-extrabold">{trip.title}</h1>
+            <span
+              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+              style={{ backgroundColor: "var(--color-brand-green)" }}
+            >
+              <BadgeCheck size={11} />
+              ทริปจริง
+            </span>
+          </div>
           <p className="text-xs text-[var(--color-muted)]">
             {getTripDaysNightsLabel(trip)} · {getTripDateRange(trip)}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--color-muted)]">
+            <span className="text-sm leading-none">{trip.creator.avatar}</span>
+            แชร์โดย <span className="font-semibold text-[var(--foreground)]">{trip.creator.name}</span>
           </p>
         </div>
       </div>
