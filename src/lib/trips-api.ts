@@ -1,5 +1,6 @@
 import { authenticatedFetch } from "@/lib/authenticated-fetch";
 import { BACKEND_URL } from "@/lib/backend-url";
+import { getBackendAccessToken } from "@/lib/backend-user";
 import { getTripGallery } from "@/lib/trip-media-api";
 import type { Day, Media, MediaSummary } from "@/types";
 
@@ -58,6 +59,12 @@ export interface BackendTripListItem {
   remixCount?: number;
   sourceTripId?: string;
   publishedAt?: string;
+  // Whether the signed-in user has bookmarked this trip via POST
+  // /trips/:id/save (see saveTrip/unsaveTrip below) — always `false` when
+  // the request that fetched this item carried no (or an expired) auth
+  // token, per the optional-auth behavior of GET /trips, /trips/:id,
+  // /trips/mine, and /trips/saved.
+  isSaved: boolean;
 }
 
 // Chips under the trip title ("Active · รถสาธารณะท้องถิ่น · เงื่อนไข") — as
@@ -106,15 +113,19 @@ export interface BackendTrip {
   remixCount?: number;
   sourceTripId?: string;
   publishedAt?: string;
+  isSaved: boolean; // see BackendTripListItem.isSaved above
 }
 
-// GET /trips is the public, cross-owner feed and intentionally sends no
-// authentication. It goes through
+// GET /trips is optional-auth (was strictly public before the save/bookmark
+// API added `isSaved`) and goes through
 // /api/trips (see that route) rather than EXTERNAL_API_BASE_URL directly —
 // some environments don't send Access-Control-Allow-Origin on this route,
-// which blocks a direct browser fetch with CORS. Used on the public /main
-// page; getMyTrips() below is the strict, auth-required variant for
-// /my-trips.
+// which blocks a direct browser fetch with CORS. Attaching the access token
+// (when there is one) is what makes each card's `isSaved` reflect the
+// signed-in user's real bookmarks instead of always `false` — the proxy
+// route forwards whatever Authorization header it's given. Used on the
+// public /main page; getMyTrips() below is the strict, auth-required
+// variant for /my-trips.
 //
 // `destination` does a partial, case-insensitive match against the trip's
 // destination field (e.g. "หลวงพระบาง" matches "หลวงพระบาง, ลาว") — omit it
@@ -122,7 +133,8 @@ export interface BackendTrip {
 // URLSearchParams so Thai text and other special characters survive.
 export async function listTrips(destination?: string): Promise<BackendTripListItem[]> {
   const url = destination ? `/api/trips?${new URLSearchParams({ destination })}` : "/api/trips";
-  const response = await fetch(url);
+  const token = getBackendAccessToken();
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
 
   if (!response.ok) {
     throw new Error(`โหลดทริปไม่สำเร็จ (${response.status} ${response.statusText})`);
@@ -131,13 +143,17 @@ export async function listTrips(destination?: string): Promise<BackendTripListIt
   return response.json();
 }
 
-// GET /trips/:id is also public and goes through /api/trips/[id] for the
-// same CORS reason. Used by
+// GET /trips/:id is also optional-auth and goes through /api/trips/[id] for
+// the same CORS reason — see listTrips's doc comment on why the token is
+// attached manually here instead of via authenticatedFetch (no forced
+// refresh/login on failure; an expired token just means `isSaved: false`,
+// not an error). Used by
 // generated-plan/[id]/page.tsx to render a trip that was created on the
 // backend (e.g. via createTripOnServer) but never saved to this browser's
 // localStorage, so lib/generated-trips.ts's getGeneratedTrip() can't find it.
 export async function getTrip(id: string): Promise<BackendTrip | null> {
-  const response = await fetch(`/api/trips/${id}`);
+  const token = getBackendAccessToken();
+  const response = await fetch(`/api/trips/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
   if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`โหลดทริปไม่สำเร็จ (${response.status} ${response.statusText})`);
@@ -191,6 +207,38 @@ export async function getMyTrips(): Promise<BackendTripListItem[]> {
     throw new Error("Failed to load trips");
   }
 
+  return response.json();
+}
+
+// POST /trips/:id/save — bookmark any trip (public or not, own or not; see
+// the save/bookmark API doc). Idempotent server-side (saving an
+// already-saved trip just re-answers 204), so callers don't need to guard
+// against double-clicks themselves.
+export async function saveTrip(tripId: string): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/save`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`บันทึกทริปไม่สำเร็จ (${response.status} ${response.statusText})`);
+  }
+}
+
+// DELETE /trips/:id/save — also idempotent (removing a trip that was never
+// saved, or already removed, still answers 204).
+export async function unsaveTrip(tripId: string): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/save`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`เอาทริปออกจากรายการบันทึกไม่สำเร็จ (${response.status} ${response.statusText})`);
+  }
+}
+
+// GET /trips/saved — the signed-in user's bookmarked trips, most-recently-
+// saved first (not most-recently-created). Same card shape as GET /trips;
+// a saved trip that's since been deleted just silently drops out of the
+// list rather than erroring.
+export async function getSavedTrips(): Promise<BackendTripListItem[]> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/saved`);
+  if (!response.ok) {
+    throw new Error(`โหลดรายการทริปที่บันทึกไว้ไม่สำเร็จ (${response.status} ${response.statusText})`);
+  }
   return response.json();
 }
 

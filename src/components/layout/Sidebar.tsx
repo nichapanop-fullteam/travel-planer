@@ -22,7 +22,9 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"
-        : undefined);
+        : pathname?.startsWith("/saved")
+          ? "saved"
+          : undefined);
 
   const { backendUser } = useAuth();
 
@@ -30,7 +32,7 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
     { key: "home", label: "Home", icon: Home, href: "/main" },
     { key: "explore", label: "Explore", icon: Compass },
     { key: "myTrips", label: "My Trips", icon: Briefcase, href: "/my-trips" },
-    { key: "saved", label: "Saved", icon: Bookmark },
+    { key: "saved", label: "Saved", icon: Bookmark, href: "/saved" },
     { key: "messages", label: "Messages", icon: MessageSquare, badge: 2 },
   ];
 
