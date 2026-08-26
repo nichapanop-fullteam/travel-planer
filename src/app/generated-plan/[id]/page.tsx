@@ -731,18 +731,13 @@ export default function GeneratedPlanPage() {
         </div>
       </div>
 
-      <TopBar onBack={() => router.back()} onMenuClick={() => setSidebarOpen(true)} />
-
-      <div
-        className="sticky top-0 z-40 border-b bg-[#FAF8F5]/95 px-4 py-3 backdrop-blur-sm sm:px-6"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        <div className="mx-auto max-w-2xl">
-          <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
-        </div>
-      </div>
-
-      <Hero trip={trip} canEdit={canEdit} onManagePhotos={() => setGalleryDialogOpen(true)} />
+      <Hero
+        trip={trip}
+        canEdit={canEdit}
+        onManagePhotos={() => setGalleryDialogOpen(true)}
+        onBack={() => router.back()}
+        onMenuClick={() => setSidebarOpen(true)}
+      />
 
       {galleryDialogOpen && (
         <TripGalleryDialog
@@ -752,7 +747,13 @@ export default function GeneratedPlanPage() {
         />
       )}
 
-      <div className="relative -mt-6 rounded-t-[32px] bg-white sm:-mt-8">
+      <div className="sticky top-0 z-40 px-4 py-3 sm:px-6" style={{ backgroundColor: "#0F2419" }}>
+        <div className="mx-auto max-w-2xl">
+          <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
+        </div>
+      </div>
+
+      <div className="relative rounded-t-[28px] bg-white">
         <TripAttributionBar
           trip={trip}
           isOwner={isOwner}
@@ -858,49 +859,29 @@ export default function GeneratedPlanPage() {
   );
 }
 
-// No more standalone "บันทึก" button — every edit (trip metadata included,
-// see EditTripDialog's onSave in the parent) autosaves on its own now, same
-// as the itinerary edits already did.
-function TopBar({ onBack, onMenuClick }: { onBack: () => void; onMenuClick: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6" style={{ backgroundColor: "#0F2419" }}>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold sm:text-sm"
-        >
-          <ArrowLeft size={14} />
-          ย้อนกลับ
-        </button>
-        <button
-          type="button"
-          onClick={onMenuClick}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-white"
-        >
-          <Menu size={16} />
-        </button>
-      </div>
-
-      <p className="hidden text-base font-extrabold text-white sm:block sm:text-lg">PunGuide</p>
-
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/images/profile-avatar.jpg" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-    </div>
-  );
-}
-
 function Hero({
   trip,
   canEdit,
   onManagePhotos,
+  onBack,
+  onMenuClick,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
   onManagePhotos: () => void;
+  onBack: () => void;
+  onMenuClick: () => void;
 }) {
+  const placeStats = getTripPlaceStats(trip);
+  const placeCount = placeStats.attractions + placeStats.restaurants + placeStats.cafes + placeStats.bars;
+  const statLabel = placeCount > 0 ? `${placeCount} places` : trip.durationLabel;
+
+  const updatedAtSource = trip.publishedAt ?? trip.createdAt;
+  const updatedLabel = updatedAtSource
+    ? new Date(updatedAtSource).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : undefined;
+
   const pills = [
-    { key: "duration", icon: CalendarDays, label: trip.durationLabel },
     { key: "pace", icon: Footprints, label: trip.paceLabel },
     { key: "budget", icon: Wallet, label: trip.budgetLabel },
     { key: "conditions", icon: Asterisk, label: trip.conditionsLabel },
@@ -938,7 +919,7 @@ function Hero({
   const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
 
   return (
-    <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-5 overflow-hidden px-6 py-6 text-center sm:min-h-[260px]">
+    <div className="relative flex min-h-[440px] flex-col justify-between overflow-hidden sm:min-h-[560px]">
       {/* Editing keeps a single static cover — swiping through photos is a
           viewing affordance, and would fight with "จัดการรูปภาพ" for the same
           tap target. The read-only detail view (canEdit === false, i.e.
@@ -954,33 +935,85 @@ function Hero({
       ) : (
         <HeroImageCarousel images={images} title={trip.title || trip.destination} />
       )}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-black/10 to-black/50" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/5 to-black/70" />
 
-      {canEdit && (
-        <button
-          type="button"
-          onClick={onManagePhotos}
-          className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-2 text-xs font-semibold shadow-md"
-        >
-          <ImagePlus size={14} />
-          จัดการรูปภาพ
-        </button>
-      )}
-
-      <h1 className="relative text-4xl font-extrabold text-white drop-shadow-sm sm:text-[70px]">
-        {trip.title || trip.destination}
-      </h1>
-
-      <div className="relative flex flex-wrap items-center justify-center gap-2">
-        {pills.map((p) => (
-          <span
-            key={p.key}
-            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
+      {/* Top controls — back/menu on the left; the owner's photo-management
+          affordance on the right while editing. */}
+      <div className="relative z-20 flex items-center justify-between gap-3 p-4 sm:p-6">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="ย้อนกลับ"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
           >
-            <p.icon size={14} style={{ color: "var(--color-brand-green)" }} />
-            {p.label}
-          </span>
-        ))}
+            <ArrowLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="เมนู"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
+          >
+            <Menu size={18} />
+          </button>
+        </div>
+
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onManagePhotos}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-2 text-xs font-semibold shadow-md"
+          >
+            <ImagePlus size={14} />
+            จัดการรูปภาพ
+          </button>
+        )}
+      </div>
+
+      {/* Bottom overlay — title + creator/place-count + location + last
+          updated, same layout as a Mindtrip-style guide header, with the
+          existing pace/budget/conditions pills kept underneath since those
+          carry real trip data the reference page has no equivalent for. */}
+      <div className="relative z-10 flex flex-col items-center gap-2.5 px-6 pb-8 text-center sm:pb-10">
+        <h1 className="text-3xl font-extrabold text-white drop-shadow-sm sm:text-6xl">
+          {trip.title || trip.destination}
+        </h1>
+
+        <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-white sm:text-base">
+          {trip.creator && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={trip.creator.avatarUrl || "/images/profile-avatar.jpg"}
+                alt=""
+                className="h-6 w-6 shrink-0 rounded-full object-cover"
+              />
+              <span>{trip.creator.name}</span>
+              <span className="text-white/50">|</span>
+            </>
+          )}
+          <span>{statLabel}</span>
+        </div>
+
+        <p className="flex items-center gap-1.5 text-sm text-white/85">
+          <MapPin size={14} className="shrink-0" />
+          {trip.destination}
+        </p>
+
+        {updatedLabel && <p className="text-xs text-white/60">Updated: {updatedLabel}</p>}
+
+        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
+          {pills.map((p) => (
+            <span
+              key={p.key}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
+            >
+              <p.icon size={14} style={{ color: "var(--color-brand-green)" }} />
+              {p.label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1056,10 +1089,10 @@ function HeroImageCarousel({ images, title }: { images: string[]; title: string 
         <ChevronRight size={18} />
       </button>
 
-      {/* bottom-10, not bottom-3 — the content sheet right below Hero
-          overlaps its bottom ~32px (see the "-mt-8" on that sheet in the
-          parent), which would otherwise paint over the dots. */}
-      <div className="pointer-events-none absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5">
+      {/* Docked under the top back/menu/save row rather than at the bottom —
+          Hero's title/creator/location block now sits bottom-anchored (see
+          Hero) and would otherwise collide with the dots. */}
+      <div className="pointer-events-none absolute left-1/2 top-16 z-10 flex -translate-x-1/2 items-center gap-1.5 sm:top-20">
         {images.map((_, i) => (
           <span
             key={i}

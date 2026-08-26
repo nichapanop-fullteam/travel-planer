@@ -11,12 +11,10 @@ export function MobileNavigation({
   open,
   onClose,
   active,
-  activeGroupId,
 }: {
   open: boolean;
   onClose: () => void;
-  active?: "home" | "account";
-  activeGroupId?: string;
+  active?: "home" | "explore" | "myTrips" | "saved" | "messages";
 }) {
   return (
     <div className={`fixed inset-0 z-50 flex md:hidden ${open ? "" : "pointer-events-none"}`} aria-hidden={!open}>
@@ -29,7 +27,7 @@ export function MobileNavigation({
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <Sidebar active={active} activeGroupId={activeGroupId} onClose={onClose} />
+        <Sidebar active={active} onClose={onClose} />
       </div>
     </div>
   );

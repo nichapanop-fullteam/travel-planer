@@ -72,11 +72,11 @@ const FILTER_CATEGORY_LABEL: Record<BudgetBucket, string> = {
 };
 
 const BUCKET_COLOR: Record<BudgetBucket, string> = {
-  accommodation: "#7c5cbf",
-  activity: "#e2574c",
-  food: "#f0a53c",
-  shopping: "#2a9e64",
-  transport: "#4a6fd4",
+  accommodation: "#7d46fa",
+  activity: "#ff5b36",
+  food: "#ffb85c",
+  shopping: "#17ab59",
+  transport: "#4c7fff",
   other: "#9ca3af",
 };
 
@@ -286,21 +286,21 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-3xl p-4 sm:p-5" style={{ backgroundColor: "var(--color-surface)" }}>
+      <div className="flex flex-col gap-3 rounded-[20px] p-4 sm:p-5" style={{ backgroundColor: "#f7f6f0" }}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl p-4 text-white sm:p-5" style={{ backgroundColor: "var(--color-brand-green)" }}>
+          <div className="flex min-h-[112px] flex-col items-center justify-center rounded-2xl p-4 text-center text-white sm:p-5" style={{ backgroundColor: "#306b50" }}>
             <p className="text-xs font-semibold text-white/80 sm:text-sm">รวมงบที่ใช้ไป{perSuffix}</p>
             <p className="mt-1.5 text-2xl font-extrabold sm:text-3xl">{formatTHB(per(total))}</p>
           </div>
 
-          <div className="rounded-2xl bg-white p-4 sm:p-5">
+          <div className="flex min-h-[112px] flex-col items-center justify-center rounded-2xl bg-white p-4 text-center sm:p-5">
             <p className="text-xs font-semibold text-[var(--color-muted)] sm:text-sm">งบที่ตั้งเอาไว้{perSuffix}</p>
             <p className="mt-1.5 text-2xl font-extrabold sm:text-3xl" style={goal === undefined ? { color: "var(--color-muted)" } : undefined}>
               {goal !== undefined ? formatTHB(per(goal)) : "ยังไม่ได้ตั้งงบ"}
             </p>
           </div>
 
-          <div className="rounded-2xl bg-white p-4 sm:p-5">
+          <div className="flex min-h-[112px] flex-col justify-center rounded-2xl bg-white p-4 sm:p-5">
             {remaining !== undefined ? (
               <>
                 <p className="text-xs font-semibold sm:text-sm" style={remaining < 0 ? { color: "var(--color-danger)" } : undefined}>
@@ -320,19 +320,19 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
         </div>
 
         {breakdown.length > 0 && (
-          <div className="rounded-2xl bg-white p-4 sm:p-5">
+          <div className="rounded-2xl border bg-white p-4 sm:p-5" style={{ borderColor: "#e5dfd0" }}>
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold sm:text-base">สัดส่วนค่าใช้จ่าย{perSuffix}</h3>
               <span className="text-xs text-[var(--color-muted)]">{items.length} รายการ</span>
             </div>
 
-            <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full">
+            <div className="mt-3 flex h-2.5 w-full gap-1 overflow-hidden rounded-full">
               {breakdown.map((b) => (
                 <div key={b.bucket} style={{ width: `${b.percentage}%`, backgroundColor: b.color }} />
               ))}
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
+            <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
               {breakdown.map((b) => (
                 <div key={b.bucket}>
                   <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-muted)]">
@@ -354,6 +354,7 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
             label={`วันที่ ${day.dayNumber}`}
             amount={per(amountByDayId.get(day.id) ?? 0)}
             items={itemsByDayNumber.get(day.dayNumber) ?? []}
+            amountDivisor={perPerson ? travelerCount : 1}
             defaultOpen={day.dayNumber === 1}
             onDeleteItem={deleteLineItem}
           />
@@ -363,6 +364,7 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
             label="ไม่ระบุวันที่"
             amount={per(unassignedTotal)}
             items={unassignedItems}
+            amountDivisor={perPerson ? travelerCount : 1}
             onDeleteItem={deleteLineItem}
           />
         )}
@@ -437,12 +439,14 @@ function DayAccordionRow({
   label,
   amount,
   items,
+  amountDivisor,
   defaultOpen,
   onDeleteItem,
 }: {
   label: string;
   amount: number;
   items: TripBudgetLineItem[];
+  amountDivisor: number;
   defaultOpen?: boolean;
   onDeleteItem: (item: TripBudgetLineItem) => void;
 }) {
@@ -465,26 +469,26 @@ function DayAccordionRow({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl p-1" style={{ backgroundColor: "var(--color-surface)" }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-        <span className="text-sm font-bold">{label}</span>
+    <div className="rounded-[20px] border" style={{ borderColor: "#e5dfd0", backgroundColor: "#f7f6f0" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex min-h-[70px] w-full items-center justify-between gap-3 px-5 py-4 text-left">
+        <span className="text-base font-bold">{label}</span>
         <span className="flex items-center gap-2.5">
-          <span className="text-sm font-extrabold">{formatTHB(amount)}</span>
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white">
-            {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <span className="text-base font-extrabold">{formatTHB(amount)}</span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-md" style={{ color: "#306b50" }}>
+            {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </span>
         </span>
       </button>
       {open && (
-        <div className="rounded-xl bg-white p-4 sm:p-5">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h4 className="text-sm font-bold">รายการค่าใช้จ่าย</h4>
+        <div className="mx-4 mb-4 overflow-visible rounded-2xl bg-white">
+          <div className="flex min-h-[68px] items-center justify-between gap-2 border-b px-5" style={{ borderColor: "#e5dfd0" }}>
+            <h4 className="text-base font-bold">รายการค่าใช้จ่าย</h4>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setFilterOpen((v) => !v)}
-                className="flex items-center gap-1.5 rounded-full border bg-white py-1.5 pl-3 pr-3 text-xs font-semibold"
-                style={{ borderColor: "var(--color-border)" }}
+                className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-xs font-semibold"
+                style={{ borderColor: "#e5dfd0" }}
               >
                 <Filter size={11} className="text-[var(--color-muted)]" />
                 {categoryFilter.size === 0 ? "ทุกหมวด" : `${categoryFilter.size} หมวด`}
@@ -495,7 +499,7 @@ function DayAccordionRow({
                   {/* Same outside-click catcher as AddExpenseDialog's
                       รูปแบบการจ่าย/วันที่จ่าย dropdowns. */}
                   <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
-                  <div className="absolute right-0 top-full z-20 mt-2 w-40 overflow-hidden rounded-2xl bg-white py-1 shadow-lg">
+                  <div className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl bg-white py-2 shadow-lg">
                     <button
                       type="button"
                       onClick={() => setCategoryFilter(new Set())}
@@ -549,6 +553,7 @@ function DayAccordionRow({
                   key={item.id}
                   item={item}
                   showDivider={i > 0}
+                  amountDivisor={amountDivisor}
                   onDelete={item.source === "expense" || item.source === "activity" ? () => onDeleteItem(item) : undefined}
                 />
               ))
@@ -563,10 +568,12 @@ function DayAccordionRow({
 function ExpenseRow({
   item,
   showDivider,
+  amountDivisor,
   onDelete,
 }: {
   item: TripBudgetLineItem;
   showDivider: boolean;
+  amountDivisor: number;
   onDelete?: () => void;
 }) {
   const bucket = CATEGORY_TO_BUCKET[item.category];
@@ -574,25 +581,26 @@ function ExpenseRow({
   const Icon = BUCKET_ICON[bucket];
 
   return (
-    <div className={`flex items-center gap-3 py-3 ${showDivider ? "border-t" : ""}`} style={{ borderColor: "var(--color-border)" }}>
+    <div className={`group relative flex min-h-[76px] items-center gap-4 px-5 py-3 ${showDivider ? "border-t" : ""}`} style={{ borderColor: "#e5dfd0" }}>
       {/* "22" appended to the bucket's hex gives a light tint background
           without a second color table to keep in sync with BUCKET_COLOR. */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: `${color}22` }}>
-        {Icon ? <Icon size={16} style={{ color }} /> : <span className="text-sm font-bold" style={{ color }}>···</span>}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${color}18` }}>
+        {Icon ? <Icon size={18} style={{ color }} /> : <span className="text-sm font-bold" style={{ color }}>···</span>}
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold">{item.title}</p>
-        <p className="text-xs font-semibold" style={{ color }}>
-          {BUCKET_LABEL[bucket]}
+        <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold" style={{ color }}>
+          <span>{BUCKET_LABEL[bucket]}</span>
+          {item.paidBy && <span className="font-normal text-[var(--color-muted)]">· โดย {item.paidBy}</span>}
         </p>
       </div>
-      <span className="shrink-0 text-sm font-extrabold">{formatTHB(item.amount)}</span>
+      <span className="shrink-0 text-base font-extrabold transition-opacity group-hover:opacity-0">{formatTHB(Math.round(item.amount / amountDivisor))}</span>
       {onDelete && (
         <button
           type="button"
           onClick={onDelete}
           aria-label="ลบค่าใช้จ่าย"
-          className="shrink-0 rounded-full p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
+          className="absolute right-5 top-1/2 -translate-y-1/2 rounded-full p-2 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[#f7f6f0] focus:opacity-100 group-hover:opacity-100"
         >
           <Trash2 size={13} />
         </button>

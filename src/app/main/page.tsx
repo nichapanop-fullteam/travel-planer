@@ -1,387 +1,478 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { CalendarDays, MapPin, Users, Wallet } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Bookmark,
+  CalendarDays,
+  Heart,
+  Landmark,
+  Leaf,
+  Palmtree,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  UtensilsCrossed,
+} from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { StatusBadge } from "@/components/ui/Badge";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Spinner } from "@/components/ui/Spinner";
-import { Tabs } from "@/components/ui/Tabs";
-import { BookingBar } from "@/components/consumer/BookingBar";
-import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
-import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
-import { GuestPickerDialog } from "@/components/consumer/GuestPickerDialog";
-import { getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
-import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
-import { getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
-import { feedCategoryLabel } from "@/lib/feed-categories";
-import { formatTHB } from "@/lib/trip-utils";
-import type { Destination, FeedCategory } from "@/types";
 
-// Every cover crops to the same ratio — object-cover absorbs each source
-// photo's real (and differing) dimensions so the grid still lines up cleanly
-// row by row instead of staggering.
-const CARD_ASPECT = "aspect-[4/5]";
+// The app's home page — a social-travel-community "Discover your next
+// journey" feed of creator-made guides, restyled to match the reference
+// three-column layout (feed + trending/creators rail). All-mock data:
+// there's no backend for community guides, trending destinations, or
+// creator follows yet (see CONTRIBUTING.md for what's real vs. visual).
+type Category = "thailand" | "japan" | "nature" | "food" | "weekend";
 
-const FEED_TABS = ["สำหรับคุณ", "กำลังติดตาม", "แพลนทริป"] as const;
+type FeaturedGuide = {
+  id: string;
+  title: string;
+  duration: string;
+  description: string;
+  cover: string;
+  likes: number;
+  bookmarks: number;
+  categories: Category[];
+  author: { name: string; handle: string; avatar?: string };
+  inspiredBy?: string;
+  // English keywords for search, since some destinations/descriptions are
+  // Thai-flavored — lets the search bar also match a typed city name.
+  keywords: string;
+};
 
-const categories = ["ทั้งหมด", "แจกแพลน", "ที่เที่ยว", "คาเฟ่", "ของกิน", "ธรรมชาติ", "วัฒนธรรม"];
+const FEATURED_GUIDES: FeaturedGuide[] = [
+  {
+    id: "luang-prabang-temples",
+    title: "Luang Prabang",
+    duration: "3 days",
+    description: "Serene temples, sunrise alms, and riverside slow days.",
+    cover: "/images/wat-xieng-thong.png",
+    likes: 342,
+    bookmarks: 128,
+    categories: ["weekend"],
+    author: { name: "May", handle: "may.travels", avatar: "/images/profile-avatar.jpg" },
+    keywords: "luang prabang laos temples",
+  },
+  {
+    id: "tokyo-first-timer",
+    title: "Kyoto autumn",
+    duration: "5 days",
+    description: "Colorful leaves, historic temples, and cozy tea houses.",
+    cover: "/images/tokyo.jpg",
+    likes: 521,
+    bookmarks: 196,
+    categories: ["japan", "nature"],
+    author: { name: "Taro", handle: "taro.discovers", avatar: "/images/profile-v2.jpg" },
+    keywords: "kyoto tokyo japan autumn",
+  },
+  {
+    id: "mekong-slow-boat",
+    title: "Mekong slow boat",
+    duration: "2 days",
+    description: "Drift past jungle cliffs on a two-day riverboat crossing.",
+    cover: "/images/mekong-boat.png",
+    likes: 187,
+    bookmarks: 74,
+    categories: ["nature", "weekend"],
+    author: { name: "Fern", handle: "fern.wanderlust" },
+    keywords: "mekong river laos boat",
+  },
+  {
+    id: "night-market-eats",
+    title: "Luang Prabang night market",
+    duration: "1 day",
+    description: "A grazing route through the best stalls after sunset.",
+    cover: "/images/night-market.png",
+    likes: 298,
+    bookmarks: 112,
+    categories: ["food", "weekend"],
+    author: { name: "Vanessa", handle: "vanessa.eats" },
+    inspiredBy: "May's trip",
+    keywords: "luang prabang night market food laos",
+  },
+  {
+    id: "chengdu-panda",
+    title: "Chengdu",
+    duration: "4 days",
+    description: "Panda sanctuaries, spicy hot pot, and teahouse afternoons.",
+    cover: "/images/chengdu.jpg",
+    likes: 256,
+    bookmarks: 91,
+    categories: ["food"],
+    author: { name: "Vanessa", handle: "vanessa.eats" },
+    keywords: "chengdu china panda",
+  },
+  {
+    id: "seoul-cafe-hop",
+    title: "Seoul café crawl",
+    duration: "5 days",
+    description: "Hanok-lined cafés, night shopping, and skincare hauls.",
+    cover: "/images/plan-seoul.jpg",
+    likes: 431,
+    bookmarks: 203,
+    categories: ["food"],
+    author: { name: "Fern", handle: "fern.wanderlust" },
+    keywords: "seoul korea cafe",
+  },
+  {
+    id: "osaka-street-food",
+    title: "Osaka street food",
+    duration: "3 days",
+    description: "A eat-your-way-through itinerary for Japan's kitchen city.",
+    cover: "/images/plan-osaka.jpg",
+    likes: 389,
+    bookmarks: 145,
+    categories: ["japan", "food"],
+    author: { name: "Taro", handle: "taro.discovers" },
+    keywords: "osaka japan street food",
+  },
+  {
+    id: "beijing-heritage",
+    title: "Beijing heritage trail",
+    duration: "6 days",
+    description: "The Wall, the Forbidden City, and hutong alleyways.",
+    cover: "/images/plan-beijing.jpg",
+    likes: 214,
+    bookmarks: 88,
+    categories: [],
+    author: { name: "May", handle: "may.travels" },
+    keywords: "beijing china wall",
+  },
+  {
+    id: "london-classic",
+    title: "London in a weekend",
+    duration: "3 days",
+    description: "Museums, markets, and a proper afternoon tea.",
+    cover: "/images/plan-london.jpg",
+    likes: 302,
+    bookmarks: 119,
+    categories: ["weekend"],
+    author: { name: "Fern", handle: "fern.wanderlust" },
+    keywords: "london uk england",
+  },
+  {
+    id: "joma-cafe-crawl",
+    title: "Luang Prabang café crawl",
+    duration: "1 day",
+    description: "A local's route through the town's best coffee stops.",
+    cover: "/images/joma-cafe.png",
+    likes: 176,
+    bookmarks: 65,
+    categories: ["food", "weekend"],
+    author: { name: "May", handle: "may.travels" },
+    keywords: "luang prabang laos cafe coffee",
+  },
+  {
+    id: "luang-prabang-nature",
+    title: "Kuang Si waterfalls",
+    duration: "1 day",
+    description: "Turquoise pools, jungle hikes, and a bear rescue stop.",
+    cover: "/images/luang-prabang.jpg",
+    likes: 267,
+    bookmarks: 103,
+    categories: ["nature", "weekend"],
+    author: { name: "Taro", handle: "taro.discovers" },
+    keywords: "luang prabang laos waterfall nature",
+  },
+];
+
+const CATEGORY_FILTERS: { key: "forYou" | Category; label: string; icon: typeof Sparkles }[] = [
+  { key: "forYou", label: "For you", icon: Sparkles },
+  { key: "thailand", label: "Thailand", icon: Palmtree },
+  { key: "japan", label: "Japan", icon: Landmark },
+  { key: "nature", label: "Nature", icon: Leaf },
+  { key: "food", label: "Food", icon: UtensilsCrossed },
+  { key: "weekend", label: "Weekend", icon: CalendarDays },
+];
+
+const TRENDING_DESTINATIONS = [
+  { name: "Bali, Indonesia", posts: "12.4K", image: "/images/plan-osaka.jpg" },
+  { name: "Tokyo, Japan", posts: "9.8K", image: "/images/tokyo.jpg" },
+  { name: "Sapa, Vietnam", posts: "7.2K", image: "/images/luang-prabang.jpg" },
+  { name: "Kuala Lumpur, Malaysia", posts: "5.6K", image: "/images/chengdu.jpg" },
+  { name: "Lisbon, Portugal", posts: "4.1K", image: "/images/plan-london.jpg" },
+];
+
+const CREATORS = [
+  { name: "May", handle: "may.travels", avatar: "/images/profile-avatar.jpg" },
+  { name: "Taro", handle: "taro.discovers", avatar: "/images/profile-v2.jpg" },
+  { name: "Fern", handle: "fern.wanderlust" },
+];
 
 export default function MainPage() {
-  const [activeTab, setActiveTab] = useState<(typeof FEED_TABS)[number]>("สำหรับคุณ");
-  const [activeCategory, setActiveCategory] = useState("ทั้งหมด");
-  const [trips, setTrips] = useState<BackendTripListItem[] | null>(null);
-  const [loadError, setLoadError] = useState("");
-  // "" = unfiltered feed. Set whenever "ค้นหา" is pressed in HomeSearchBar
-  // (destination-only — Date/Guest have no server-side equivalent) so the
-  // empty/error copy below can say what was searched and offer a way back.
-  const [activeSearch, setActiveSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"forYou" | Category>("forYou");
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
-  // GET /trips — the public cross-owner feed (no login required), same
-  // source my-trips.tsx uses for "ทริปของฉัน" via its authenticated sibling.
-  // This is real trip data end to end: no mock author/like/comment fields,
-  // since the backend doesn't return any of those for a trip.
-  function loadTrips(destination: string) {
-    let cancelled = false;
-    setTrips(null);
-    setLoadError("");
-    listTrips(destination)
-      .then((items) => {
-        if (!cancelled) setTrips(items);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError("โหลดทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-      });
-    return () => {
-      cancelled = true;
-    };
+  const visibleGuides = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return FEATURED_GUIDES.filter((guide) => {
+      if (category !== "forYou" && !guide.categories.includes(category)) return false;
+      if (!q) return true;
+      return (
+        guide.title.toLowerCase().includes(q) ||
+        guide.description.toLowerCase().includes(q) ||
+        guide.keywords.includes(q) ||
+        guide.author.handle.toLowerCase().includes(q)
+      );
+    });
+  }, [query, category]);
+
+  function toggleSaved(id: string) {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
-
-  useEffect(() => loadTrips(""), []);
-
-  function handleSearch(destination: string) {
-    setActiveSearch(destination);
-    loadTrips(destination);
-  }
-
-  // "ล้างการค้นหา" needs to reset the Destination field itself, not just the
-  // feed — handleSearch("") alone leaves HomeSearchBar's own destination
-  // state (and the localStorage it prefills from) untouched, so the field
-  // would still show the old value even though the feed is back to
-  // unfiltered. Bumping this counter is HomeSearchBar's cue to clear it.
-  const [clearSignal, setClearSignal] = useState(0);
-  function handleClearSearch() {
-    setClearSignal((n) => n + 1);
-    handleSearch("");
-  }
-
-  const visibleTrips = useMemo(() => {
-    if (!trips) return trips;
-    if (activeCategory === "ทั้งหมด") return trips;
-    return trips.filter((trip) => (trip.tags ?? []).some((tag) => tag.toLowerCase().includes(activeCategory.toLowerCase())));
-  }, [trips, activeCategory]);
 
   return (
-    <AppShell active="home">
-      <PageContainer>
-        {/* The feed is intentionally narrower than PageContainer's full width
-            (same ~720px column the previous 3-column layout used) — a
-            single-column social feed reads better narrow than stretched to
-            the shared dashboard width /my-trips and /trip-detail use. */}
-        <div className="mx-auto w-full max-w-2xl">
-          <HomeSearchBar onSearch={handleSearch} clearSignal={clearSignal} />
+    <AppShell active="home" hideDesktopTopbar>
+      <PageContainer className="min-h-full bg-[#f8fbfa] !py-5 sm:!pl-10 sm:!pr-3">
+        <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
+          <div className="min-w-0 xl:col-span-2">
+            <h1 className="text-3xl font-extrabold tracking-[-0.035em] sm:text-[42px] sm:leading-[1.15]">Discover your next journey</h1>
 
-          <div className="sticky top-0 z-20 mt-4 rounded-2xl border bg-[var(--color-surface)]" style={{ borderColor: "var(--color-border)" }}>
-            <Tabs tabs={[...FEED_TABS]} active={activeTab} onChange={setActiveTab} />
-            <CategoryChips active={activeCategory} onSelect={setActiveCategory} />
-          </div>
-
-          {activeSearch && (
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-full bg-[var(--color-sel-bg)] px-4 py-2.5 text-sm">
-              <span className="truncate">
-                ผลค้นหา: <b className="font-bold text-[var(--color-brand-green)]">{activeSearch}</b>
-              </span>
+            <div className="mt-4 flex items-center gap-3 rounded-full border border-[var(--color-border)]/40 bg-white px-5 py-2.5 shadow-sm">
+              <Search size={18} className="shrink-0 text-[var(--color-muted)]" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search destinations, trips, or creators"
+                className="w-full bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
+              />
               <button
                 type="button"
-                onClick={handleClearSearch}
-                className="shrink-0 text-xs font-semibold text-[var(--color-brand-green)] underline"
+                title="ยังไม่เปิดใช้งานในเดโมนี้"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
               >
-                ล้างการค้นหา
+                <SlidersHorizontal size={16} />
               </button>
             </div>
-          )}
 
-          {loadError ? (
-            <div className="mt-4 rounded-2xl bg-[var(--color-danger-bg)] px-5 py-4 text-sm font-semibold text-[var(--color-danger)]">
-              {loadError}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {CATEGORY_FILTERS.map((filter) => {
+                const isActive = category === filter.key;
+                return (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setCategory(filter.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                      isActive
+                        ? "bg-[var(--color-primary)] text-white"
+                        : "border border-[var(--color-border)]/60 bg-white text-[var(--foreground)] hover:bg-[var(--color-surface)]"
+                    }`}
+                  >
+                    <filter.icon size={14} />
+                    {filter.label}
+                  </button>
+                );
+              })}
             </div>
-          ) : visibleTrips === null ? (
-            <div className="py-16">
-              <Spinner />
-            </div>
-          ) : visibleTrips.length === 0 ? (
-            <div className="mt-4">
-              <EmptyState
-                title={activeSearch ? `ไม่พบทริปสำหรับ "${activeSearch}"` : "ยังไม่มีทริปในหมวดนี้"}
-                description="ลองเลือกหมวดอื่น หรือกลับมาดูใหม่ภายหลัง"
-              />
-            </div>
-          ) : (
-            <MasonryFeed trips={visibleTrips} />
-          )}
+
+            {visibleGuides.length === 0 ? (
+              <p className="mt-6 rounded-2xl bg-white p-8 text-center text-sm text-[var(--color-muted)]">
+                ยังไม่มีไกด์ในหมวดนี้ ลองเลือกหมวดอื่นดูสิ
+              </p>
+            ) : (
+              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+                {visibleGuides.map((guide) => (
+                  <GuideCard
+                    key={guide.id}
+                    guide={guide}
+                    saved={savedIds.has(guide.id)}
+                    onToggleSaved={() => toggleSaved(guide.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-4 self-start">
+            <TrendingDestinationsCard />
+            <CreatorsToFollowCard />
+          </div>
         </div>
       </PageContainer>
     </AppShell>
   );
 }
 
-// Same Destination/Date/Guest search widget as the Create Trip hero (see
-// BookingBar's own doc comment) — but here "ค้นหา" filters the trip feed
-// below by destination (GET /trips?destination=) instead of jumping to
-// create-trip. Date/Guest still get remembered (and still prefill
-// create-trip via the same "last search" localStorage bucket if the
-// traveler goes on to build a trip elsewhere) but have no server-side
-// equivalent on this endpoint, so they don't affect what gets searched.
-function HomeSearchBar({
-  onSearch,
-  clearSignal,
+function GuideCard({
+  guide,
+  saved,
+  onToggleSaved,
 }: {
-  onSearch: (destination: string) => void;
-  clearSignal: number;
+  guide: FeaturedGuide;
+  saved: boolean;
+  onToggleSaved: () => void;
 }) {
-  const [destination, setDestination] = useState("");
-  const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
-  const [duration, setDuration] = useState("");
-  const [startDate, setStartDate] = useState<string | undefined>(undefined);
-  const [endDate, setEndDate] = useState<string | undefined>(undefined);
-  const [adults, setAdults] = useState(1);
-  const [children, setChildren] = useState(0);
-  const [guests, setGuests] = useState("");
-  const [destDialogOpen, setDestDialogOpen] = useState(false);
-  const [dateDialogOpen, setDateDialogOpen] = useState(false);
-  const [guestDialogOpen, setGuestDialogOpen] = useState(false);
-
-  useEffect(() => {
-    const last = getLastCreateTripSearch();
-    if (!last) return;
-    setDestination(last.destination);
-    setDestinationPlace(last.destinationPlace);
-    setDuration(last.duration);
-    setStartDate(last.startDate);
-    setEndDate(last.endDate);
-    setGuests(last.guests);
-    setAdults(last.adults);
-    setChildren(last.children);
-  }, []);
-
-  // "ล้างการค้นหา" on the parent feed bumps clearSignal — clear just the
-  // Destination field (Date/Guest have no bearing on the search, see the doc
-  // comment above, so leave them as the traveler set them). Skips the
-  // signal's initial value (0) so this doesn't wipe out the localStorage
-  // prefill effect above on first mount. Also re-persists the cleared value,
-  // so reloading the page doesn't bring the old destination right back.
-  useEffect(() => {
-    if (clearSignal === 0) return;
-    setDestination("");
-    setDestinationPlace(undefined);
-    saveLastCreateTripSearch({ destination: "", destinationPlace: undefined, duration, startDate, endDate, guests, adults, children });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearSignal]);
-
-  function handleSearch() {
-    saveLastCreateTripSearch({ destination, destinationPlace, duration, startDate, endDate, guests, adults, children });
-    onSearch(destination);
-  }
-
   return (
-    <div className="relative overflow-hidden rounded-3xl">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/images/luang-prabang-aerial.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
-      <div className="absolute inset-0 bg-black/35" />
-      <div className="relative flex flex-col items-center gap-2.5 px-4 py-5 sm:py-6">
-        <p className="text-sm font-extrabold text-white drop-shadow-sm sm:text-base">พร้อมทริปต่อไปหรือยัง?</p>
-        <BookingBar
-          compact
-          fields={[
-            {
-              icon: MapPin,
-              label: "Destination",
-              value: destination,
-              placeholder: "หลวงพระบาง, ลาว",
-              onFieldClick: () => setDestDialogOpen(true),
-              readOnly: true,
-            },
-            {
-              icon: CalendarDays,
-              label: "Date",
-              value: duration,
-              placeholder: "วันเดินทางไป - วันกลับ",
-              onFieldClick: () => setDateDialogOpen(true),
-              readOnly: true,
-            },
-            {
-              icon: Users,
-              label: "Guest",
-              value: guests,
-              placeholder: "ประเภท และจำนวนคน",
-              onFieldClick: () => setGuestDialogOpen(true),
-              readOnly: true,
-            },
-          ]}
-          onSearch={handleSearch}
-        />
+    <article className="flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: "#e1e9e5" }}>
+      <div className="relative aspect-[0.92] overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={guide.cover} alt={guide.title} className="h-full w-full object-cover" />
+
+        <button
+          type="button"
+          onClick={onToggleSaved}
+          aria-pressed={saved}
+          aria-label="บันทึกไกด์นี้"
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur-sm hover:bg-white"
+        >
+          <Bookmark
+            size={15}
+            className={saved ? "fill-[var(--color-primary)] text-[var(--color-primary)]" : "text-[var(--foreground)]"}
+          />
+        </button>
+
+        {guide.inspiredBy && (
+          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#177c5a] shadow-sm">
+            <Sparkles size={13} /> Inspired by {guide.inspiredBy}
+          </span>
+        )}
       </div>
 
-      <DestinationPickerDialog
-        isOpen={destDialogOpen}
-        onClose={() => setDestDialogOpen(false)}
-        onConfirm={(result) => {
-          setDestination(result.label);
-          setDestinationPlace(result.destination);
-          setDestDialogOpen(false);
-        }}
-      />
-      <DatePickerDialog
-        isOpen={dateDialogOpen}
-        initialStartDate={startDate}
-        initialEndDate={endDate}
-        onClose={() => setDateDialogOpen(false)}
-        onConfirm={(result) => {
-          setDuration(result.label);
-          setStartDate(result.startDate);
-          setEndDate(result.endDate);
-          setDateDialogOpen(false);
-        }}
-      />
-      <GuestPickerDialog
-        isOpen={guestDialogOpen}
-        initialAdults={adults}
-        initialChildren={children}
-        onClose={() => setGuestDialogOpen(false)}
-        onConfirm={(result) => {
-          setAdults(result.adults);
-          setChildren(result.children);
-          setGuests(result.label);
-          setGuestDialogOpen(false);
-        }}
-      />
-    </div>
-  );
-}
-
-// Lemon8's own category row is flat text, not pill buttons — bold + a short
-// underline marks the active one, everything else just sits in muted gray.
-function CategoryChips({ active, onSelect }: { active: string; onSelect: (category: string) => void }) {
-  return (
-    <div className="flex gap-4 overflow-x-auto px-3 py-2.5 [scrollbar-width:none]">
-      {categories.map((category) => (
-        <button
-          key={category}
-          onClick={() => onSelect(category)}
-          className={`relative shrink-0 pb-1 text-[13px] transition ${
-            active === category ? "font-bold text-[var(--foreground)]" : "font-medium text-[var(--color-muted)] hover:text-[var(--foreground)]"
-          }`}
-        >
-          {category}
-          {active === category && <span className="absolute inset-x-0 -bottom-0.5 h-[2.5px] rounded-full bg-[var(--foreground)]" />}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// A plain even grid — every cover shares the same aspect ratio (see
-// CARD_ASPECT), so rows line up cleanly instead of staggering.
-function MasonryFeed({ trips }: { trips: BackendTripListItem[] }) {
-  return (
-    <div className="mt-4 grid grid-cols-2 gap-4">
-      {trips.map((trip) => (
-        <LemonCard key={trip.id} trip={trip} />
-      ))}
-    </div>
-  );
-}
-
-// Lemon8's real card keeps the photo completely clean — no text or icons
-// overlaid on it — and puts everything else in the plain area below. GET
-// /trips has no author/like/comment/rating fields (those were mocked
-// before) — this shows only what the trip itself actually carries: a
-// destination subtitle, its real tags (translated via feedCategoryLabel,
-// e.g. "culture" → "วัฒนธรรม"), duration, and draft/confirmed status.
-function LemonCard({ trip }: { trip: BackendTripListItem }) {
-  const href = `/generated-plan/${trip.id}`;
-  const durationDays = trip.schedule?.durationDays;
-
-  // GET /trips doesn't return a coverImage until PUT /trips/:tripId/cover has
-  // been called (see resolveCoverImageUrl's doc comment) — a trip built from
-  // uploaded/place photos but with no cover explicitly set otherwise. Fall
-  // back to GET /trips/:tripId/media and use whichever photo it flags as the
-  // cover, only firing this second request for the trips that actually need it.
-  const [galleryCover, setGalleryCover] = useState<string | null>(null);
-  useEffect(() => {
-    if (resolveCoverImageUrl(trip)) return;
-    let cancelled = false;
-    getTripGallery(trip.id, { page: 1, limit: 12 })
-      .then((gallery) => {
-        if (cancelled) return;
-        const cover = gallery.items.find((item) => item.isCover) ?? gallery.items[0];
-        if (cover) setGalleryCover(cover.urls.large);
-      })
-      .catch(() => {
-        // No gallery yet (or the request failed) — the /images/hero-mountain.jpg
-        // placeholder below covers this silently, same as a trip with no photos at all.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trip.id]);
-
-  return (
-    <article className="overflow-hidden rounded-2xl bg-white">
-      <Link href={href} className={`block ${CARD_ASPECT} overflow-hidden rounded-2xl bg-[var(--color-surface)]`}>
-        <img
-          src={resolveCoverImageUrl(trip) ?? galleryCover ?? "/images/hero-mountain.jpg"}
-          alt={trip.title}
-          className="h-full w-full object-cover transition duration-500 hover:scale-[1.04]"
-        />
-      </Link>
-      <div className="px-1 pb-1 pt-2.5">
-        <Link href={href}>
-          <h2 className="line-clamp-2 text-[13px] font-bold leading-snug">{trip.title}</h2>
-        </Link>
-        <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-[var(--color-muted)]">
-          <MapPin size={11} className="shrink-0" />
-          {trip.destination}
-        </p>
-
-        {(trip.tags?.length ?? 0) > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {trip.tags!.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)]"
-                style={{ backgroundColor: "var(--color-surface)" }}
-              >
-                {feedCategoryLabel[tag as FeedCategory] ?? tag}
-              </span>
-            ))}
+      <div className="flex flex-col gap-2.5 p-5">
+        <h2 className="text-lg font-bold leading-snug">
+          {guide.title} <span className="font-normal text-[var(--color-muted)]">· {guide.duration}</span>
+        </h2>
+        <div className="flex items-start gap-3">
+          <p className="min-w-0 flex-1 text-sm leading-5 text-[var(--color-muted)]">{guide.description}</p>
+          <div className="flex shrink-0 items-center gap-3 pt-0.5 text-xs font-medium text-[var(--color-muted)]">
+            <span className="inline-flex items-center gap-1"><Heart size={14} />{guide.likes}</span>
+            <span className="inline-flex items-center gap-1"><Bookmark size={14} />{guide.bookmarks}</span>
           </div>
-        )}
+        </div>
 
-        {trip.totalBudget > 0 && (
-          <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-[var(--color-brand-green)]">
-            <Wallet size={11} className="shrink-0" />
-            งบ {formatTHB(trip.totalBudget)}
-          </p>
-        )}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {guide.author.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={guide.author.avatar} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+            ) : (
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                style={{ backgroundColor: "var(--color-primary)" }}
+              >
+                {guide.author.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 text-sm">
+              <p className="truncate font-bold leading-tight">{guide.author.name}</p>
+              <p className="truncate text-xs text-[var(--color-muted)]">@{guide.author.handle}</p>
+            </div>
+          </div>
 
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <span className="text-[11px] text-[var(--color-muted)]">{durationDays ? `${durationDays} วัน` : "ยังไม่ระบุวัน"}</span>
-          <StatusBadge status={trip.status} />
+          <button
+            type="button"
+            title="ยังไม่เปิดใช้งานในเดโมนี้"
+            className="shrink-0 rounded-lg px-5 py-2.5 text-sm font-semibold text-white"
+            style={{ backgroundColor: "#17895f" }}
+          >
+            Remix trip
+          </button>
         </div>
       </div>
     </article>
+  );
+}
+
+function TrendingDestinationsCard() {
+  return (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "#e1e9e5" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-base font-bold">Trending destinations</h2>
+        <button
+          type="button"
+          title="ยังไม่เปิดใช้งานในเดโมนี้"
+          className="text-sm font-semibold"
+          style={{ color: "var(--color-primary)" }}
+        >
+          See all
+        </button>
+      </div>
+      <div className="flex flex-col gap-3">
+        {TRENDING_DESTINATIONS.map((dest) => (
+          <div key={dest.name} className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={dest.image} alt="" className="h-16 w-[88px] shrink-0 rounded-xl object-cover" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold leading-tight">{dest.name}</p>
+              <p className="truncate text-xs text-[var(--color-muted)]">{dest.posts} posts</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CreatorsToFollowCard() {
+  // Visual-only follow toggle — there's no follow-a-creator endpoint yet
+  // (see CONTRIBUTING.md for what's real vs. visual).
+  const [following, setFollowing] = useState<Set<string>>(new Set());
+
+  function toggleFollow(handle: string) {
+    setFollowing((prev) => {
+      const next = new Set(prev);
+      if (next.has(handle)) next.delete(handle);
+      else next.add(handle);
+      return next;
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border bg-white p-6 shadow-sm" style={{ borderColor: "#e1e9e5" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-base font-bold">Creators to follow</h2>
+        <button
+          type="button"
+          title="ยังไม่เปิดใช้งานในเดโมนี้"
+          className="text-sm font-semibold"
+          style={{ color: "var(--color-primary)" }}
+        >
+          See all
+        </button>
+      </div>
+      <div className="flex flex-col gap-3">
+        {CREATORS.map((creator) => {
+          const isFollowing = following.has(creator.handle);
+          return (
+            <div key={creator.handle} className="flex items-center gap-3">
+              {creator.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={creator.avatar} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+                  style={{ backgroundColor: "var(--color-primary)" }}
+                >
+                  {creator.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold leading-tight">{creator.name}</p>
+                <p className="truncate text-xs text-[var(--color-muted)]">@{creator.handle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleFollow(creator.handle)}
+                aria-pressed={isFollowing}
+                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  isFollowing
+                    ? "border-[var(--color-primary)] bg-[var(--color-sel-bg)] text-[var(--color-primary)]"
+                    : "border-[var(--color-border)]/60 text-[var(--foreground)] hover:bg-[var(--color-surface)]"
+                }`}
+              >
+                {isFollowing ? "Following" : "Follow"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

@@ -21,7 +21,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const isJoined = isMyGroupTrip(trip.id);
 
   return (
-    <AppShell activeGroupId={trip.id}>
+    <AppShell>
       <div className="min-h-screen bg-white">
         <PageContainer>
           <SectionContainer>
