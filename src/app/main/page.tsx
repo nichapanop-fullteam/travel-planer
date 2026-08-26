@@ -228,12 +228,10 @@ export default function MainPage() {
 
   return (
     <AppShell active="home" hideDesktopTopbar>
-      <PageContainer className="min-h-full bg-[#f8fbfa] !py-5 sm:!pl-10 sm:!pr-3">
-        <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
-          <div className="min-w-0 xl:col-span-2">
-            <h1 className="text-3xl font-extrabold tracking-[-0.035em] sm:text-[42px] sm:leading-[1.15]">Discover your next journey</h1>
-
-            <div className="mt-4 flex items-center gap-3 rounded-full border border-[var(--color-border)]/40 bg-white px-5 py-2.5 shadow-sm">
+      <PageContainer className="main-page-container min-h-full bg-white !py-5 sm:!pl-10 sm:!pr-3">
+        <div className="main-page-layout grid grid-cols-1 gap-10 xl:grid-cols-3">
+          <div className="main-feed min-w-0 xl:col-span-2">
+            <div className="flex items-center gap-3 rounded-full border border-[var(--color-border)]/40 bg-white px-5 py-2.5 shadow-sm">
               <Search size={18} className="shrink-0 text-[var(--color-muted)]" />
               <input
                 type="text"
@@ -277,7 +275,7 @@ export default function MainPage() {
                 ยังไม่มีไกด์ในหมวดนี้ ลองเลือกหมวดอื่นดูสิ
               </p>
             ) : (
-              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="main-guide-grid mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
                 {visibleGuides.map((guide) => (
                   <GuideCard
                     key={guide.id}
