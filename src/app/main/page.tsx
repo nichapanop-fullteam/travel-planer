@@ -1,179 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  Bookmark,
-  CalendarDays,
-  Heart,
-  Landmark,
-  Leaf,
-  Palmtree,
-  Search,
-  SlidersHorizontal,
-  Sparkles,
-  UtensilsCrossed,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Landmark, Leaf, Palmtree, Search, SlidersHorizontal, Sparkles, UtensilsCrossed } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { RealTripCard } from "@/components/consumer/RealTripCard";
+import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
+import { useAuth } from "@/providers/AuthProvider";
 
 // The app's home page — a social-travel-community "Discover your next
-// journey" feed of creator-made guides, restyled to match the reference
-// three-column layout (feed + trending/creators rail). All-mock data:
-// there's no backend for community guides, trending destinations, or
-// creator follows yet (see CONTRIBUTING.md for what's real vs. visual).
+// journey" feed. The trip grid itself is real data from GET /trips (see
+// listTrips in lib/trips-api.ts); only the trending-destinations and
+// creators-to-follow rail is still mock (see CONTRIBUTING.md for what's
+// real vs. visual — there's no trending/follow backend yet).
 type Category = "thailand" | "japan" | "nature" | "food" | "weekend";
-
-type FeaturedGuide = {
-  id: string;
-  title: string;
-  duration: string;
-  description: string;
-  cover: string;
-  likes: number;
-  bookmarks: number;
-  categories: Category[];
-  author: { name: string; handle: string; avatar?: string };
-  inspiredBy?: string;
-  // English keywords for search, since some destinations/descriptions are
-  // Thai-flavored — lets the search bar also match a typed city name.
-  keywords: string;
-};
-
-const FEATURED_GUIDES: FeaturedGuide[] = [
-  {
-    id: "luang-prabang-temples",
-    title: "Luang Prabang",
-    duration: "3 days",
-    description: "Serene temples, sunrise alms, and riverside slow days.",
-    cover: "/images/wat-xieng-thong.png",
-    likes: 342,
-    bookmarks: 128,
-    categories: ["weekend"],
-    author: { name: "May", handle: "may.travels", avatar: "/images/profile-avatar.jpg" },
-    keywords: "luang prabang laos temples",
-  },
-  {
-    id: "tokyo-first-timer",
-    title: "Kyoto autumn",
-    duration: "5 days",
-    description: "Colorful leaves, historic temples, and cozy tea houses.",
-    cover: "/images/tokyo.jpg",
-    likes: 521,
-    bookmarks: 196,
-    categories: ["japan", "nature"],
-    author: { name: "Taro", handle: "taro.discovers", avatar: "/images/profile-v2.jpg" },
-    keywords: "kyoto tokyo japan autumn",
-  },
-  {
-    id: "mekong-slow-boat",
-    title: "Mekong slow boat",
-    duration: "2 days",
-    description: "Drift past jungle cliffs on a two-day riverboat crossing.",
-    cover: "/images/mekong-boat.png",
-    likes: 187,
-    bookmarks: 74,
-    categories: ["nature", "weekend"],
-    author: { name: "Fern", handle: "fern.wanderlust" },
-    keywords: "mekong river laos boat",
-  },
-  {
-    id: "night-market-eats",
-    title: "Luang Prabang night market",
-    duration: "1 day",
-    description: "A grazing route through the best stalls after sunset.",
-    cover: "/images/night-market.png",
-    likes: 298,
-    bookmarks: 112,
-    categories: ["food", "weekend"],
-    author: { name: "Vanessa", handle: "vanessa.eats" },
-    inspiredBy: "May's trip",
-    keywords: "luang prabang night market food laos",
-  },
-  {
-    id: "chengdu-panda",
-    title: "Chengdu",
-    duration: "4 days",
-    description: "Panda sanctuaries, spicy hot pot, and teahouse afternoons.",
-    cover: "/images/chengdu.jpg",
-    likes: 256,
-    bookmarks: 91,
-    categories: ["food"],
-    author: { name: "Vanessa", handle: "vanessa.eats" },
-    keywords: "chengdu china panda",
-  },
-  {
-    id: "seoul-cafe-hop",
-    title: "Seoul café crawl",
-    duration: "5 days",
-    description: "Hanok-lined cafés, night shopping, and skincare hauls.",
-    cover: "/images/plan-seoul.jpg",
-    likes: 431,
-    bookmarks: 203,
-    categories: ["food"],
-    author: { name: "Fern", handle: "fern.wanderlust" },
-    keywords: "seoul korea cafe",
-  },
-  {
-    id: "osaka-street-food",
-    title: "Osaka street food",
-    duration: "3 days",
-    description: "A eat-your-way-through itinerary for Japan's kitchen city.",
-    cover: "/images/plan-osaka.jpg",
-    likes: 389,
-    bookmarks: 145,
-    categories: ["japan", "food"],
-    author: { name: "Taro", handle: "taro.discovers" },
-    keywords: "osaka japan street food",
-  },
-  {
-    id: "beijing-heritage",
-    title: "Beijing heritage trail",
-    duration: "6 days",
-    description: "The Wall, the Forbidden City, and hutong alleyways.",
-    cover: "/images/plan-beijing.jpg",
-    likes: 214,
-    bookmarks: 88,
-    categories: [],
-    author: { name: "May", handle: "may.travels" },
-    keywords: "beijing china wall",
-  },
-  {
-    id: "london-classic",
-    title: "London in a weekend",
-    duration: "3 days",
-    description: "Museums, markets, and a proper afternoon tea.",
-    cover: "/images/plan-london.jpg",
-    likes: 302,
-    bookmarks: 119,
-    categories: ["weekend"],
-    author: { name: "Fern", handle: "fern.wanderlust" },
-    keywords: "london uk england",
-  },
-  {
-    id: "joma-cafe-crawl",
-    title: "Luang Prabang café crawl",
-    duration: "1 day",
-    description: "A local's route through the town's best coffee stops.",
-    cover: "/images/joma-cafe.png",
-    likes: 176,
-    bookmarks: 65,
-    categories: ["food", "weekend"],
-    author: { name: "May", handle: "may.travels" },
-    keywords: "luang prabang laos cafe coffee",
-  },
-  {
-    id: "luang-prabang-nature",
-    title: "Kuang Si waterfalls",
-    duration: "1 day",
-    description: "Turquoise pools, jungle hikes, and a bear rescue stop.",
-    cover: "/images/luang-prabang.jpg",
-    likes: 267,
-    bookmarks: 103,
-    categories: ["nature", "weekend"],
-    author: { name: "Taro", handle: "taro.discovers" },
-    keywords: "luang prabang laos waterfall nature",
-  },
-];
 
 const CATEGORY_FILTERS: { key: "forYou" | Category; label: string; icon: typeof Sparkles }[] = [
   { key: "forYou", label: "For you", icon: Sparkles },
@@ -199,41 +39,75 @@ const CREATORS = [
 ];
 
 export default function MainPage() {
+  const { backendUser } = useAuth();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
-  const visibleGuides = useMemo(() => {
+  // Real public trips from GET /trips (see listTrips's doc comment) —
+  // undefined while loading, [] once loaded with nothing to show (backend
+  // unreachable or no public trips yet).
+  const [trips, setTrips] = useState<BackendTripListItem[] | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    listTrips()
+      .then((loaded) => {
+        if (!cancelled) setTrips(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setTrips([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The public GET /trips feed has no ownerId to check against, so figure
+  // out which of the feed's trips are the signed-in user's own via a
+  // separate GET /trips/mine (same real source /my-trips and Sidebar's old
+  // trip list used) — saving your own trip makes no sense, so its card
+  // hides the bookmark toggle entirely instead of just disabling it.
+  const [myTripIds, setMyTripIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!backendUser) {
+      setMyTripIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    getMyTrips()
+      .then((myTrips) => {
+        if (!cancelled) setMyTripIds(new Set(myTrips.map((t) => t.id)));
+      })
+      .catch(() => {
+        if (!cancelled) setMyTripIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUser]);
+
+  const visibleTrips = useMemo(() => {
+    if (!trips) return undefined;
     const q = query.trim().toLowerCase();
-    return FEATURED_GUIDES.filter((guide) => {
-      if (category !== "forYou" && !guide.categories.includes(category)) return false;
+    return trips.filter((trip) => {
+      const tags = (trip.tags ?? []).map((t) => t.toLowerCase());
+      if (category !== "forYou" && !tags.includes(category)) return false;
       if (!q) return true;
       return (
-        guide.title.toLowerCase().includes(q) ||
-        guide.description.toLowerCase().includes(q) ||
-        guide.keywords.includes(q) ||
-        guide.author.handle.toLowerCase().includes(q)
+        trip.title.toLowerCase().includes(q) ||
+        trip.destination.toLowerCase().includes(q) ||
+        tags.some((t) => t.includes(q))
       );
     });
-  }, [query, category]);
-
-  function toggleSaved(id: string) {
-    setSavedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  }, [trips, query, category]);
 
   return (
     <AppShell active="home" hideDesktopTopbar>
-      <PageContainer className="min-h-full bg-[#f8fbfa] !py-5 sm:!pl-10 sm:!pr-3">
-        <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
-          <div className="min-w-0 xl:col-span-2">
-            <h1 className="text-3xl font-extrabold tracking-[-0.035em] sm:text-[42px] sm:leading-[1.15]">Discover your next journey</h1>
-
-            <div className="mt-4 flex items-center gap-3 rounded-full border border-[var(--color-border)]/40 bg-white px-5 py-2.5 shadow-sm">
+      <PageContainer className="main-page-container min-h-full bg-white !py-5 sm:!pl-10 sm:!pr-3">
+        <div className="main-page-layout grid grid-cols-1 gap-10 xl:grid-cols-3">
+          <div className="main-feed min-w-0 xl:col-span-2">
+            <div className="flex items-center gap-3 rounded-full border border-[var(--color-border)]/40 bg-white px-5 py-2.5 shadow-sm">
               <Search size={18} className="shrink-0 text-[var(--color-muted)]" />
               <input
                 type="text"
@@ -272,19 +146,18 @@ export default function MainPage() {
               })}
             </div>
 
-            {visibleGuides.length === 0 ? (
+            {visibleTrips === undefined ? (
               <p className="mt-6 rounded-2xl bg-white p-8 text-center text-sm text-[var(--color-muted)]">
-                ยังไม่มีไกด์ในหมวดนี้ ลองเลือกหมวดอื่นดูสิ
+                กำลังโหลดทริป...
+              </p>
+            ) : visibleTrips.length === 0 ? (
+              <p className="mt-6 rounded-2xl bg-white p-8 text-center text-sm text-[var(--color-muted)]">
+                ยังไม่มีทริปในหมวดนี้ ลองเลือกหมวดอื่นดูสิ
               </p>
             ) : (
-              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
-                {visibleGuides.map((guide) => (
-                  <GuideCard
-                    key={guide.id}
-                    guide={guide}
-                    saved={savedIds.has(guide.id)}
-                    onToggleSaved={() => toggleSaved(guide.id)}
-                  />
+              <div className="main-guide-grid mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+                {visibleTrips.map((trip) => (
+                  <RealTripCard key={trip.id} trip={trip} isOwn={myTripIds.has(trip.id)} />
                 ))}
               </div>
             )}
@@ -297,86 +170,6 @@ export default function MainPage() {
         </div>
       </PageContainer>
     </AppShell>
-  );
-}
-
-function GuideCard({
-  guide,
-  saved,
-  onToggleSaved,
-}: {
-  guide: FeaturedGuide;
-  saved: boolean;
-  onToggleSaved: () => void;
-}) {
-  return (
-    <article className="flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: "#e1e9e5" }}>
-      <div className="relative aspect-[0.92] overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={guide.cover} alt={guide.title} className="h-full w-full object-cover" />
-
-        <button
-          type="button"
-          onClick={onToggleSaved}
-          aria-pressed={saved}
-          aria-label="บันทึกไกด์นี้"
-          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur-sm hover:bg-white"
-        >
-          <Bookmark
-            size={15}
-            className={saved ? "fill-[var(--color-primary)] text-[var(--color-primary)]" : "text-[var(--foreground)]"}
-          />
-        </button>
-
-        {guide.inspiredBy && (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#177c5a] shadow-sm">
-            <Sparkles size={13} /> Inspired by {guide.inspiredBy}
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2.5 p-5">
-        <h2 className="text-lg font-bold leading-snug">
-          {guide.title} <span className="font-normal text-[var(--color-muted)]">· {guide.duration}</span>
-        </h2>
-        <div className="flex items-start gap-3">
-          <p className="min-w-0 flex-1 text-sm leading-5 text-[var(--color-muted)]">{guide.description}</p>
-          <div className="flex shrink-0 items-center gap-3 pt-0.5 text-xs font-medium text-[var(--color-muted)]">
-            <span className="inline-flex items-center gap-1"><Heart size={14} />{guide.likes}</span>
-            <span className="inline-flex items-center gap-1"><Bookmark size={14} />{guide.bookmarks}</span>
-          </div>
-        </div>
-
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            {guide.author.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={guide.author.avatar} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-            ) : (
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                style={{ backgroundColor: "var(--color-primary)" }}
-              >
-                {guide.author.name.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 text-sm">
-              <p className="truncate font-bold leading-tight">{guide.author.name}</p>
-              <p className="truncate text-xs text-[var(--color-muted)]">@{guide.author.handle}</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            title="ยังไม่เปิดใช้งานในเดโมนี้"
-            className="shrink-0 rounded-lg px-5 py-2.5 text-sm font-semibold text-white"
-            style={{ backgroundColor: "#17895f" }}
-          >
-            Remix trip
-          </button>
-        </div>
-      </div>
-    </article>
   );
 }
 
