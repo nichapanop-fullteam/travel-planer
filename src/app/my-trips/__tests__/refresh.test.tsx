@@ -62,7 +62,7 @@ describe("MyTripsPage refresh", () => {
 
     // Simulate the exact side effect useRemixTrip's success path triggers —
     // saveGeneratedTrip fires this same event.
-    window.dispatchEvent(new Event("pluno:generated-trips-changed"));
+    window.dispatchEvent(new Event("punguide:generated-trips-changed"));
 
     await waitFor(() => expect(getMyTripsMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("ทริปหลวงพระบางของฉัน")).toBeInTheDocument();
@@ -74,11 +74,11 @@ describe("MyTripsPage refresh", () => {
     const removeSpy = vi.spyOn(window, "removeEventListener");
 
     const { unmount } = render(<MyTripsPage />);
-    const listenerCallsBefore = addSpy.mock.calls.filter(([type]) => type === "pluno:generated-trips-changed").length;
+    const listenerCallsBefore = addSpy.mock.calls.filter(([type]) => type === "punguide:generated-trips-changed").length;
     expect(listenerCallsBefore).toBe(1);
 
     unmount();
-    const removedCalls = removeSpy.mock.calls.filter(([type]) => type === "pluno:generated-trips-changed").length;
+    const removedCalls = removeSpy.mock.calls.filter(([type]) => type === "punguide:generated-trips-changed").length;
     expect(removedCalls).toBe(1);
 
     unsubscribeSpy.mockClear();

@@ -7,8 +7,9 @@ import {
   PACE_TO_INTENSITY,
   STYLE_TAG_TO_ENUM,
 } from "./generate-plan-mapping";
+import { formatTHB } from "./trip-utils";
 
-const STORAGE_KEY = "pluno.generatedTrips";
+const STORAGE_KEY = "punguide.generatedTrips";
 
 // No backend yet — generated plans are persisted client-side only, same
 // pattern as lib/trip-drafts.ts.
@@ -61,7 +62,7 @@ function stripHeavyImages(trips: GeneratedTrip[]): GeneratedTrip[] {
 // load, so without this it goes stale the moment something elsewhere
 // creates/updates/deletes a trip in the same tab (storage events don't fire
 // for writes made by the tab that made them).
-const TRIPS_CHANGED_EVENT = "pluno:generated-trips-changed";
+const TRIPS_CHANGED_EVENT = "punguide:generated-trips-changed";
 
 function notifyTripsChanged(): void {
   if (typeof window === "undefined") return;
@@ -191,13 +192,13 @@ function luangPrabangDays(): Day[] {
       dayNumber: 1,
       date: "2026-11-20",
       activities: [
-        { id: "ga1", time: "14:00", title: "เช็คอินโรงแรม", category: "hotel", location: { name: "Xieng Thong Retreat Hotel", rating: 5.0, imageUrl: "/images/luang-prabang.jpg" }, cost: 0, travelNote: "จากสนามบิน ~15 นาที" },
-        { id: "ga2", time: "15:00", title: "วัดเชียงทอง (Wat Xieng Thong)", category: "sightseeing", location: { name: "Wat Xieng Thong", rating: 4.8, imageUrl: "/images/wat-xieng-thong.png" }, cost: 100, travelNote: "เดิน ~8 นาที", icon: "anchor" },
-        { id: "ga3", time: "16:30", title: "ปั่นจักรยานเลียบเมืองเก่า", category: "activity", location: { name: "Old Town" }, cost: 100, travelNote: "อยู่ย่านเดียวกัน", icon: "bike" },
-        { id: "ga4", time: "17:30", title: "ขึ้นภูสี (Mount Phousi) ชมพระอาทิตย์ตก", category: "sightseeing", location: { name: "Mount Phousi" }, cost: 100, travelNote: "เดิน ~10 นาที", icon: "mountain" },
-        { id: "ga5", time: "19:00", title: "ตลาดกลางคืน (Night Market)", category: "food", location: { name: "Luang Prabang Night Market", rating: 4.6, imageUrl: "/images/night-market.png" }, cost: 250, travelNote: "เดิน ~5 นาที", icon: "ticket" },
-        { id: "ga6", time: "21:30", title: "บาร์ค็อกเทล Icon Klub", category: "food", location: { name: "Icon Klub" }, cost: 900, travelNote: "เดิน ~6 นาที", icon: "beer" },
-        { id: "ga7", time: "00:00", title: "โบว์ลิ่งหลวงพระบาง", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, cost: 400, travelNote: "ตุ๊กตุ๊ก ~10 นาที", icon: "pulse" },
+        { id: "ga1", time: "14:00", title: "เช็คอินโรงแรม", category: "hotel", location: { name: "Xieng Thong Retreat Hotel", rating: 5.0, imageUrl: "/images/luang-prabang.jpg" }, cost: 0, travelNote: "จากสนามบิน ~15 นาที", travelFromPrevious: { type: "private_transfer", durationMin: 15, distanceKm: 4.5 } },
+        { id: "ga2", time: "15:00", title: "วัดเชียงทอง (Wat Xieng Thong)", category: "sightseeing", location: { name: "Wat Xieng Thong", rating: 4.8, imageUrl: "/images/wat-xieng-thong.png" }, cost: 100, travelNote: "เดิน ~8 นาที", icon: "anchor", travelFromPrevious: { type: "walk", durationMin: 8, distanceKm: 0.6 } },
+        { id: "ga3", time: "16:30", title: "ปั่นจักรยานเลียบเมืองเก่า", category: "activity", location: { name: "Old Town" }, cost: 100, travelNote: "อยู่ย่านเดียวกัน", icon: "bike", travelFromPrevious: { type: "walk", durationMin: 3, distanceKm: 0.2 } },
+        { id: "ga4", time: "17:30", title: "ขึ้นภูสี (Mount Phousi) ชมพระอาทิตย์ตก", category: "sightseeing", location: { name: "Mount Phousi" }, cost: 100, travelNote: "เดิน ~10 นาที", icon: "mountain", travelFromPrevious: { type: "walk", durationMin: 10, distanceKm: 0.7 } },
+        { id: "ga5", time: "19:00", title: "ตลาดกลางคืน (Night Market)", category: "food", location: { name: "Luang Prabang Night Market", rating: 4.6, imageUrl: "/images/night-market.png" }, cost: 250, travelNote: "เดิน ~5 นาที", icon: "ticket", travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.4 } },
+        { id: "ga6", time: "21:30", title: "บาร์ค็อกเทล Icon Klub", category: "food", location: { name: "Icon Klub" }, cost: 900, travelNote: "เดิน ~6 นาที", icon: "beer", travelFromPrevious: { type: "walk", durationMin: 6, distanceKm: 0.4 } },
+        { id: "ga7", time: "00:00", title: "โบว์ลิ่งหลวงพระบาง", category: "activity", location: { name: "Luang Prabang Bowling Alley" }, cost: 400, travelNote: "ตุ๊กตุ๊ก ~10 นาที", icon: "pulse", travelFromPrevious: { type: "tuk_tuk", durationMin: 10, distanceKm: 3.0 } },
       ],
     },
     {
@@ -205,10 +206,10 @@ function luangPrabangDays(): Day[] {
       dayNumber: 2,
       date: "2026-11-21",
       activities: [
-        { id: "ga8", time: "08:00", title: "น้ำตกกวางสี", category: "activity", location: { name: "Kuang Si Falls" }, cost: 900, travelNote: "จากโรงแรม ~15 นาที" },
-        { id: "ga9", time: "12:00", title: "สปาสมุนไพรลาว", category: "activity", location: { name: "Luang Prabang" }, cost: 550, travelNote: "เดิน ~10 นาที" },
-        { id: "ga10", time: "17:00", title: "ล่องเรือแม่น้ำโขงยามเย็น", category: "food", location: { name: "Mekong River", rating: 4.7, imageUrl: "/images/mekong-boat.png" }, cost: 1300, travelNote: "เดิน ~10 นาที" },
-        { id: "ga11", time: "20:00", title: "Lao Lao Garden", category: "food", location: { name: "Lao Lao Garden" }, cost: 450, travelNote: "เดิน ~10 นาที" },
+        { id: "ga8", time: "08:00", title: "น้ำตกกวางสี", category: "activity", location: { name: "Kuang Si Falls" }, cost: 900, travelNote: "จากโรงแรม ~15 นาที", travelFromPrevious: { type: "private_transfer", durationMin: 15, distanceKm: 8.0 } },
+        { id: "ga9", time: "12:00", title: "สปาสมุนไพรลาว", category: "activity", location: { name: "Luang Prabang Traditional Herbal Sauna" }, cost: 550, travelNote: "เดิน ~10 นาที", travelFromPrevious: { type: "walk", durationMin: 10, distanceKm: 0.7 } },
+        { id: "ga10", time: "17:00", title: "ล่องเรือแม่น้ำโขงยามเย็น", category: "food", location: { name: "Mekong River", rating: 4.7, imageUrl: "/images/mekong-boat.png" }, cost: 1300, travelNote: "เดิน ~10 นาที", travelFromPrevious: { type: "walk", durationMin: 10, distanceKm: 0.7 } },
+        { id: "ga11", time: "20:00", title: "Lao Lao Garden", category: "food", location: { name: "Lao Lao Garden" }, cost: 450, travelNote: "เดิน ~10 นาที", travelFromPrevious: { type: "walk", durationMin: 10, distanceKm: 0.7 } },
       ],
     },
     {
@@ -216,9 +217,9 @@ function luangPrabangDays(): Day[] {
       dayNumber: 3,
       date: "2026-11-22",
       activities: [
-        { id: "ga12", time: "08:00", title: "เช็คเอาท์โรงแรม", category: "hotel", location: { name: "Old Town, Luang Prabang" }, cost: 0 },
-        { id: "ga13", time: "09:00", title: "คาเฟ่ริมโขง มื้อเช้า", category: "food", location: { name: "Luang Prabang" }, cost: 200, travelNote: "เดิน ~5 นาที" },
-        { id: "ga14", time: "11:00", title: "เดินทางสู่สนามบิน", category: "transport", location: { name: "Luang Prabang Airport" }, cost: 0, travelNote: "รถส่วนตัว ~20 นาที" },
+        { id: "ga12", time: "08:00", title: "เช็คเอาท์โรงแรม", category: "hotel", location: { name: "Old Town" }, cost: 0 },
+        { id: "ga13", time: "09:00", title: "คาเฟ่ริมโขง มื้อเช้า", category: "food", location: { name: "Mekong Riverside Café" }, cost: 200, travelNote: "เดิน ~5 นาที", travelFromPrevious: { type: "walk", durationMin: 5, distanceKm: 0.4 } },
+        { id: "ga14", time: "11:00", title: "เดินทางสู่สนามบิน", category: "transport", location: { name: "Luang Prabang Airport" }, cost: 0, travelNote: "รถส่วนตัว ~20 นาที", travelFromPrevious: { type: "private_transfer", durationMin: 20, distanceKm: 4.5 } },
       ],
     },
   ];
@@ -407,6 +408,14 @@ export function buildGeneratedTripFromBackendTrip(
 
   const pace = brief?.intensity ? INTENSITY_TO_PACE[brief.intensity as Intensity] : undefined;
   const budgetKey = trip.budgetTier ? TIER_TO_BUDGET_KEY[trip.budgetTier] : undefined;
+  // budgetLimit (the numeric cap set via EditTripDialog's "งบประมาณ" field)
+  // wins over the preset budgetTier — it's the more specific, more recently
+  // editable value; a tier is just what create-trip's wizard started from.
+  const budgetLabel = trip.budgetLimit
+    ? `${formatTHB(trip.budgetLimit)} / วัน`
+    : budgetKey
+      ? (BUDGET_PRESET_LABEL[budgetKey] ?? budgetKey)
+      : "ยังไม่ระบุ";
 
   const conditions = [
     ...(brief?.constraints ?? []).map((c) => CONSTRAINT_TO_CONDITION[c] ?? c),
@@ -428,7 +437,8 @@ export function buildGeneratedTripFromBackendTrip(
     durationLabel: `${durationDays} วัน ${nights} คืน`,
     paceLabel: pace ? `${pace} ${PACE_DESCRIPTION[pace] ?? ""}`.trim() : "ยังไม่ระบุ",
     pace: brief?.intensity as Intensity | undefined,
-    budgetLabel: budgetKey ? BUDGET_PRESET_LABEL[budgetKey] ?? budgetKey : "ยังไม่ระบุ",
+    budgetLabel,
+    budgetGoal: trip.budgetLimit,
     conditionsLabel: conditions.length ? conditions.join(", ") : "ไม่มีเงื่อนไขพิเศษ",
     styles,
     status: trip.status === "confirmed" ? "confirmed" : "generated",

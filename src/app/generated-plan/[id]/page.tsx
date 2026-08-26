@@ -1589,6 +1589,7 @@ function OverviewTab({
         trip={trip}
         canEdit={canEdit}
         onAddActivityDirect={onAddActivityDirect}
+        onRemoveActivity={onDeleteActivity}
         onSaveAccommodation={onSaveAccommodation}
         onAddDay={onAddDay}
         onManualEditAccommodation={onEditAccommodation}
@@ -2841,6 +2842,7 @@ function EditTripDialog({
       pace,
       paceLabel,
       budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / วัน` : "ยังไม่ระบุ",
+      budgetGoal: budgetAmount ? Number(budgetAmount) : undefined,
       conditionsLabel: conditionsText.trim() || "ไม่มีเงื่อนไขพิเศษ",
     });
     onClose();

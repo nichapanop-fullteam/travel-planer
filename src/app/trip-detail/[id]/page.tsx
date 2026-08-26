@@ -4,10 +4,7 @@ import { isMyGroupTrip } from "@/lib/groups";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { SectionContainer } from "@/components/layout/SectionContainer";
-import { TripDetailHeader } from "@/components/consumer/TripDetailHeader";
-import { TripDetailTabs } from "@/components/consumer/TripDetailTabs";
-import { GroupChatPanel } from "@/components/consumer/GroupChatPanel";
-import { TripInfoPanel } from "@/components/consumer/TripInfoPanel";
+import { TripDetailView } from "@/components/consumer/TripDetailView";
 
 // Group trip detail — map-first layout adapted from the group-planning design
 // reference (day pager + map on top, group chat and trip info on the side).
@@ -25,15 +22,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       <div className="min-h-screen bg-white">
         <PageContainer>
           <SectionContainer>
-            <TripDetailHeader trip={trip} isJoined={isJoined} />
-
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
-              <TripDetailTabs trip={trip} />
-              <div className="flex flex-col gap-5">
-                {isJoined && <GroupChatPanel members={trip.members} />}
-                <TripInfoPanel trip={trip} isJoined={isJoined} />
-              </div>
-            </div>
+            <TripDetailView trip={trip} isJoined={isJoined} />
           </SectionContainer>
         </PageContainer>
       </div>

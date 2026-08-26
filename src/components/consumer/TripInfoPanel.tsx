@@ -3,7 +3,15 @@ import { BadgeCheck, GitFork } from "lucide-react";
 import type { FeedTrip } from "@/types";
 import { getTripDateRange, getTripTotalCost, formatTHB } from "@/lib/trip-utils";
 
-export function TripInfoPanel({ trip, isJoined }: { trip: FeedTrip; isJoined: boolean }) {
+export function TripInfoPanel({
+  trip,
+  isJoined,
+  onEditTrip,
+}: {
+  trip: FeedTrip;
+  isJoined: boolean;
+  onEditTrip?: () => void;
+}) {
   return (
     <div className="rounded-3xl border border-[var(--color-border)]/40 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -51,7 +59,11 @@ export function TripInfoPanel({ trip, isJoined }: { trip: FeedTrip; isJoined: bo
       </div>
 
       {isJoined ? (
-        <button className="mt-4 w-full rounded-full border border-[var(--color-border)]/60 py-2 text-xs font-semibold text-[var(--color-muted)]">
+        <button
+          type="button"
+          onClick={onEditTrip}
+          className="mt-4 w-full rounded-full border border-[var(--color-border)]/60 py-2 text-xs font-semibold text-[var(--color-muted)]"
+        >
           Edit Trip Info
         </button>
       ) : (

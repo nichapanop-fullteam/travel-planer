@@ -2,7 +2,7 @@
 // the redirect to /login and back — sessionStorage survives that
 // navigation but clears itself once the tab closes, unlike localStorage
 // which would linger indefinitely if the visitor never logs back in.
-const KEY = "pluno.pendingRemixIntent";
+const KEY = "punguide.pendingRemixIntent";
 
 export function setPendingRemixIntent(sourceTripId: string): void {
   if (typeof window === "undefined") return;

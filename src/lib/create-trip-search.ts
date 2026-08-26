@@ -1,6 +1,6 @@
 import type { Destination } from "@/types";
 
-const STORAGE_KEY = "pluno.createTripSearch";
+const STORAGE_KEY = "punguide.createTripSearch";
 
 // The last Destination/Date/Guest search entered on Create Trip — persisted
 // client-side so reopening the page (or coming back later) prefills it

@@ -1,6 +1,6 @@
 import type { TripDraft } from "@/types";
 
-const STORAGE_KEY = "pluno.tripDrafts";
+const STORAGE_KEY = "punguide.tripDrafts";
 
 // No backend yet — Create Trip (step 1) drafts are persisted client-side only.
 export function getTripDrafts(): TripDraft[] {

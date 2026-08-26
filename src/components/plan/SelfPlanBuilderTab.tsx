@@ -86,6 +86,7 @@ export function PlaceDiscoveryPanel({
   trip,
   canEdit,
   onAddActivityDirect,
+  onRemoveActivity,
   onSaveAccommodation,
   onAddDay,
   onManualEditAccommodation,
@@ -93,6 +94,7 @@ export function PlaceDiscoveryPanel({
   trip: GeneratedTrip;
   canEdit: boolean;
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
+  onRemoveActivity: (dayId: string, activityId: string) => void;
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onAddDay: () => void;
   onManualEditAccommodation: () => void;
@@ -101,7 +103,16 @@ export function PlaceDiscoveryPanel({
     ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
     : DEFAULT_RECOMMENDATION_CENTER;
 
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  // Which day each confirmed place's activity landed on — so "ล้างที่เลือก"
+  // can undo the actual itinerary insertion, not just the staging-list entry.
+  // Only the dayId is kept (not the activity's own id): a newly-added
+  // activity gets synced to the backend and has its local id swapped for a
+  // server-issued one shortly after (see replaceActivityId in page.tsx), so
+  // an id captured here would go stale — the activity is instead re-found by
+  // its stable location.googlePlaceId at removal time, straight off the
+  // current `trip` prop.
+  const [addedPlaces, setAddedPlaces] = useState<Map<string, { dayId: string }>>(new Map());
+  const addedIds = useMemo(() => new Set(addedPlaces.keys()), [addedPlaces]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Same merged attractions+restaurants+hotels list the carousel below
   // slices to 5 of — fetched once (fetchSectionsForCenter caches by
@@ -133,7 +144,25 @@ export function PlaceDiscoveryPanel({
     });
   }
 
+  // "ล้างที่เลือก" — fully resets the checklist: unstages every place shown
+  // here, and for any that were already confirmed onto a day, removes that
+  // activity from the itinerary too (not just the staging-list entry), so
+  // the card actually disappears instead of sitting there highlighted with
+  // nothing left to clear.
   function clearChecked() {
+    stagedPlaces.forEach((p) => {
+      const added = addedPlaces.get(p.id);
+      if (!added) return;
+      const day = trip.days.find((d) => d.id === added.dayId);
+      const activity = day?.activities.find((a) => a.location?.googlePlaceId === p.id);
+      if (activity) onRemoveActivity(added.dayId, activity.id);
+    });
+    setAddedPlaces((prev) => {
+      const next = new Map(prev);
+      stagedPlaces.forEach((p) => next.delete(p.id));
+      return next;
+    });
+    setStagedPlaces([]);
     setCheckedIds(new Set());
   }
 
@@ -147,14 +176,20 @@ export function PlaceDiscoveryPanel({
   // everything else becomes a plain activity on the chosen day.
   function handleConfirmAdd(day: Day, chosenPlaces: EnrichedPlace[]) {
     chosenPlaces.forEach((place, i) => {
+      const activity =
+        place.category === "hotel"
+          ? toActivity(place, day, `เช็คอิน ${place.name}`, i)
+          : toActivity(place, day, undefined, i);
       if (place.category === "hotel") {
         onSaveAccommodation({ name: place.name, imageUrl: place.imageUrl, amenities: [], description: place.priceLabel });
-        onAddActivityDirect(day.id, toActivity(place, day, `เช็คอิน ${place.name}`, i));
-      } else {
-        onAddActivityDirect(day.id, toActivity(place, day, undefined, i));
       }
+      onAddActivityDirect(day.id, activity);
     });
-    setAddedIds((prev) => new Set([...prev, ...chosenPlaces.map((p) => p.id)]));
+    setAddedPlaces((prev) => {
+      const next = new Map(prev);
+      chosenPlaces.forEach((place) => next.set(place.id, { dayId: day.id }));
+      return next;
+    });
     setCheckedIds(new Set());
     setDayPickerRequest(null);
   }
@@ -597,7 +632,7 @@ function AddPlacesAccordion({
           </button>
         ) : (
           <Link
-            href={`/discovery?destination=${encodeURIComponent(destinationName)}`}
+            href={`/discovery?q=${encodeURIComponent(destinationName)}`}
             className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
             style={{ borderColor: "var(--color-border)" }}
           >

@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, MapPin, Sparkles, SlidersHorizontal, Hand } from
 import { RecommendDestinationCard } from "@/components/consumer/RecommendDestinationCard";
 import { CreatorPlanCard } from "@/components/consumer/CreatorPlanCard";
 import { PlaceCard } from "@/components/consumer/PlaceCard";
-import { findDestinationGuide, type DestinationGuide } from "@/lib/discovery-content";
+import { destinationGuides, findDestinationGuide, type DestinationGuide } from "@/lib/discovery-content";
 
 export default function DiscoveryPage() {
   return (
@@ -36,7 +36,7 @@ function DiscoveryResults() {
         <div className="relative flex max-w-md flex-col items-center gap-4 rounded-3xl bg-white/90 p-8 shadow-lg backdrop-blur-sm">
           <p className="text-lg font-bold">ยังไม่มีข้อมูลสำหรับ &ldquo;{query}&rdquo;</p>
           <p className="text-sm text-[var(--color-muted)]">
-            ตอนนี้ระบบรองรับตัวอย่างการค้นหาแค่ &ldquo;หลวงพระบาง, ลาว&rdquo;
+            ตอนนี้ระบบรองรับตัวอย่างการค้นหา: {destinationGuides.map((g) => g.name).join(" · ")}
           </p>
           <Link
             href="/main"

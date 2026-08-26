@@ -1,7 +1,7 @@
 import type { TripPlace } from "@/types";
 
 function storageKey(tripSlug: string): string {
-  return `pluno.tripPlaces.${tripSlug}`;
+  return `punguide.tripPlaces.${tripSlug}`;
 }
 
 // No backend yet — places picked in the "สร้างด้วยตัวเอง" flow are persisted
