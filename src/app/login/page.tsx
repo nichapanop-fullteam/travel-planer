@@ -16,9 +16,8 @@ function safeRedirectTarget(raw: string | null): string {
 }
 
 // Static prerendering of this page requires useSearchParams (used here for
-// ?redirect=, and inside GoogleLoginButton for the same reason) to sit
-// under a Suspense boundary — otherwise Next bails out the whole page from
-// static generation at build time.
+// ?redirect=) to sit under a Suspense boundary — otherwise Next bails out
+// the whole page from static generation at build time.
 export default function LoginPage() {
   return (
     <Suspense fallback={null}>
@@ -135,7 +134,7 @@ function LoginForm() {
         <div className="h-px flex-1" style={{ backgroundColor: "var(--color-border)" }} />
       </div>
 
-      <GoogleLoginButton />
+      <GoogleLoginButton redirectTo={safeRedirectTarget(searchParams.get("redirect"))} />
 
       <p className="mt-8 text-center text-sm text-[var(--color-muted)]">
         ยังไม่มีบัญชี PunGuide?{" "}

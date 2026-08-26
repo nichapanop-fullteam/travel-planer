@@ -28,6 +28,27 @@ export const auth = getAuth(firebaseApp);
 // that IndexedDB layer entirely.
 if (typeof window !== "undefined") {
   setPersistence(auth, browserLocalPersistence).catch(() => {});
+
+  // Firebase Auth still opens its own internal IndexedDB connections for
+  // cross-tab session sync regardless of the persistence type set above —
+  // the same Fast Refresh teardown can throw "Database is closing/hidden,
+  // please refresh the page." from inside Firebase's own listeners, which
+  // surfaces as an unhandled error/rejection that Next's dev error overlay
+  // treats as a fatal crash even though it's a stale connection that
+  // resolves itself on the next read. Swallow just this one known-benign
+  // message (event.preventDefault() marks it "handled" so the overlay
+  // doesn't fire) rather than hiding errors broadly.
+  const isBenignIndexedDbTeardown = (message: unknown): boolean =>
+    typeof message === "string" && message.toLowerCase().includes("database is closing");
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason as { message?: unknown } | string | undefined;
+    const message = typeof reason === "string" ? reason : reason?.message;
+    if (isBenignIndexedDbTeardown(message)) event.preventDefault();
+  });
+  window.addEventListener("error", (event) => {
+    if (isBenignIndexedDbTeardown(event.message)) event.preventDefault();
+  });
 }
 
 // Analytics needs `window` and isn't supported everywhere (e.g. Safari

@@ -29,10 +29,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isBackendLoading, setIsBackendLoading] = useState(true);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setIsFirebaseLoading(false);
-    });
+    return onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        setUser(firebaseUser);
+        setIsFirebaseLoading(false);
+      },
+      // Swallow the benign "Database is closing/hidden" IndexedDB-teardown
+      // error (see lib/firebase.ts's doc comment) instead of leaving it
+      // unhandled here — still resolves loading so the app doesn't hang.
+      () => setIsFirebaseLoading(false)
+    );
   }, []);
 
   useEffect(() => subscribeBackendSession(setBackendUser), []);
@@ -52,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleExpiredSession = () => {
       setUser(null);
-      void signOut(auth);
+      signOut(auth).catch(() => {});
     };
     window.addEventListener("backend-auth-expired", handleExpiredSession);
     return () => window.removeEventListener("backend-auth-expired", handleExpiredSession);
