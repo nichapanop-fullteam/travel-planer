@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bookmark, ChevronDown, Compass, Home, MessageSquare, Menu, Plus, Briefcase } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
+import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
 
 type NavKey = "home" | "explore" | "myTrips" | "saved" | "messages";
 
@@ -15,6 +17,7 @@ type NavKey = "home" | "explore" | "myTrips" | "saved" | "messages";
 // reference sidebar is nav-only, with the real trip list living at
 // /my-trips instead.
 export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => void }) {
+  const [accountOpen, setAccountOpen] = useState(false);
   const pathname = usePathname();
   const resolvedActive: NavKey | undefined =
     active ??
@@ -37,6 +40,7 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
   ];
 
   return (
+    <>
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-[#f5faf8] px-4 py-7" style={{ borderColor: "#e2ebe7" }}>
       <div className="mb-8 flex items-center justify-between px-4">
         <span className="text-[34px] font-extrabold tracking-[-0.04em] text-[#17895f]">PunGuide</span>
@@ -69,9 +73,10 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
 
       <div className="flex-1" />
 
-      <Link
-        href="/account"
-        className="mr-4 flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/70"
+      <button
+        type="button"
+        onClick={() => setAccountOpen(true)}
+        className="mr-4 flex items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/70"
       >
         {backendUser?.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -85,14 +90,16 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold leading-tight">{backendUser?.name || "Emily Chen"}</p>
-          {backendUser?.username && (
-            <p className="truncate text-xs text-[var(--color-muted)]">@{backendUser.username}</p>
-          )}
+          <p className="truncate text-sm font-bold leading-tight">{backendUser?.name || "เข้าสู่ระบบ"}</p>
+          <p className="truncate text-xs text-[var(--color-muted)]">
+            {backendUser?.username ? `@${backendUser.username}` : "บันทึกและจัดการทริป"}
+          </p>
         </div>
         <ChevronDown size={16} className="shrink-0 text-[var(--color-muted)]" />
-      </Link>
+      </button>
     </aside>
+    {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
+    </>
   );
 }
 

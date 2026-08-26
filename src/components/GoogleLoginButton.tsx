@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { LoaderCircle } from "lucide-react";
 import { auth } from "@/lib/firebase";
@@ -22,18 +22,15 @@ interface AuthFirebaseResponse {
   };
 }
 
-// Styled to match the outline button row (แชร์/บันทึกรูป-style pills, error
-// banners) already used across /login and /signup — see AuthLayout.tsx.
-// Only same-origin relative paths are honored — mirrors login/page.tsx's
-// safeRedirectTarget (open-redirect guard for ?redirect=).
-function safeRedirectTarget(raw: string | null): string | null {
-  if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
-  return null;
+interface GoogleLoginButtonProps {
+  redirectTo?: string;
+  onSuccess?: () => void;
 }
 
-export default function GoogleLoginButton() {
+// Can be reused on a full page or inside a dialog. Dialog consumers provide
+// onSuccess so the current page stays in place after authentication.
+export default function GoogleLoginButton({ redirectTo = "/my-trips", onSuccess }: GoogleLoginButtonProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -70,7 +67,11 @@ export default function GoogleLoginButton() {
       const account: AuthFirebaseResponse = await response.json();
       setBackendSession(account.accessToken, account.user);
 
-      router.replace(safeRedirectTarget(searchParams.get("redirect")) ?? "/my-trips");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.replace(redirectTo);
+      }
     } catch (err) {
       // console.warn, not console.error — Next's dev overlay intercepts
       // console.error and shows it as a full-screen error even when it's

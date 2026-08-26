@@ -615,6 +615,18 @@ export default function GeneratedPlanPage() {
     };
   }
 
+  function clearedTravelPatch(): UpdateTripItemRequest {
+    return {
+      travelTypeFromPrev: null,
+      travelCustomTypeFromPrev: null,
+      travelTimeFromPrevMin: null,
+      travelDistanceFromPrevKm: null,
+      travelCostFromPrevAmount: null,
+      travelCostFromPrevCurrency: null,
+      travelNotesFromPrev: null,
+    };
+  }
+
   // Shared by both the "+เพิ่มสถานที่" flow (a brand-new id, never matches an
   // existing activity, so it's always appended) and AddActivityDialog's edit
   // mode (the id matches an existing activity, so it's replaced in place).
@@ -697,6 +709,28 @@ export default function GeneratedPlanPage() {
       updateTripItemOnServer(activityId, travelPatch(travel)).catch((err) =>
         console.warn("แก้ไขเส้นทางไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
       );
+    }
+  }
+
+  async function handleDeleteActivityTravel(dayId: string, activityId: string): Promise<void> {
+    const isBackendItem = trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId);
+
+    try {
+      if (isBackendItem) {
+        await updateTripItemOnServer(activityId, clearedTravelPatch());
+      }
+
+      updateDay(dayId, (day) => ({
+        ...day,
+        activities: day.activities.map((activity) => {
+          if (activity.id !== activityId) return activity;
+          return { ...activity, travelFromPrevious: undefined, travelNote: undefined };
+        }),
+      }));
+      showToast("ลบข้อมูลการเดินทางแล้ว");
+    } catch (error) {
+      showToast("ลบข้อมูลการเดินทางไม่สำเร็จ กรุณาลองอีกครั้ง");
+      throw error;
     }
   }
 
@@ -788,6 +822,7 @@ export default function GeneratedPlanPage() {
               onAddDay={handleAddDay}
               onGoToPlanTab={() => setTab("plan")}
               onUpdateActivityTravel={handleUpdateActivityTravel}
+              onDeleteActivityTravel={handleDeleteActivityTravel}
               onReorderActivities={handleReorderActivities}
             />
           )}
@@ -803,6 +838,7 @@ export default function GeneratedPlanPage() {
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivityTravel={handleUpdateActivityTravel}
+              onDeleteActivityTravel={handleDeleteActivityTravel}
             />
           )}
           {tab === "weather" && <WeatherTab />}
@@ -1503,6 +1539,7 @@ function OverviewTab({
   onAddDay,
   onGoToPlanTab,
   onUpdateActivityTravel,
+  onDeleteActivityTravel,
   onReorderActivities,
 }: {
   trip: GeneratedTrip;
@@ -1526,6 +1563,7 @@ function OverviewTab({
   onAddDay: () => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
 }) {
   // "ยอมรับแพลนนี้ไหม?" only makes sense for a plan the AI actually
@@ -1602,6 +1640,7 @@ function OverviewTab({
         onDeleteActivity={onDeleteActivity}
         onGoToPlanTab={onGoToPlanTab}
         onUpdateActivityTravel={onUpdateActivityTravel}
+        onDeleteActivityTravel={onDeleteActivityTravel}
         onReorderActivities={onReorderActivities}
       />
       <TripModeBar />
@@ -1681,6 +1720,7 @@ function ItineraryAccordion({
   onDeleteActivity,
   onGoToPlanTab,
   onUpdateActivityTravel,
+  onDeleteActivityTravel,
   onReorderActivities,
 }: {
   trip: GeneratedTrip;
@@ -1690,6 +1730,7 @@ function ItineraryAccordion({
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -1759,6 +1800,7 @@ function ItineraryAccordion({
                     onEdit={(a) => onEditActivity(day.id, a)}
                     onDelete={(a) => onDeleteActivity(day.id, a.id)}
                     onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
+                    onDeleteTravel={(activityId) => onDeleteActivityTravel(day.id, activityId)}
                     onReorder={(activities) => onReorderActivities(day.id, activities)}
                   />
                 </div>
@@ -1812,6 +1854,7 @@ function SortableItineraryList({
   onEdit,
   onDelete,
   onSaveTravel,
+  onDeleteTravel,
   onReorder,
 }: {
   activities: Activity[];
@@ -1819,6 +1862,7 @@ function SortableItineraryList({
   onEdit: (activity: Activity) => void;
   onDelete: (activity: Activity) => void;
   onSaveTravel: (activityId: string, travel: TravelFromPrevious) => void;
+  onDeleteTravel: (activityId: string) => Promise<void>;
   onReorder: (activities: Activity[]) => void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -1840,7 +1884,7 @@ function SortableItineraryList({
           return (
             <div key={a.id}>
               <ItineraryRow activity={a} index={i + 1} canEdit={canEdit} onEdit={() => onEdit(a)} onDelete={() => onDelete(a)} />
-              {next && <TravelConnectorRow toActivity={next} canEdit={canEdit} onSave={(travel) => onSaveTravel(next.id, travel)} />}
+              {next && <TravelConnectorRow toActivity={next} canEdit={canEdit} onSave={(travel) => onSaveTravel(next.id, travel)} onDelete={() => onDeleteTravel(next.id)} />}
             </div>
           );
         })}
@@ -1862,6 +1906,7 @@ function SortableItineraryList({
               onEdit={() => onEdit(a)}
               onDelete={() => onDelete(a)}
               onSaveTravel={next ? (travel) => onSaveTravel(next.id, travel) : undefined}
+              onDeleteTravel={next ? () => onDeleteTravel(next.id) : undefined}
             />
           );
         })}
@@ -1877,6 +1922,7 @@ function SortableItineraryEntry({
   onEdit,
   onDelete,
   onSaveTravel,
+  onDeleteTravel,
 }: {
   activity: Activity;
   index: number;
@@ -1884,6 +1930,7 @@ function SortableItineraryEntry({
   onEdit: () => void;
   onDelete: () => void;
   onSaveTravel?: (travel: TravelFromPrevious) => void;
+  onDeleteTravel?: () => Promise<void>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
   const style = {
@@ -1902,7 +1949,7 @@ function SortableItineraryEntry({
         onDelete={onDelete}
         dragHandleProps={{ attributes, listeners }}
       />
-      {next && onSaveTravel && <TravelConnectorRow toActivity={next} canEdit onSave={onSaveTravel} />}
+      {next && onSaveTravel && <TravelConnectorRow toActivity={next} canEdit onSave={onSaveTravel} onDelete={onDeleteTravel} />}
     </div>
   );
 }
@@ -2032,6 +2079,7 @@ function PlanTab({
   onEditActivity,
   onDeleteActivity,
   onUpdateActivityTravel,
+  onDeleteActivityTravel,
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
@@ -2043,6 +2091,7 @@ function PlanTab({
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
+  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
 }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
@@ -2192,6 +2241,7 @@ function PlanTab({
                         toActivity={next}
                         canEdit={canEdit}
                         onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
+                        onDelete={() => onDeleteActivityTravel(day.id, next.id)}
                       />
                     )}
                   </div>

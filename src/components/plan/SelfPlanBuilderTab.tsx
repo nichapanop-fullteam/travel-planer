@@ -9,14 +9,18 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardPlus,
   Clock,
   Flag,
+  LoaderCircle,
   MapPin,
   Pencil,
   Plane,
   Plus,
   Search,
   Star,
+  Trash2,
+  TriangleAlert,
   Utensils,
   Wallet,
   Waves,
@@ -204,13 +208,11 @@ export function PlaceDiscoveryPanel({
           categories={["mixed"]}
           center={center}
           destinationName={trip.destination}
-          renderMeta={(place) => <p className="truncate text-xs text-[var(--color-muted)]">{place.priceLabel === "ฟรี" ? "ห้ามพลาด" : place.priceLabel}</p>}
           addLabel="เพิ่มแผน"
           addedIds={addedIds}
           stagedPlaces={stagedPlaces}
           checkedIds={checkedIds}
           onStage={stagePlace}
-          onToggleChecked={toggleChecked}
           onClearChecked={clearChecked}
           onConfirmStaged={openAddDialog}
           showStagedPanel
@@ -511,13 +513,11 @@ function AddPlacesAccordion({
   categories,
   center,
   destinationName,
-  renderMeta,
   addLabel,
   addedIds,
   stagedPlaces,
   checkedIds,
   onStage,
-  onToggleChecked,
   onClearChecked,
   onConfirmStaged,
   variant = "vertical",
@@ -532,7 +532,6 @@ function AddPlacesAccordion({
   categories: string[];
   center: { lat: number; lng: number };
   destinationName: string;
-  renderMeta: (place: EnrichedPlace) => React.ReactNode;
   addLabel: string;
   addedIds: Set<string>;
   // Staging state is shared/lifted to SelfPlanBuilderTab so attractions,
@@ -541,7 +540,6 @@ function AddPlacesAccordion({
   stagedPlaces: EnrichedPlace[];
   checkedIds: Set<string>;
   onStage: (place: EnrichedPlace) => void;
-  onToggleChecked: (id: string) => void;
   onClearChecked: () => void;
   onConfirmStaged: () => void;
   variant?: "vertical" | "horizontal";
@@ -574,11 +572,7 @@ function AddPlacesAccordion({
     if (!enableSearchStaging) return;
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     const trimmed = query.trim();
-    if (!trimmed) {
-      setDropdownResults(null);
-      setDropdownOpen(false);
-      return;
-    }
+    if (!trimmed) return;
     debounceRef.current = window.setTimeout(() => {
       searchExternalPlaces(trimmed, SEARCH_RESULT_LIMIT).then((results) => {
         setDropdownResults(results.map((p) => enrichPlace(p, center)));
@@ -595,6 +589,14 @@ function AddPlacesAccordion({
     setQuery(`${place.name} (${destinationName})`);
     setDropdownOpen(false);
     onStage(place);
+  }
+
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    if (!value.trim()) {
+      setDropdownResults(null);
+      setDropdownOpen(false);
+    }
   }
 
   // When search-staging is on, the search box drives the dropdown/API search
@@ -615,26 +617,24 @@ function AddPlacesAccordion({
   // the day-picker directly.
   const recommendedSection = (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-1.5 text-sm font-bold">
-          <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
+      <div className="flex items-center justify-between gap-3 border-t border-[#e7dccb] pt-4">
+        <p className="flex items-center gap-2 text-base font-bold text-[#2c7457]">
+          <Flag size={16} />
           {recommendedLabel}
         </p>
         {onExploreMore ? (
           <button
             type="button"
             onClick={onExploreMore}
-            className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: "var(--color-border)" }}
+            className="shrink-0 rounded-full border border-[#a8d4c1] px-3 py-1.5 text-xs font-semibold text-[#2c7457] hover:bg-[#edf8f3]"
           >
             สำรวจเพิ่มเติม
             <ChevronRight size={11} className="ml-0.5 inline" />
           </button>
         ) : (
           <Link
-            href={`/discovery?q=${encodeURIComponent(destinationName)}`}
-            className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: "var(--color-border)" }}
+            href={`/discovery?destination=${encodeURIComponent(destinationName)}`}
+            className="shrink-0 rounded-full border border-[#a8d4c1] px-3 py-1.5 text-xs font-semibold text-[#2c7457] hover:bg-[#edf8f3]"
           >
             สำรวจเพิ่มเติม
             <ChevronRight size={11} className="ml-0.5 inline" />
@@ -647,10 +647,10 @@ function AddPlacesAccordion({
         <p className="py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
       )}
 
-      <div className="flex gap-4 overflow-x-auto pb-1">
+      <div className="flex gap-5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visible?.map((place) => {
           const isStaged = stagedPlaces.some((p) => p.id === place.id);
-          const isAdded = addedIds.has(place.id) || isStaged;
+          const isAdded = addedIds.has(place.id) || (isStaged && checkedIds.has(place.id));
           const handleAdd = () => onStage(place);
           return variant === "horizontal" ? (
             <HorizontalPlaceCard key={place.id} place={place} isAdded={isAdded} addLabel={addLabel} onAdd={handleAdd} />
@@ -660,7 +660,6 @@ function AddPlacesAccordion({
               place={place}
               isAdded={isAdded}
               addLabel={addLabel}
-              renderMeta={renderMeta}
               onAdd={handleAdd}
             />
           );
@@ -670,34 +669,33 @@ function AddPlacesAccordion({
   );
 
   return (
-    <>
-    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
+    <div className="overflow-hidden rounded-[28px] bg-[#faf7f1]">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4"
+        className="flex w-full items-center justify-between gap-3 bg-[#f7f1e7] px-6 py-5 text-left"
       >
-        <h3 className="text-base font-bold sm:text-lg">{title}</h3>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        <h3 className="text-xl font-bold sm:text-2xl">{title}</h3>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#2f755b] shadow-[0_6px_16px_rgba(33,55,47,0.14)]">
+          {expanded ? <ChevronUp size={22} /> : <ChevronDown size={22} />}
         </span>
       </button>
 
       {expanded && (
-        <div className="flex flex-col gap-4 px-5 pb-5">
+        <div className="flex flex-col gap-4 bg-[#fffdfb] px-6 pb-6 pt-6">
           <div className="relative">
             <div
-              className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
-              style={{ borderColor: "var(--color-border)" }}
+              className="flex items-center gap-3 rounded-2xl border bg-white px-4 py-4"
+              style={{ borderColor: "#e2d7c7" }}
             >
-              <Search size={16} style={{ color: "var(--color-muted)" }} />
+              {enableSearchStaging ? <MapPin size={18} className="text-[#aaa69e]" /> : <Search size={18} className="text-[#aaa69e]" />}
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => handleQueryChange(e.target.value)}
                 onFocus={() => dropdownResults && dropdownResults.length > 0 && setDropdownOpen(true)}
                 placeholder={searchPlaceholder}
-                className="w-full bg-transparent text-sm focus:outline-none"
+                className="w-full bg-transparent text-base placeholder:text-[#aab1bd] focus:outline-none"
               />
             </div>
 
@@ -720,61 +718,35 @@ function AddPlacesAccordion({
             )}
           </div>
 
-          {showStagedPanel && stagedPlaces.length > 0 && (
-            <div className="flex flex-col gap-3 rounded-2xl border p-4" style={{ borderColor: "var(--color-border)", backgroundColor: "white" }}>
-              <p className="text-xs font-semibold text-[var(--color-muted)]">เลือกสถานที่ เพื่อเพิ่มลงแพลนของคุณ</p>
+          {recommendedSection}
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {stagedPlaces.map((place) => (
-                  <PlaceCheckCard
-                    key={place.id}
-                    place={place}
-                    checked={checkedIds.has(place.id)}
-                    confirmed={addedIds.has(place.id)}
-                    onToggle={() => onToggleChecked(place.id)}
-                  />
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-                  <span
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                    style={{ backgroundColor: "var(--color-accent-orange)" }}
-                  >
-                    {checkedIds.size}
-                  </span>
-                  {checkedIds.size > 0 ? "สถานที่ที่เลือก" : "ยังไม่ได้เลือกสถานที่"}
+          {showStagedPanel && checkedIds.size > 0 && (
+            <div className="mt-3 flex flex-col gap-4 rounded-[24px] border border-[#eadfce] bg-white px-5 py-4 shadow-[0_7px_18px_rgba(40,35,27,0.10)] sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#fff0e5] text-[#423c35]">
+                  <ClipboardPlus size={22} />
+                  <span className="absolute -right-1 -top-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#f57835] px-1 text-xs font-bold text-white">{checkedIds.size}</span>
                 </span>
-                <div className="flex items-center gap-4">
-                  <button type="button" onClick={onClearChecked} className="text-xs font-semibold underline text-[var(--color-muted)]">
-                    ล้างที่เลือก
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onConfirmStaged}
-                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white"
-                    style={{ backgroundColor: "var(--color-accent-orange)" }}
-                  >
-                    <Plus size={13} />
-                    เพิ่มลงแพลน
-                  </button>
-                </div>
+                <p className="text-sm font-bold leading-6 sm:text-base">คุณได้เลือกสถานที่ต้องการแล้ว ต่อไปกรุณาเพิ่มสถานที่ลงแพลนของคุณ</p>
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-5">
+                <button type="button" onClick={onClearChecked} className="text-sm font-bold text-[#302d29] hover:text-[#f26f2f]">
+                  ล้างที่เลือก
+                </button>
+                <button
+                  type="button"
+                  onClick={onConfirmStaged}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#f66f2f] px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#e85e21]"
+                >
+                  <Plus size={16} />
+                  เพิ่มลงแพลน
+                </button>
               </div>
             </div>
           )}
-
-          {!enableSearchStaging && recommendedSection}
         </div>
       )}
     </div>
-
-    {enableSearchStaging && expanded && (
-      <div className="flex flex-col gap-4 overflow-hidden rounded-3xl px-5 py-5" style={{ backgroundColor: "#FAF8F5" }}>
-        {recommendedSection}
-      </div>
-    )}
-    </>
   );
 }
 
@@ -893,18 +865,16 @@ function VerticalPlaceCard({
   place,
   isAdded,
   addLabel,
-  renderMeta,
   onAdd,
 }: {
   place: EnrichedPlace;
   isAdded: boolean;
   addLabel: string;
-  renderMeta: (place: EnrichedPlace) => React.ReactNode;
   onAdd: () => void;
 }) {
   return (
-    <div className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
-      <div className="relative h-32 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+    <article className="flex w-[274px] shrink-0 flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_6px_14px_rgba(35,31,25,0.14)]">
+      <div className="relative h-[178px] w-full" style={{ backgroundColor: "var(--color-surface)" }}>
         {place.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
@@ -913,21 +883,34 @@ function VerticalPlaceCard({
             <MapPin size={22} style={{ color: "var(--color-muted)" }} />
           </span>
         )}
-        {place.rating !== undefined && (
-          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-bold text-white">
-            <Star size={10} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
-            {place.rating.toFixed(1)}
+        <div className="absolute bottom-3 left-3 flex max-w-[calc(100%-24px)] gap-2">
+          {place.rating !== undefined && (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-bold text-white">
+              <Star size={10} fill="currentColor" />
+              {place.rating.toFixed(1)}
+            </span>
+          )}
+          <span className="truncate rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white">
+            {CATEGORY_LABEL_TH[place.category]}
           </span>
-        )}
-      </div>
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <p className="truncate text-sm font-bold">{place.name}</p>
-        {renderMeta(place)}
-        <div className="mt-auto flex justify-center">
-          <AddButton isAdded={isAdded} label={addLabel} onClick={onAdd} />
         </div>
       </div>
-    </div>
+      <div className="flex flex-1 flex-col p-4">
+        <h4 className="truncate text-base font-bold">{place.name}</h4>
+        <p className="mt-1 line-clamp-1 text-xs text-[var(--color-muted)]">{place.address || place.priceLabel}</p>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2f755b]/30"
+          style={isAdded
+            ? { borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }
+            : { borderColor: "#ffc290", backgroundColor: "#fff9f2", color: "#ff762f" }}
+        >
+          {isAdded ? <Check size={15} /> : <Plus size={15} />}
+          {isAdded ? "เพิ่มแล้ว" : addLabel}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -1422,12 +1405,17 @@ export function TravelConnectorRow({
   toActivity,
   canEdit,
   onSave,
+  onDelete,
 }: {
   toActivity: Activity;
   canEdit: boolean;
   onSave: (travel: TravelFromPrevious) => void;
+  onDelete?: () => Promise<void>;
 }) {
   const [showDialog, setShowDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const travel = toActivity.travelFromPrevious;
   const TypeIcon = travel ? travelTypeIcon[travel.type] : null;
   const travelLabel = travel
@@ -1458,6 +1446,20 @@ export function TravelConnectorRow({
       </>
     );
 
+  async function handleDelete() {
+    if (!onDelete) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await onDelete();
+      setShowDeleteDialog(false);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "ลบข้อมูลการเดินทางไม่สำเร็จ กรุณาลองอีกครั้ง");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <div className="flex min-h-11 items-stretch gap-1.5 py-1">
@@ -1471,11 +1473,33 @@ export function TravelConnectorRow({
             style={{ backgroundColor: "var(--color-brand-green)" }}
           />
         </div>
-        {canEdit ? (
+        {canEdit ? travel && onDelete ? (
+          <div
+            className="my-auto flex min-h-8 min-w-0 flex-1 items-center rounded-full border border-dashed pl-3 pr-1"
+            style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowDialog(true)}
+              aria-label={`แก้ไขการเดินทางไป ${toActivity.title}`}
+              className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 py-1.5 text-left text-[10px] font-semibold outline-none"
+            >
+              {content}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDeleteError(""); setShowDeleteDialog(true); }}
+              aria-label={`ลบข้อมูลการเดินทางไป ${toActivity.title}`}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--color-danger)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]/25"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
             onClick={() => setShowDialog(true)}
-            aria-label={travel ? `แก้ไขการเดินทางไป ${toActivity.title}` : `เพิ่มการเดินทางไป ${toActivity.title}`}
+            aria-label={`เพิ่มการเดินทางไป ${toActivity.title}`}
             className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
           >
@@ -1501,6 +1525,45 @@ export function TravelConnectorRow({
           }}
           onClose={() => setShowDialog(false)}
         />
+      )}
+
+      {showDeleteDialog && (
+        <>
+          <div className="fixed inset-0 z-[70] bg-black/35 backdrop-blur-[1px]" />
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => !deleting && setShowDeleteDialog(false)}>
+            <section
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="delete-travel-title"
+              aria-describedby="delete-travel-description"
+              className="w-full max-w-[420px] rounded-3xl border border-[#f0d8d2] bg-white p-6 text-center shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-danger-bg)] text-[var(--color-danger)]">
+                <Trash2 size={23} />
+              </div>
+              <h3 id="delete-travel-title" className="mt-4 text-xl font-bold">ลบข้อมูลการเดินทาง?</h3>
+              <p id="delete-travel-description" className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
+                ข้อมูลการเดินทางไป “{toActivity.title}” จะถูกลบออกจากแพลนและข้อมูลหลังบ้าน
+              </p>
+              {deleteError && (
+                <div role="alert" className="mt-4 flex items-start gap-2 rounded-2xl bg-[var(--color-danger-bg)] px-4 py-3 text-left text-sm text-[var(--color-danger)]">
+                  <TriangleAlert size={17} className="mt-0.5 shrink-0" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setShowDeleteDialog(false)} disabled={deleting} className="rounded-full border border-[var(--color-border)] px-4 py-3 text-sm font-semibold hover:bg-[var(--color-surface)] disabled:opacity-50">
+                  ยกเลิก
+                </button>
+                <button type="button" onClick={handleDelete} disabled={deleting} className="flex items-center justify-center gap-2 rounded-full bg-[var(--color-danger)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                  {deleting ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {deleting ? "กำลังลบ..." : "ลบข้อมูล"}
+                </button>
+              </div>
+            </section>
+          </div>
+        </>
       )}
     </>
   );

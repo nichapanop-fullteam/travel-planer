@@ -100,13 +100,13 @@ export async function createTripDayOnServer(
 // costAmount/paidBy/splitLabel (per the budget tab's "เพิ่มค่าใช้จ่าย" ->
 // "เลือกจากแผนการเดินทาง" flow), are the confirmed accepted fields.
 export interface UpdateTripItemRequest {
-  travelTypeFromPrev?: TravelType;
-  travelCustomTypeFromPrev?: string;
-  travelTimeFromPrevMin?: number;
-  travelDistanceFromPrevKm?: number;
-  travelCostFromPrevAmount?: number;
-  travelCostFromPrevCurrency?: string;
-  travelNotesFromPrev?: string;
+  travelTypeFromPrev?: TravelType | null;
+  travelCustomTypeFromPrev?: string | null;
+  travelTimeFromPrevMin?: number | null;
+  travelDistanceFromPrevKm?: number | null;
+  travelCostFromPrevAmount?: number | null;
+  travelCostFromPrevCurrency?: string | null;
+  travelNotesFromPrev?: string | null;
   costAmount?: number;
   paidBy?: string;
   splitLabel?: string;
