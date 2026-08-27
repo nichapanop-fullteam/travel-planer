@@ -14,7 +14,7 @@ export function MobileNavigation({
 }: {
   open: boolean;
   onClose: () => void;
-  active?: "home" | "explore" | "myTrips" | "saved" | "messages";
+  active?: "home" | "myTrips" | "saved" | "messages";
 }) {
   return (
     <div className={`fixed inset-0 z-50 flex md:hidden ${open ? "" : "pointer-events-none"}`} aria-hidden={!open}>

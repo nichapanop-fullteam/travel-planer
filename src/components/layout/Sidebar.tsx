@@ -3,19 +3,22 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bookmark, ChevronDown, Compass, Home, MessageSquare, Menu, Plus, Briefcase } from "lucide-react";
+import { Bookmark, ChevronDown, Home, MessageSquare, Menu, Briefcase } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
+import { CreateTripButton } from "@/components/ui/CreateTripButton";
 
-type NavKey = "home" | "explore" | "myTrips" | "saved" | "messages";
+type NavKey = "home" | "myTrips" | "saved" | "messages";
 
 // Sidebar nav, restyled to match the "Discover your next journey" reference
-// layout — "หน้าหลัก" (Home) and "My Trips" link somewhere real (see
-// app/main and app/my-trips); Explore/Saved/Messages are still visual
-// placeholders (see CONTRIBUTING.md for what's real vs. visual). The
-// previous "Groups Trip"/"ทริปของฉัน" list and promo card are gone — the
-// reference sidebar is nav-only, with the real trip list living at
-// /my-trips instead.
+// layout — every visible entry now links somewhere real (see app/main,
+// app/my-trips, app/saved). "Explore" used to sit between Home and My Trips
+// as a dead placeholder: it had no href at all, and /main is itself the
+// explore feed (its own heading reads "สำรวจทริปของคุณ"), so the two were
+// the same destination under two names. Messages is hidden rather than
+// deleted — see navItems below. The previous "Groups Trip"/"ทริปของฉัน"
+// list and promo card are gone — the reference sidebar is nav-only, with
+// the real trip list living at /my-trips instead.
 export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => void }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const pathname = usePathname();
@@ -31,12 +34,14 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
 
   const { backendUser } = useAuth();
 
-  const navItems: { key: NavKey; label: string; icon: typeof Home; href?: string; badge?: number }[] = [
+  // `hidden` keeps an entry defined but out of the rendered nav — for
+  // Messages, which has no backend yet (its "2" badge was always a mock).
+  // Drop the flag to bring it back once there's something real behind it.
+  const navItems: { key: NavKey; label: string; icon: typeof Home; href?: string; badge?: number; hidden?: boolean }[] = [
     { key: "home", label: "Home", icon: Home, href: "/main" },
-    { key: "explore", label: "Explore", icon: Compass },
     { key: "myTrips", label: "My Trips", icon: Briefcase, href: "/my-trips" },
     { key: "saved", label: "Saved", icon: Bookmark, href: "/saved" },
-    { key: "messages", label: "Messages", icon: MessageSquare, badge: 2 },
+    { key: "messages", label: "Messages", icon: MessageSquare, badge: 2, hidden: true },
   ];
 
   return (
@@ -57,19 +62,14 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
       </div>
 
       <nav className="mr-4 flex flex-col gap-5">
-        {navItems.map((item) => (
-          <NavItem key={item.key} item={item} isActive={resolvedActive === item.key} />
-        ))}
+        {navItems
+          .filter((item) => !item.hidden)
+          .map((item) => (
+            <NavItem key={item.key} item={item} isActive={resolvedActive === item.key} />
+          ))}
       </nav>
 
-      <Link
-        href="/create-trip"
-        className="mr-5 mt-7 flex items-center justify-center gap-3 rounded-xl py-4 text-base font-semibold text-white"
-        style={{ backgroundColor: "#17895f" }}
-      >
-        <Plus size={16} />
-        Create trip
-      </Link>
+      <CreateTripButton variant="block" className="mr-5 mt-7" />
 
       <div className="flex-1" />
 

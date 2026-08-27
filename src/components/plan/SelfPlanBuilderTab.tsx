@@ -633,7 +633,7 @@ function AddPlacesAccordion({
           </button>
         ) : (
           <Link
-            href={`/discovery?destination=${encodeURIComponent(destinationName)}`}
+            href="/main"
             className="shrink-0 rounded-full border border-[#a8d4c1] px-3 py-1.5 text-xs font-semibold text-[#2c7457] hover:bg-[#edf8f3]"
           >
             สำรวจเพิ่มเติม

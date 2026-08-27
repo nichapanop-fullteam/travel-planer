@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { Briefcase, Camera, Check, Eye, EyeOff, LoaderCircle, LockKeyhole, LogIn, LogOut, Mail, Save, Settings, TriangleAlert, UserPlus, X } from "lucide-react";
+import { Bookmark, Briefcase, Camera, Check, Eye, EyeOff, LoaderCircle, LockKeyhole, LogIn, LogOut, Mail, Save, TriangleAlert, UserPlus, X } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
@@ -145,7 +146,7 @@ export function UserAccountDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
+  const dialog = (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4 backdrop-blur-[2px]" onClick={onClose}>
       <section
         role="dialog"
@@ -208,8 +209,8 @@ export function UserAccountDialog({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Link href="/account" onClick={onClose} className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold hover:bg-[#f5faf8]" style={{ borderColor: "#dbe5e0" }}><Settings size={18} className="text-[#17895f]" />ตั้งค่าโปรไฟล์ทั้งหมด</Link>
               <Link href="/my-trips" onClick={onClose} className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold hover:bg-[#f5faf8]" style={{ borderColor: "#dbe5e0" }}><Briefcase size={18} className="text-[#17895f]" />ทริปของฉัน</Link>
+              <Link href="/saved" onClick={onClose} className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold hover:bg-[#f5faf8]" style={{ borderColor: "#dbe5e0" }}><Bookmark size={18} className="text-[#17895f]" />ทริปที่บันทึก</Link>
             </div>
 
             <button type="button" onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-full border py-3 text-sm font-semibold text-[var(--color-danger)]" style={{ borderColor: "var(--color-danger-border)", backgroundColor: "var(--color-danger-bg)" }}>
@@ -314,4 +315,8 @@ export function UserAccountDialog({ onClose }: { onClose: () => void }) {
       )}
     </div>
   );
+
+  // Render outside transformed navigation drawers so fixed positioning uses
+  // the full viewport rather than the drawer's narrow containing block.
+  return typeof document === "undefined" ? null : createPortal(dialog, document.body);
 }

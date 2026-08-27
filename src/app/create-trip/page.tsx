@@ -131,7 +131,9 @@ function CreateTripForm() {
   const [destination, setDestination] = useState(destinationParam);
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
   const [duration, setDuration] = useState(prefillDefaults ? "3 วัน 2 คืน" : "");
-  const [startDate, setStartDate] = useState<string | undefined>(undefined);
+  // Prefilled when arriving from the Topbar's destination/date search bar,
+  // which passes ?startDate=YYYY-MM-DD alongside ?destination.
+  const [startDate, setStartDate] = useState<string | undefined>(searchParams.get("startDate") ?? undefined);
   const [endDate, setEndDate] = useState<string | undefined>(undefined);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
@@ -462,6 +464,7 @@ function CreateTripForm() {
           destination={destination}
           onDestinationFieldClick={() => setDestDialogOpen(true)}
           duration={duration}
+          startDate={startDate}
           onDurationChange={setDuration}
           onDateFieldClick={() => setDateDialogOpen(true)}
           guests={guests}
@@ -948,6 +951,7 @@ function Hero({
   destination,
   onDestinationFieldClick,
   duration,
+  startDate,
   onDurationChange,
   onDateFieldClick,
   guests,
@@ -958,6 +962,7 @@ function Hero({
   destination: string;
   onDestinationFieldClick: () => void;
   duration: string;
+  startDate?: string;
   onDurationChange: (v: string) => void;
   onDateFieldClick: () => void;
   guests: string;
@@ -966,6 +971,19 @@ function Hero({
   destinationHasError: boolean;
 }) {
   const router = useRouter();
+
+  // Arriving from the Topbar search bar carries a start date but no
+  // duration yet — show it so the date the traveler picked doesn't look
+  // dropped. Any real duration (set via the date dialog) wins over it.
+  const dateFieldValue =
+    duration ||
+    (startDate
+      ? `เริ่ม ${new Date(`${startDate.slice(0, 10)}T00:00:00`).toLocaleDateString("th-TH", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })}`
+      : "");
 
   return (
     <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-5 overflow-hidden px-6 pb-8 pt-16 text-center sm:min-h-[300px] sm:pt-20">
@@ -1007,7 +1025,7 @@ function Hero({
           {
             icon: CalendarDays,
             label: "Date",
-            value: duration,
+            value: dateFieldValue,
             placeholder: "วันเดินทางไป - วันกลับ",
             onChange: onDurationChange,
             onFieldClick: onDateFieldClick,

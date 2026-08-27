@@ -65,6 +65,14 @@ export interface BackendTripListItem {
   // token, per the optional-auth behavior of GET /trips, /trips/:id,
   // /trips/mine, and /trips/saved.
   isSaved: boolean;
+  // Same optional-auth shape as isSaved above, but for POST/DELETE
+  // /trips/:id/like (see likeTrip/unlikeTrip below) — always `false` when
+  // unauthenticated, never an error.
+  isLiked: boolean;
+  // Public cumulative counter, unlike isLiked/isSaved — always the real
+  // number regardless of auth. Card-level (also present on GET /trips,
+  // /trips/mine, /trips/saved rows, not just GET /trips/:id).
+  likeCount: number;
 }
 
 // Chips under the trip title ("Active · รถสาธารณะท้องถิ่น · เงื่อนไข") — as
@@ -114,6 +122,8 @@ export interface BackendTrip {
   sourceTripId?: string;
   publishedAt?: string;
   isSaved: boolean; // see BackendTripListItem.isSaved above
+  isLiked: boolean; // see BackendTripListItem.isLiked above
+  likeCount: number; // see BackendTripListItem.likeCount above
 }
 
 // GET /trips is optional-auth (was strictly public before the save/bookmark
@@ -227,6 +237,29 @@ export async function unsaveTrip(tripId: string): Promise<void> {
   const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/save`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`เอาทริปออกจากรายการบันทึกไม่สำเร็จ (${response.status} ${response.statusText})`);
+  }
+}
+
+// POST /trips/:id/like — like any trip (public or not, own or not; same
+// no-body no-restriction shape as saveTrip above). Idempotent server-side —
+// liking an already-liked trip just re-answers 204 without double-counting
+// likeCount, so callers don't need to guard against double-clicks
+// themselves. Doesn't return the updated likeCount — callers reflect the
+// change optimistically and only get the real number back on the next
+// GET /trips or /trips/:id.
+export async function likeTrip(tripId: string): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/like`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`กดถูกใจทริปไม่สำเร็จ (${response.status} ${response.statusText})`);
+  }
+}
+
+// DELETE /trips/:id/like — also idempotent (unliking a trip that was never
+// liked, or already unliked, still answers 204).
+export async function unlikeTrip(tripId: string): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/like`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`เอาถูกใจออกไม่สำเร็จ (${response.status} ${response.statusText})`);
   }
 }
 

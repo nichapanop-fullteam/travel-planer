@@ -71,24 +71,16 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display), var(--font-thai), Arial, Helvetica, sans-serif;
 }
 
-/* /main fills ultrawide screens with a third guide column while keeping the
+/* /main fills ultrawide screens with a fifth guide column while keeping the
    recommendation rail at the same comfortable width. Below 1800px the page
-   retains its reference-matched two-column feed. */
+   retains its reference-matched four-column feed. */
 @media (min-width: 1800px) {
   .main-page-container {
     max-width: none !important;
     padding-right: 2rem !important;
   }
 
-  .main-page-layout {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .main-feed {
-    grid-column: span 3 / span 3;
-  }
-
   .main-guide-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }

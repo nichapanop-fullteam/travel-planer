@@ -1,80 +1,76 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark } from "lucide-react";
+import { Menu } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { useAuth } from "@/providers/AuthProvider";
-import { Logo } from "@/components/common/Logo";
+import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
+import { CreateTripButton } from "@/components/ui/CreateTripButton";
 
 // Top navbar for the redesigned Home page only — other pages (trip-detail, plan,
 // share) still use the shared Sidebar + Topbar via ConsumerShell.
-const NAV_ITEMS = [
-  { key: "home", label: "Home", href: "/main" },
-  { key: "discovery", label: "Discovery", href: "#" },
-  { key: "my-trip", label: "My Trip", href: "#" },
-  { key: "from-creators", label: "From Creators", href: "#" },
-] as const;
-
-export function HomeNavbar() {
+export function HomeNavbar({ children, onMenuClick }: { children?: ReactNode; onMenuClick?: () => void }) {
   const { user: firebaseUser, backendUser } = useAuth();
   const isLoggedIn = Boolean(backendUser);
   const avatarUrl = backendUser?.avatarUrl || firebaseUser?.photoURL || "/images/profile-avatar.jpg";
   const displayName = backendUser?.name || firebaseUser?.displayName || "โปรไฟล์ผู้ใช้";
+  const [accountOpen, setAccountOpen] = useState(false);
 
   return (
-    <div
-      className="absolute inset-x-4 top-4 z-10 flex items-center justify-between gap-4 bg-white/50 px-6 py-3 shadow-sm backdrop-blur-md sm:inset-x-8 sm:top-6 sm:px-8"
-      style={{ borderRadius: "100px" }}
-    >
-      <Logo className="shrink-0 text-lg" />
-
-      <nav className="hidden items-center gap-8 md:flex">
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.key}
-            href={item.href}
-            className={`text-sm font-medium transition-colors ${
-              item.key === "home"
-                ? "border-b-2 pb-1 font-semibold"
-                : "text-[var(--color-muted)] hover:text-[var(--foreground)]"
-            }`}
-            style={
-              item.key === "home"
-                ? { color: "var(--color-brand-green)", borderColor: "var(--color-brand-green)" }
-                : undefined
-            }
+    <>
+    <div className="sticky top-0 z-30 shrink-0 bg-white shadow-[0_2px_10px_rgba(0,0,0,0.04)]">
+      <header className="flex h-[92px] items-center justify-between gap-4 border-b border-[#eeeeee] px-5 sm:px-10 lg:px-[7.5vw]">
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="เปิดเมนู"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)]"
           >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
-      <div className="flex shrink-0 items-center gap-3">
-        <button
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm"
-          aria-label="รายการที่บันทึกไว้"
-        >
-          <Bookmark size={16} className="text-[var(--foreground)]" />
-        </button>
-        {isLoggedIn ? (
-          <Link href="/my-trips">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={avatarUrl}
-              alt={displayName}
-              title={displayName}
-              className="h-9 w-9 rounded-full object-cover"
-            />
-          </Link>
-        ) : (
+            <Menu size={20} />
+          </button>
           <Link
-            href="/login"
-            className="rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
+            href="/main"
+            className="text-[22px] font-extrabold tracking-[-0.045em] text-[var(--color-brand-green)] sm:text-[26px]"
           >
-            เข้าสู่ระบบ
+            PUNGUIDE
           </Link>
-        )}
-      </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <CreateTripButton />
+          {isLoggedIn ? (
+            <button type="button" onClick={() => setAccountOpen(true)} className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-[var(--color-surface)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                title={displayName}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+              <span className="hidden text-sm font-semibold sm:block">{displayName}</span>
+            </button>
+          ) : (
+            // Ghost rather than a second solid green block — สร้างทริป is the
+            // page's primary action, and two filled buttons side by side left
+            // neither of them reading as the one to press.
+            <button
+              type="button"
+              onClick={() => setAccountOpen(true)}
+              className="rounded-full px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)]"
+            >
+              เข้าสู่ระบบ
+            </button>
+          )}
+        </div>
+      </header>
+      {children && (
+        <div className="overflow-x-auto px-4 py-3 sm:px-8 lg:px-[7.5vw]">
+          <div className="flex min-w-max items-center gap-2">{children}</div>
+        </div>
+      )}
     </div>
+    {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
+    </>
   );
 }

@@ -46,6 +46,8 @@ const publicSourceTrip: BackendTrip = {
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-01T00:00:00.000Z",
   isSaved: false,
+  isLiked: false,
+  likeCount: 0,
   customer: { id: "creator-1", name: "TravelWithTawn", groupSize: 1 },
   planMode: "manual",
   visibility: "public",
