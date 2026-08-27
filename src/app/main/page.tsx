@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Landmark, Leaf, Palmtree, Search, Sparkles, UtensilsCrossed, X } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { HomeNavbar } from "@/components/consumer/HomeNavbar";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
@@ -27,22 +26,39 @@ const CATEGORY_FILTERS: { key: "forYou" | Category; label: string; icon: typeof 
 ];
 
 export default function MainPage() {
-  const { backendUser } = useAuth();
+  const { backendUser, isLoading: authLoading } = useAuth();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
 
-  // Same off-canvas Sidebar drawer pattern as /generated-plan/[id]'s Hero
-  // menu button — not gated to md:hidden like AppShell's own
-  // MobileNavigation, since /main hides AppShell's desktop sidebar entirely
-  // and needs its own way back into Explore/My Trips/Saved/Messages.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Both fetches below key off the user's *id*, not the backendUser object:
+  // setBackendSession re-broadcasts a fresh object on every token refresh
+  // (see lib/backend-user.ts), so depending on the object itself re-ran them
+  // on refreshes that hadn't actually changed who was signed in.
+  const backendUserId = backendUser?.id ?? null;
 
   // Real public trips from GET /trips (see listTrips's doc comment) —
   // undefined while loading, [] once loaded with nothing to show (backend
   // unreachable or no public trips yet).
   const [trips, setTrips] = useState<BackendTripListItem[] | undefined>(undefined);
 
+  // Deliberately gated on the auth restore finishing. listTrips() attaches
+  // the backend access token when there is one, and that token lives only in
+  // memory (lib/backend-user.ts keeps it in a module variable and actively
+  // purges the old localStorage copy), so it is still null for the first
+  // moment of every page load until restoreBackendSession() settles. Firing
+  // this on mount instead sent the request unauthenticated, and GET /trips is
+  // optional-auth: it answered isSaved/isLiked false for every row. A
+  // signed-in user reloading the page then saw every bookmark hollow and
+  // every heart empty, and RealTripCard seeds its state from these rows once,
+  // so it never corrected itself — liking again pushed the local count to
+  // N+1 while the server stayed at N.
+  //
+  // Waiting for !authLoading (false only after restoreBackendSession has
+  // settled, signed in or not — see AuthProvider) means one request that
+  // already carries the right auth state, rather than fetching twice or
+  // letting bookmarks pop in after the fact.
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
     listTrips()
       .then((loaded) => {
@@ -54,7 +70,7 @@ export default function MainPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, backendUserId]);
 
   // The public GET /trips feed has no ownerId to check against, so figure
   // out which of the feed's trips are the signed-in user's own via a
@@ -64,9 +80,10 @@ export default function MainPage() {
   const [myTripIds, setMyTripIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!backendUser) {
-      return;
-    }
+    // No need to clear myTripIds when signing out — the isOwn check at
+    // render time is gated on backendUserId too, so a leftover set can't
+    // mark anything as the user's own.
+    if (!backendUserId) return;
     let cancelled = false;
     getMyTrips()
       .then((myTrips) => {
@@ -78,7 +95,7 @@ export default function MainPage() {
     return () => {
       cancelled = true;
     };
-  }, [backendUser]);
+  }, [backendUserId]);
 
   const visibleTrips = useMemo(() => {
     if (!trips) return undefined;
@@ -97,23 +114,7 @@ export default function MainPage() {
 
   return (
     <AppShell active="home" hideDesktopTopbar hideDesktopSidebar>
-      <div
-        className={`fixed inset-0 z-50 flex transition-opacity duration-300 ${
-          sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-        aria-hidden={!sidebarOpen}
-      >
-        <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-        <div
-          className={`relative z-10 transition-transform duration-300 ease-in-out ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <Sidebar active="home" onClose={() => setSidebarOpen(false)} />
-        </div>
-      </div>
-
-      <HomeNavbar onMenuClick={() => setSidebarOpen(true)}>
+      <HomeNavbar>
         {CATEGORY_FILTERS.map((filter) => {
           const isActive = category === filter.key;
           return (
@@ -198,7 +199,7 @@ export default function MainPage() {
             ) : (
               <div className="main-guide-grid grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
                 {visibleTrips.map((trip) => (
-                  <RealTripCard key={trip.id} trip={trip} isOwn={Boolean(backendUser) && myTripIds.has(trip.id)} />
+                  <RealTripCard key={trip.id} trip={trip} isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)} />
                 ))}
               </div>
             )}

@@ -125,6 +125,7 @@ import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
@@ -229,6 +230,7 @@ export default function GeneratedPlanPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [accommodationDialogOpen, setAccommodationDialogOpen] = useState(false);
   // undefined `activity` = add mode (AddActivityDialog starts blank); set =
@@ -745,6 +747,14 @@ export default function GeneratedPlanPage() {
   // affordances even via a stray ?edit=1 on a shared link.
   const canEdit = isOwner && editUnlocked;
 
+  // Share links are an owner-only feature (all four management endpoints
+  // answer 404 for anyone else), and they need a real backend row — a
+  // local-only trip has nothing for POST /trips/:id/share to attach to, same
+  // reason onChangeVisibility is gated on backendSynced below. When this is
+  // false the "แชร์" button isn't rendered at all rather than failing on tap.
+  const canShare = isOwner && Boolean(trip.backendSynced);
+  const handleShareClick = () => setShareDialogOpen(true);
+
   return (
     <div
       className={`min-h-screen bg-white ${!isOwner && canRemix ? "pb-28 sm:pb-0" : ""}`}
@@ -787,6 +797,8 @@ export default function GeneratedPlanPage() {
         </div>
       </div>
 
+      {shareDialogOpen && <ShareTripDialog tripId={trip.id} onClose={() => setShareDialogOpen(false)} />}
+
       <div className="relative rounded-t-[28px] bg-white">
         <TripAttributionBar
           trip={trip}
@@ -804,6 +816,7 @@ export default function GeneratedPlanPage() {
               trip={trip}
               isConfirmed={isConfirmed}
               isOwner={isOwner}
+              onShareClick={canShare ? handleShareClick : undefined}
               canRemix={canRemix}
               onRemixClick={handleRemixClick}
               canEdit={canEdit}
@@ -830,6 +843,7 @@ export default function GeneratedPlanPage() {
             <PlanTab
               trip={trip}
               isOwner={isOwner}
+              onShareClick={canShare ? handleShareClick : undefined}
               canRemix={canRemix}
               onRemixClick={handleRemixClick}
               canEdit={canEdit}
@@ -1165,6 +1179,7 @@ function TripAttributionBar({
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
+  onShareClick?: () => void;
   visibilitySaving: boolean;
   onChangeVisibility?: (next: "private" | "public") => void;
 }) {
@@ -1521,6 +1536,7 @@ function OverviewTab({
   trip,
   isConfirmed,
   isOwner,
+  onShareClick,
   canRemix,
   onRemixClick,
   canEdit,
@@ -1545,6 +1561,7 @@ function OverviewTab({
   trip: GeneratedTrip;
   isConfirmed: boolean;
   isOwner: boolean;
+  onShareClick?: () => void;
   canRemix: boolean;
   onRemixClick: () => void;
   canEdit: boolean;
@@ -1577,14 +1594,17 @@ function OverviewTab({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-2xl font-bold">สรุปภาพรวมแพลน</h2>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <Share2 size={14} />
-            แชร์
-          </button>
+          {onShareClick && (
+            <button
+              type="button"
+              onClick={onShareClick}
+              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)]"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <Share2 size={14} />
+              แชร์
+            </button>
+          )}
           {!isOwner && canRemix && (
             <button
               type="button"
@@ -2071,6 +2091,7 @@ function WeatherTab() {
 function PlanTab({
   trip,
   isOwner,
+  onShareClick,
   canRemix,
   onRemixClick,
   canEdit,
@@ -2083,6 +2104,7 @@ function PlanTab({
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
+  onShareClick?: () => void;
   canRemix: boolean;
   onRemixClick: () => void;
   canEdit: boolean;
@@ -2100,14 +2122,17 @@ function PlanTab({
     <div className="flex flex-wrap items-center justify-between gap-4">
       <h2 className="text-2xl font-bold">แพลนเที่ยวของคุณ</h2>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <Share2 size={14} />
-          แชร์
-        </button>
+        {onShareClick && (
+          <button
+            type="button"
+            onClick={onShareClick}
+            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)]"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <Share2 size={14} />
+            แชร์
+          </button>
+        )}
         {!isOwner && canRemix && (
           <button
             type="button"

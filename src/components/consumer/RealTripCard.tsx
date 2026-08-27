@@ -172,6 +172,15 @@ export function RealTripCard({
   // full media gallery for itinerary hydration this card doesn't need).
   type TripDetail = { customer?: BackendTripCustomer; saveCount?: number; remixCount?: number };
   const [detail, setDetail] = useState<TripDetail | null>(null);
+  // Whether the detail request above has *settled* (succeeded or not), as
+  // opposed to `detail` being non-null. The price below needs this: groupSize
+  // only arrives with the detail, so before it lands the card can't yet know
+  // whether it's showing a per-person or a total figure. Rendering the total
+  // in the meantime made each card flip from e.g. ฿12,000 to ฿3,000 / คน
+  // hundreds of ms later, and because the cards settle at different times the
+  // grid showed a mix of both units at once. Failure flips this too, so a
+  // failed fetch falls back to the labelled total instead of a stuck skeleton.
+  const [detailSettled, setDetailSettled] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/trips/${trip.id}`)
@@ -182,6 +191,9 @@ export function RealTripCard({
       .catch(() => {
         // No extra detail to show — the card still works with just the
         // list-item fields.
+      })
+      .finally(() => {
+        if (!cancelled) setDetailSettled(true);
       });
     return () => {
       cancelled = true;
@@ -322,15 +334,24 @@ export function RealTripCard({
             )}
           </div>
 
-          {perPersonBudget != null ? (
+          {/* Order matters: the pending case comes first so no number is shown
+              until it's known which unit it's in. Both resolved cases carry an
+              explicit unit — an unlabelled total used to be indistinguishable
+              from a neighbouring card's per-person price. */}
+          {trip.totalBudget <= 0 ? (
+            <span className="text-[11px] font-medium text-[var(--color-muted)]">ยังไม่ระบุราคา</span>
+          ) : !detailSettled ? (
+            <span aria-hidden className="h-4 w-16 animate-pulse rounded bg-[var(--color-surface)]" />
+          ) : perPersonBudget != null ? (
             <span className="text-sm font-extrabold text-[var(--color-primary)]">
               {formatTHB(perPersonBudget)}
               <span className="text-[11px] font-semibold text-[var(--color-muted)]"> / คน</span>
             </span>
-          ) : trip.totalBudget > 0 ? (
-            <span className="text-sm font-extrabold text-[var(--color-primary)]">{formatTHB(trip.totalBudget)}</span>
           ) : (
-            <span className="text-[11px] font-medium text-[var(--color-muted)]">ยังไม่ระบุราคา</span>
+            <span className="text-sm font-extrabold text-[var(--color-primary)]">
+              {formatTHB(trip.totalBudget)}
+              <span className="text-[11px] font-semibold text-[var(--color-muted)]"> รวม</span>
+            </span>
           )}
         </div>
       </div>

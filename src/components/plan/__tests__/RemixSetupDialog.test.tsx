@@ -1,10 +1,56 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 
 const source = { title: "หลวงพระบาง 3 วัน 2 คืน", creatorName: "TravelWithTawn", durationDays: 3 };
 
 describe("RemixSetupDialog", () => {
+  // The travelers control is an adults/children breakdown (same GuestRow the
+  // GuestPickerDialog uses), but POST /trips/:id/remix only takes a single
+  // travelerCount — so what actually matters is that the two rows are summed
+  // on submit rather than either one being sent alone.
+  it("sums the adults and children steppers into a single travelerCount", () => {
+    const onSubmit = vi.fn();
+    render(<RemixSetupDialog onClose={vi.fn()} source={source} status="idle" onSubmit={onSubmit} />);
+
+    expect(screen.getByText("ผู้ใหญ่")).toBeInTheDocument();
+    expect(screen.getByText("เด็ก")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "เพิ่มผู้ใหญ่" }));
+    fireEvent.click(screen.getByRole("button", { name: "เพิ่มเด็ก" }));
+    fireEvent.click(screen.getByRole("button", { name: "สร้างทริปของฉัน" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ travelerCount: 3 }));
+  });
+
+  it("keeps adults at a minimum of one so travelerCount always clears the API's > 0 check", () => {
+    const onSubmit = vi.fn();
+    render(<RemixSetupDialog onClose={vi.fn()} source={source} status="idle" onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "ลดผู้ใหญ่" }));
+    fireEvent.click(screen.getByRole("button", { name: "ลดผู้ใหญ่" }));
+    fireEvent.click(screen.getByRole("button", { name: "สร้างทริปของฉัน" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ travelerCount: 1 }));
+  });
+
+  // The date pickers are hidden, but startDate is still required by
+  // validateRemixForm — so it has to keep going out on submit.
+  it("still submits a startDate even though the date inputs are hidden", () => {
+    const onSubmit = vi.fn();
+    const { container } = render(
+      <RemixSetupDialog onClose={vi.fn()} source={source} status="idle" onSubmit={onSubmit} />
+    );
+
+    expect(container.querySelectorAll('input[type="date"]')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "สร้างทริปของฉัน" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })
+    );
+  });
+
   it("renders the source summary and the fixed copy-protection statement", () => {
     render(
       <RemixSetupDialog onClose={vi.fn()} source={source} status="idle" onSubmit={vi.fn()} />

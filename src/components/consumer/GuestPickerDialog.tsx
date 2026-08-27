@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { GuestRow } from "@/components/ui/GuestRow";
 
 export interface GuestPickerResult {
   adults: number;
@@ -96,44 +96,3 @@ export function GuestPickerDialog({
   );
 }
 
-function GuestRow({
-  label,
-  hint,
-  value,
-  onDecrement,
-  onIncrement,
-}: {
-  label: string;
-  hint: string;
-  value: number;
-  onDecrement: () => void;
-  onIncrement: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div>
-        <p className="text-sm font-bold">{label}</p>
-        <p className="text-xs text-[var(--color-muted)]">{hint}</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onDecrement}
-          className="flex h-8 w-8 items-center justify-center rounded-full border"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <Minus size={14} />
-        </button>
-        <span className="w-4 text-center text-sm font-semibold">{value}</span>
-        <button
-          type="button"
-          onClick={onIncrement}
-          className="flex h-8 w-8 items-center justify-center rounded-full border"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <Plus size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
