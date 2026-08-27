@@ -30,12 +30,18 @@ export function useAppShell(): AppShellContextValue | null {
 // that reflects it's the app-wide shell now, not a "consumer"-only pattern.
 export function AppShell({
   active,
-  hideDesktopTopbar = false,
+  hideTopbar = false,
   hideDesktopSidebar = false,
   children,
 }: {
   active?: NavKey;
-  hideDesktopTopbar?: boolean;
+  /** For pages that ship their own header (/main's HomeNavbar, /my-trips's).
+   *  Was `hideDesktopTopbar`, which only applied `md:hidden` — so the shared
+   *  Topbar still rendered below md, *underneath* the page's own header. On
+   *  mobile that stacked two logos, two menu buttons (opening the same drawer),
+   *  two avatars and two different search fields before any content. Both call
+   *  sites always wanted it gone outright. */
+  hideTopbar?: boolean;
   hideDesktopSidebar?: boolean;
   children: ReactNode;
 }) {
@@ -67,9 +73,7 @@ export function AppShell({
         />
 
         <div className="flex flex-1 flex-col overflow-y-auto">
-          <div className={hideDesktopTopbar ? "md:hidden" : ""}>
-            <Topbar onMenuClick={openSidebar} />
-          </div>
+          {!hideTopbar && <Topbar onMenuClick={openSidebar} />}
           <main className="flex-1">{children}</main>
         </div>
       </div>

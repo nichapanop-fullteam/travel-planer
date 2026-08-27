@@ -55,7 +55,7 @@ export default function SavedPage() {
 
   return (
     <AppShell active="saved">
-      <PageContainer className="min-h-full bg-white !py-5">
+      <PageContainer width="feed" className="min-h-full bg-white !py-5">
         <h1 className="text-2xl font-extrabold">ทริปที่บันทึกไว้</h1>
 
         {trips === undefined ? (
@@ -71,7 +71,7 @@ export default function SavedPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-6 grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
             {trips.map((trip) => (
               <RealTripCard
                 key={trip.id}
