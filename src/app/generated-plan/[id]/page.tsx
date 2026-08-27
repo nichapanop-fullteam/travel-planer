@@ -231,16 +231,15 @@ export default function GeneratedPlanPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [accommodationDialogOpen, setAccommodationDialogOpen] = useState(false);
   // undefined `activity` = add mode (AddActivityDialog starts blank); set =
   // edit mode (pre-filled, day-switching hidden, id preserved on save).
   const [activityDialogRequest, setActivityDialogRequest] = useState<{ dayId: string; activity?: Activity } | null>(
     null
   );
-  // Day header's "+ สถานที่" and the "ยังไม่รู้จะไปไหน?" banner both open this
-  // (the recommend-grid modal) instead of activityDialogRequest now — see
-  // RecommendPlacesFlow's onAddManually for the way back to the old
-  // single-place form.
+  // Only the "ยังไม่รู้จะไปไหน?" banner opens this (the recommend-grid modal),
+  // always defaulting to day 1 — each day's own "+ สถานที่" button still opens
+  // the plain manual-entry form via activityDialogRequest above. See
+  // RecommendPlacesFlow's onAddManually for the way back to that form too.
   const [recommendRequest, setRecommendRequest] = useState<{ dayId: string } | null>(null);
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
@@ -832,8 +831,8 @@ export default function GeneratedPlanPage() {
               onRegenerate={handleRegenerate}
               onConfirm={handleConfirm}
               onEditTrip={handleEditTripClick}
-              onEditAccommodation={() => setAccommodationDialogOpen(true)}
-              onAddActivity={(dayId) => setRecommendRequest({ dayId })}
+              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
+              onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onAddActivityDirect={handleSaveActivity}
@@ -854,7 +853,7 @@ export default function GeneratedPlanPage() {
               onRemixClick={handleRemixClick}
               canEdit={canEdit}
               onAddDay={handleAddDay}
-              onAddActivity={(dayId) => setRecommendRequest({ dayId })}
+              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivityTravel={handleUpdateActivityTravel}
@@ -875,13 +874,6 @@ export default function GeneratedPlanPage() {
             applyPatch(patch);
             syncTripToServer({ ...trip, ...patch });
           }}
-        />
-      )}
-      {accommodationDialogOpen && (
-        <AccommodationEditDialog
-          trip={trip}
-          onClose={() => setAccommodationDialogOpen(false)}
-          onSave={(accommodation) => applyPatch({ accommodation })}
         />
       )}
       {activityDialogRequest && (
@@ -1031,49 +1023,53 @@ function Hero({
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-transparent" />
 
       {/* Top nav — back/menu on the left, PunGuide wordmark centered, save +
-          the viewer's own avatar on the right. */}
-      <div className="relative z-20 flex items-center justify-between gap-3 p-3 sm:p-4">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="ย้อนกลับ"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <button
-            type="button"
-            onClick={onMenuClick}
-            aria-label="เมนู"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
-          >
-            <Menu size={18} />
-          </button>
-        </div>
+          the viewer's own avatar on the right. Sits on its own translucent,
+          blurred panel (rounded bottom corners) instead of directly on the
+          photo, so the image shows through muted rather than a hard cut. */}
+      <div className="relative z-20 rounded-b-3xl bg-gradient-to-b from-black/35 via-black/15 to-transparent backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-3 p-3 sm:p-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="ย้อนกลับ"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={onMenuClick}
+              aria-label="เมนู"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
+            >
+              <Menu size={18} />
+            </button>
+          </div>
 
-        <Logo className="rounded-full bg-white/90 px-4 py-1.5 text-base shadow-md sm:text-lg" />
+          <Logo className="rounded-full bg-white/90 px-4 py-1.5 text-base shadow-md sm:text-lg" />
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSaved((s) => !s)}
-            aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
-            aria-pressed={saved}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md transition hover:bg-white"
-          >
-            <Bookmark
-              size={16}
-              fill={saved ? "var(--color-brand-green)" : "none"}
-              style={{ color: "var(--color-brand-green)" }}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSaved((s) => !s)}
+              aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
+              aria-pressed={saved}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md transition hover:bg-white"
+            >
+              <Bookmark
+                size={16}
+                fill={saved ? "var(--color-brand-green)" : "none"}
+                style={{ color: "var(--color-brand-green)" }}
+              />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={userAvatarUrl || "/images/profile-avatar.jpg"}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-full border-2 border-white/80 object-cover"
             />
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={userAvatarUrl || "/images/profile-avatar.jpg"}
-            alt=""
-            className="h-10 w-10 shrink-0 rounded-full border-2 border-white/80 object-cover"
-          />
+          </div>
         </div>
       </div>
 
@@ -1091,9 +1087,7 @@ function Hero({
       )}
 
       <div className="relative z-20 px-4 pt-2 sm:px-6">
-        <div className="mx-auto max-w-2xl">
-          <PlanTabs tabs={tabs} tab={tab} setTab={setTab} />
-        </div>
+        <PlanTabs tabs={tabs} tab={tab} setTab={setTab} />
       </div>
 
       {/* Bottom overlay — left-aligned title, date range + duration, then
@@ -1637,8 +1631,8 @@ function OverviewTab({
   onRegenerate,
   onConfirm,
   onEditTrip,
-  onEditAccommodation,
   onAddActivity,
+  onExploreRecommended,
   onEditActivity,
   onDeleteActivity,
   onAddActivityDirect,
@@ -1662,8 +1656,11 @@ function OverviewTab({
   onRegenerate: () => void;
   onConfirm: () => void;
   onEditTrip: () => void;
-  onEditAccommodation: () => void;
   onAddActivity: (dayId: string) => void;
+  // "ยังไม่รู้จะไปไหน?" banner — opens the recommend-grid modal (defaulting
+  // to day 1), distinct from onAddActivity which opens the plain manual-entry
+  // form for a specific day's own "+ สถานที่" button.
+  onExploreRecommended: () => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
@@ -1734,6 +1731,7 @@ function OverviewTab({
         trip={trip}
         canEdit={canEdit}
         onAddActivity={onAddActivity}
+        onExploreRecommended={onExploreRecommended}
         onEditActivity={onEditActivity}
         onDeleteActivity={onDeleteActivity}
         onGoToPlanTab={onGoToPlanTab}
@@ -1749,15 +1747,10 @@ function OverviewTab({
         onRemoveActivity={onDeleteActivity}
         onSaveAccommodation={onSaveAccommodation}
         onAddDay={onAddDay}
-        onManualEditAccommodation={onEditAccommodation}
       />
       <TripModeBar />
     </div>
   );
-}
-
-function findHotelActivity(trip: GeneratedTrip): Activity | undefined {
-  return trip.days.flatMap((d) => d.activities).find((a) => a.category === "hotel" && a.location?.imageUrl);
 }
 
 // AI-mode's own accommodation card lived here before it was folded into
@@ -1775,6 +1768,7 @@ function ItineraryAccordion({
   trip,
   canEdit,
   onAddActivity,
+  onExploreRecommended,
   onEditActivity,
   onDeleteActivity,
   onGoToPlanTab,
@@ -1786,6 +1780,7 @@ function ItineraryAccordion({
   trip: GeneratedTrip;
   canEdit: boolean;
   onAddActivity: (dayId: string) => void;
+  onExploreRecommended: () => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onGoToPlanTab: () => void;
@@ -1891,7 +1886,7 @@ function ItineraryAccordion({
 
           <button
             type="button"
-            onClick={() => onAddActivity(trip.days[trip.days.length - 1].id)}
+            onClick={onExploreRecommended}
             className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed px-4 py-3.5 text-left"
             style={{ borderColor: "var(--color-accent-orange)", backgroundColor: "#FDF0E7" }}
           >
@@ -3116,70 +3111,6 @@ function EditTripDialog({
           setDateDialogOpen(false);
         }}
       />
-    </EditDialogShell>
-  );
-}
-
-function AccommodationEditDialog({
-  trip,
-  onClose,
-  onSave,
-}: {
-  trip: GeneratedTrip;
-  onClose: () => void;
-  onSave: (accommodation: TripAccommodation) => void;
-}) {
-  const hotel = findHotelActivity(trip);
-  const current = trip.accommodation;
-  const [name, setName] = useState(current?.name ?? hotel?.location?.name ?? "");
-  const [imageUrl, setImageUrl] = useState(current?.imageUrl ?? hotel?.location?.imageUrl ?? "");
-  const [price, setPrice] = useState(current?.pricePerNight ? String(current.pricePerNight) : "");
-  const [amenities, setAmenities] = useState(current?.amenities?.join(", ") ?? "");
-  const [checkIn, setCheckIn] = useState(current?.checkIn ?? "14:00");
-  const [checkOut, setCheckOut] = useState(current?.checkOut ?? "12:00");
-  const [description, setDescription] = useState(current?.description ?? "");
-
-  function handleSave() {
-    onSave({
-      name: name.trim() || "ที่พัก",
-      imageUrl: imageUrl.trim() || undefined,
-      pricePerNight: price.trim() ? Number(price.replace(/[^\d]/g, "")) || undefined : undefined,
-      amenities: amenities
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean),
-      checkIn: checkIn.trim() || undefined,
-      checkOut: checkOut.trim() || undefined,
-      description: description.trim() || undefined,
-    });
-    onClose();
-  }
-
-  return (
-    <EditDialogShell title="แก้ไขที่พัก" onClose={onClose} onSave={handleSave}>
-      <EditField label="ชื่อที่พัก" value={name} onChange={setName} placeholder="เช่น Avani+ Luang Prabang" />
-      <EditField label="ลิงก์รูปภาพ" value={imageUrl} onChange={setImageUrl} placeholder="https://..." />
-      <EditField label="ราคา/คืน (บาท)" value={price} onChange={setPrice} placeholder="เช่น 3500" />
-      <EditField
-        label="สิ่งอำนวยความสะดวก (คั่นด้วยจุลภาค)"
-        value={amenities}
-        onChange={setAmenities}
-        placeholder="เช่น Wi-Fi ฟรี, สระว่ายน้ำ, รถรับส่ง"
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <EditField label="เช็คอิน" value={checkIn} onChange={setCheckIn} placeholder="14:00" />
-        <EditField label="เช็คเอาท์" value={checkOut} onChange={setCheckOut} placeholder="12:00" />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">รายละเอียดที่พัก</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none"
-          style={{ borderColor: "var(--color-border)" }}
-        />
-      </div>
     </EditDialogShell>
   );
 }
