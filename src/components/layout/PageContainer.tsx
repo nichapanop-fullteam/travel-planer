@@ -22,7 +22,7 @@ export function PageContainer({
 }: HTMLAttributes<HTMLDivElement> & { width?: "page" | "feed" }) {
   const constraint =
     width === "feed"
-      ? "max-w-[var(--container-feed)] px-6 sm:px-8 lg:px-12 xl:px-16"
+      ? "max-w-[var(--container-feed)] px-7 sm:px-10 lg:px-16 xl:px-20"
       : "max-w-[var(--container-max)] px-6 sm:px-10";
 
   return <div className={`mx-auto w-full ${constraint} py-10 ${className}`} {...props} />;

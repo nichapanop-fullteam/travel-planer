@@ -76,6 +76,19 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display), var(--font-thai), Arial, Helvetica, sans-serif;
 }
 
+/* Keeps a horizontally scrollable row scrollable without painting a
+   scrollbar. The filter-chip row needs this: its always-visible scrollbar
+   rendered as a heavy grey bar directly under the chips, which read as a
+   broken divider rather than a scroll affordance. */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* /main's feed caps at four columns at every width. This used to break out to
    five columns past 1800px and drop the container's max-width entirely, which
    let the grid run the full width of an ultrawide display — cards got narrow

@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { getMyTrips, getSavedTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { useAuth } from "@/providers/AuthProvider";
+import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 
 // "Saved" — the signed-in user's bookmarked trips (GET /trips/saved), same
 // real card as /main. Route guard mirrors /account and /my-trips: redirect
@@ -71,7 +72,7 @@ export default function SavedPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
+          <div className={`mt-6 ${TRIP_GRID_CLASS}`}>
             {trips.map((trip) => (
               <RealTripCard
                 key={trip.id}

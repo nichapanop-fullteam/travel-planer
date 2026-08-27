@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, LoaderCircle, Menu, Pencil, Search, X } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { AppShell, useAppShell } from "@/components/layout/AppShell";
-import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { CreateTripButton } from "@/components/ui/CreateTripButton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,6 +13,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { deleteTrip, getMyTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { deleteGeneratedTrip, onGeneratedTripsChanged } from "@/lib/generated-trips";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
+import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 
 // Client-side route guard only — good enough for this prototype, but not
 // real server-side protection. The backend still verifies its access token
@@ -27,7 +27,6 @@ export default function MyTripsPage() {
   const [deleteError, setDeleteError] = useState("");
   const [tripQuery, setTripQuery] = useState("");
   const [tripFilter, setTripFilter] = useState<"all" | "draft" | "published">("all");
-  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !backendUser) {
@@ -108,7 +107,7 @@ export default function MyTripsPage() {
     <AppShell hideDesktopSidebar hideTopbar>
       <div className="min-h-full bg-[#f7faf8]">
         <header className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur">
-          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-6 sm:px-8 lg:px-12 xl:px-16">
+          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-7 sm:px-10 lg:px-16 xl:px-20">
             <div className="flex min-w-0 items-center gap-1.5">
               <MyTripsMenuButton />
               <Link href="/main" className="text-xl font-extrabold tracking-[-0.04em] text-[var(--color-brand-green)]">PUNGUIDE</Link>
@@ -116,22 +115,19 @@ export default function MyTripsPage() {
             <div className="flex items-center gap-2 sm:gap-4">
               <Link href="/main" className="hidden text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--foreground)] sm:block">สำรวจทริป</Link>
               <CreateTripButton />
-              <button type="button" onClick={() => setAccountOpen(true)} aria-label="บัญชีผู้ใช้" className="rounded-full hover:opacity-80">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={backendUser.avatarUrl || user?.photoURL || "/images/profile-avatar.jpg"} alt="" className="h-9 w-9 rounded-full object-cover" />
-              </button>
+              <AccountAvatarButton src={backendUser.avatarUrl || user?.photoURL || "/images/profile-avatar.jpg"} />
             </div>
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[var(--container-feed)] px-6 py-8 sm:px-8 sm:py-12 lg:px-12 xl:px-16">
+        <main className="mx-auto w-full max-w-[var(--container-feed)] px-7 py-8 sm:px-10 sm:py-12 lg:px-16 xl:px-20">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="text-sm font-semibold text-[var(--color-primary)]">ยินดีต้อนรับกลับมา</p>
               <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">ทริปของฉัน</h1>
               <p className="mt-2 text-sm text-[var(--color-muted)]">จัดการแพลนทั้งหมดของคุณในที่เดียว</p>
             </div>
-            <button type="button" onClick={() => setAccountOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#d6e4dd] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#eef7f2]"><Pencil size={15} /> แก้ไขโปรไฟล์</button>
+            <EditProfileButton />
           </div>
 
           <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -170,7 +166,7 @@ export default function MyTripsPage() {
               ) : filteredTrips?.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-[#c9ddd3] bg-white p-12 text-center"><CheckCircle2 className="mx-auto text-[var(--color-muted)]" /><p className="mt-3 text-sm font-semibold">ไม่พบทริปที่ตรงกับการค้นหา</p><button type="button" onClick={() => { setTripQuery(""); setTripFilter("all"); }} className="mt-3 text-sm font-semibold text-[var(--color-primary)]">ล้างตัวกรอง</button></div>
               ) : (
-                <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
+                <div className={TRIP_GRID_CLASS}>
                   {filteredTrips?.map((trip) => (
                     <RealTripCard
                       key={trip.id}
@@ -186,7 +182,6 @@ export default function MyTripsPage() {
             </div>
         </main>
       </div>
-      {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
     </AppShell>
   );
 }
@@ -204,6 +199,37 @@ function MyTripsMenuButton() {
       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)]"
     >
       <Menu size={20} />
+    </button>
+  );
+}
+
+// These three read the shell context, so they have to be children of
+// <AppShell> rather than inline in the page — the page component renders
+// AppShell, which puts it *above* the provider where useAppShell() sees null.
+function AccountAvatarButton({ src }: { src: string }) {
+  const appShell = useAppShell();
+  return (
+    <button
+      type="button"
+      onClick={appShell?.openAccount}
+      aria-label="บัญชีผู้ใช้"
+      className="rounded-full hover:opacity-80"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-9 w-9 rounded-full object-cover" />
+    </button>
+  );
+}
+
+function EditProfileButton() {
+  const appShell = useAppShell();
+  return (
+    <button
+      type="button"
+      onClick={appShell?.openAccount}
+      className="inline-flex items-center gap-2 rounded-xl border border-[#d6e4dd] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#eef7f2]"
+    >
+      <Pencil size={15} /> แก้ไขโปรไฟล์
     </button>
   );
 }

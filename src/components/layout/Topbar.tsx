@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Luggage, MapPinned, Menu, Search } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
-import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
+import { useAppShell } from "@/components/layout/AppShell";
 
 // App header, restyled from the TRAVELOG reference: a nav row (menu/logo,
 // centered section tabs, account or login CTA) above a segmented
@@ -22,6 +22,7 @@ const NAV_TABS: { href: string; label: string; icon: typeof Luggage }[] = [
 ];
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
+  const appShell = useAppShell();
   const { backendUser } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -29,7 +30,6 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
 
   const [destination, setDestination] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [accountOpen, setAccountOpen] = useState(false);
 
   // Both fields feed the real create-trip wizard, which already reads
   // `destination` (and now `startDate`) off the query string — nothing is
@@ -97,7 +97,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
               </button>
               <button
                 type="button"
-                onClick={() => setAccountOpen(true)}
+                onClick={appShell?.openAccount}
                 aria-label="บัญชีผู้ใช้"
                 className="flex items-center gap-2 rounded-full hover:opacity-80"
               >
@@ -118,7 +118,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           ) : (
             <button
               type="button"
-              onClick={() => setAccountOpen(true)}
+              onClick={appShell?.openAccount}
               className="rounded-lg px-4 py-2.5 text-sm font-bold text-white sm:px-6"
               style={{ backgroundColor: "var(--color-primary)" }}
             >
@@ -170,7 +170,6 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
         </form>
       </div>
     </header>
-    {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
     </>
   );
 }

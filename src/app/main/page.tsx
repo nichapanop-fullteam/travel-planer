@@ -5,10 +5,11 @@ import { CalendarDays, Landmark, Leaf, Palmtree, SearchX, Sparkles, UtensilsCros
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { HomeNavbar } from "@/components/consumer/HomeNavbar";
-import { FeedControls, type FeedSort } from "@/components/consumer/FeedControls";
+import { FeedSearchBar, FeedSortSelect, type FeedSort } from "@/components/consumer/FeedSearchBar";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { useAuth } from "@/providers/AuthProvider";
+import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 
 // The app's home page — a social-travel-community "Discover your next
 // journey" feed. The trip grid itself is real data from GET /trips (see
@@ -158,7 +159,7 @@ export default function MainPage() {
 
   return (
     <AppShell active="home" hideTopbar hideDesktopSidebar>
-      <HomeNavbar>
+      <HomeNavbar search={<FeedSearchBar query={query} onQueryChange={setQuery} />}>
         {CATEGORY_FILTERS.map((filter) => {
           const isActive = category === filter.key;
           const count = categoryCounts?.[filter.key];
@@ -199,7 +200,6 @@ export default function MainPage() {
         })}
       </HomeNavbar>
 
-      <FeedControls query={query} onQueryChange={setQuery} sort={sort} onSortChange={setSort} />
       <div className="min-h-full bg-[#fbfdfc]">
       <PageContainer width="feed" className="!py-6">
         <div className="min-w-0">
@@ -217,30 +217,33 @@ export default function MainPage() {
               </p>
             </div>
 
-            {hasActiveFilter && (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {query.trim() && (
-                  <FilterChip label={`"${query.trim()}"`} onClear={() => setQuery("")} />
-                )}
-                {activeCategory && category !== "forYou" && (
-                  <FilterChip label={activeCategory.label} onClear={() => setCategory("forYou")} />
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setCategory("forYou");
-                  }}
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--color-muted)] underline-offset-2 transition-colors hover:text-[var(--color-primary)] hover:underline"
-                >
-                  ล้างทั้งหมด
-                </button>
-              </div>
-            )}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+              {hasActiveFilter && (
+                <>
+                  {query.trim() && (
+                    <FilterChip label={`"${query.trim()}"`} onClear={() => setQuery("")} />
+                  )}
+                  {activeCategory && category !== "forYou" && (
+                    <FilterChip label={activeCategory.label} onClear={() => setCategory("forYou")} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      setCategory("forYou");
+                    }}
+                    className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--color-muted)] underline-offset-2 transition-colors hover:text-[var(--color-primary)] hover:underline"
+                  >
+                    ล้างทั้งหมด
+                  </button>
+                </>
+              )}
+              <FeedSortSelect sort={sort} onSortChange={setSort} />
+            </div>
           </div>
 
           {visibleTrips === undefined ? (
-            <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
+            <div className={TRIP_GRID_CLASS}>
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
                   <div className="aspect-[4/5] w-full animate-pulse bg-[var(--color-surface)]" />
@@ -263,7 +266,7 @@ export default function MainPage() {
               }}
             />
           ) : (
-            <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
+            <div className={TRIP_GRID_CLASS}>
               {visibleTrips.map((trip) => (
                 <RealTripCard key={trip.id} trip={trip} isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)} />
               ))}

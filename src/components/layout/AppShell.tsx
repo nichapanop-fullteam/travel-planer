@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNavigation } from "@/components/layout/MobileNavigation";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
 
 type NavKey = "home" | "myTrips" | "saved" | "messages";
 
@@ -12,7 +14,20 @@ type NavKey = "home" | "myTrips" | "saved" | "messages";
 // own overlay + Sidebar on top of the shell's, so the page carried three
 // Sidebar instances — three nav landmarks and three UserAccountDialog state
 // trees — with two menu buttons opening two different drawers.
-type AppShellContextValue = { openSidebar: () => void };
+//
+// `scrollRef` points at the element that actually scrolls — the inner
+// overflow-y-auto div, not the window. Headers need it to react to scrolling
+// (see useHideOnScroll); window scroll events never fire for this layout.
+//
+// `openAccount` exists for the same reason as `openSidebar`: the account
+// dialog was being mounted separately by Sidebar, Topbar, HomeNavbar and
+// /my-trips — four independent copies with four independent open states, all
+// inside one shell. One instance lives here now and everyone opens that.
+type AppShellContextValue = {
+  openSidebar: () => void;
+  openAccount: () => void;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+};
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
 
@@ -47,8 +62,14 @@ export function AppShell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const [accountOpen, setAccountOpen] = useState(false);
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
-  const contextValue = useMemo(() => ({ openSidebar }), [openSidebar]);
+  const openAccount = useCallback(() => setAccountOpen(true), []);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contextValue = useMemo(
+    () => ({ openSidebar, openAccount, scrollRef }),
+    [openSidebar, openAccount]
+  );
 
   return (
     <AppShellContext.Provider value={contextValue}>
@@ -72,10 +93,17 @@ export function AppShell({
           allWidths={hideDesktopSidebar}
         />
 
-        <div className="flex flex-1 flex-col overflow-y-auto">
+        <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto">
           {!hideTopbar && <Topbar onMenuClick={openSidebar} />}
-          <main className="flex-1">{children}</main>
+          {/* Clears the fixed MobileBottomNav at exactly the widths it shows
+              (<=1024px) — without it the last row of cards scrolls underneath
+              the tab bar and can't be reached. */}
+          <main className="flex-1 pb-24 min-[1025px]:pb-0">{children}</main>
         </div>
+
+        <MobileBottomNav active={active} />
+
+        {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
       </div>
     </AppShellContext.Provider>
   );

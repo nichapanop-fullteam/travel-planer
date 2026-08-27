@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bookmark, ChevronDown, Home, MessageSquare, Menu, Briefcase } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
-import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
+import { useAppShell } from "@/components/layout/AppShell";
 import { CreateTripButton } from "@/components/ui/CreateTripButton";
 
 type NavKey = "home" | "myTrips" | "saved" | "messages";
@@ -20,7 +19,6 @@ type NavKey = "home" | "myTrips" | "saved" | "messages";
 // list and promo card are gone — the reference sidebar is nav-only, with
 // the real trip list living at /my-trips instead.
 export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => void }) {
-  const [accountOpen, setAccountOpen] = useState(false);
   const pathname = usePathname();
   const resolvedActive: NavKey | undefined =
     active ??
@@ -31,6 +29,8 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
         : pathname?.startsWith("/saved")
           ? "saved"
           : undefined);
+
+  const appShell = useAppShell();
 
   const { backendUser } = useAuth();
 
@@ -75,7 +75,7 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
 
       <button
         type="button"
-        onClick={() => setAccountOpen(true)}
+        onClick={appShell?.openAccount}
         className="mr-4 flex items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/70"
       >
         {backendUser?.avatarUrl ? (
@@ -98,7 +98,6 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
         <ChevronDown size={16} className="shrink-0 text-[var(--color-muted)]" />
       </button>
     </aside>
-    {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
     </>
   );
 }
