@@ -302,6 +302,15 @@ export interface TripAccommodation {
   checkIn?: string; // "14:00"
   checkOut?: string; // "12:00"
   description?: string;
+  // Trip-detail's own "โรงแรม หรือที่พักของคุณ" setup form (AccommodationAccordion)
+  // — client-only like the rest of this object, never PATCHed to the backend.
+  bookingStatus?: "booked" | "unbooked";
+  address?: string;
+  checkInDate?: string; // ISO date, e.g. "2026-08-20"
+  checkOutDate?: string; // ISO date
+  desiredStyles?: string[]; // "บูทีค" / "รีสอร์ท" / etc. — only set in "ยังไม่จอง" mode
+  desiredGrade?: string; // "1"–"5" (star count) or "แนะนำมาให้เลย"
+  preferredHotelName?: string; // "ถ้ามีที่พักในใจแล้ว บอกเราได้"
 }
 
 // A single ledger entry on the budget-management tab. Broader than

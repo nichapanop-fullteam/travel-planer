@@ -8,12 +8,10 @@ import {
   Activity as PulseIcon,
   Anchor,
   ArrowLeft,
-  Asterisk,
   Beer,
   Bike,
   Bookmark,
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -22,7 +20,6 @@ import {
   CloudSun,
   Coffee,
   Compass,
-  Footprints,
   Globe2,
   GripVertical,
   ImagePlus,
@@ -66,11 +63,12 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
 import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
 import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
-import { categoryBgVar, categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
+import { categoryColorVar, categoryIcon } from "@/lib/category-styles";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
 import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
+import { Logo } from "@/components/common/Logo";
 
 // Bespoke per-activity icons for the Luang Prabang demo itinerary — overrides
 // the generic category icon when an activity sets `icon`.
@@ -122,7 +120,8 @@ import {
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
-import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
+import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow, RecommendPlacesFlow } from "@/components/plan/SelfPlanBuilderTab";
+import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
@@ -236,6 +235,11 @@ export default function GeneratedPlanPage() {
   const [activityDialogRequest, setActivityDialogRequest] = useState<{ dayId: string; activity?: Activity } | null>(
     null
   );
+  // Day header's "+ สถานที่" and the "ยังไม่รู้จะไปไหน?" banner both open this
+  // (the recommend-grid modal) instead of activityDialogRequest now — see
+  // RecommendPlacesFlow's onAddManually for the way back to the old
+  // single-place form.
+  const [recommendRequest, setRecommendRequest] = useState<{ dayId: string } | null>(null);
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
@@ -516,11 +520,15 @@ export default function GeneratedPlanPage() {
 
   // "แก้ไขทริป" — visible to the owner regardless of the current lock state
   // (see canEdit) since it's the only entry point left into "generate plan"
-  // mode now that the standalone "แก้ไขแพลน" toggle is gone. Unlocks editing
-  // for the whole page and opens the metadata dialog at the same time.
+  // mode now that the standalone "แก้ไขแพลน" toggle is gone. The first click
+  // only unlocks editing for the whole page; the metadata dialog opens on a
+  // second click, once already in edit mode.
   function handleEditTripClick() {
-    setEditUnlocked(true);
-    setEditDialogOpen(true);
+    if (editUnlocked) {
+      setEditDialogOpen(true);
+    } else {
+      setEditUnlocked(true);
+    }
   }
 
   function handleRegenerate() {
@@ -737,6 +745,10 @@ export default function GeneratedPlanPage() {
         onManagePhotos={() => setGalleryDialogOpen(true)}
         onBack={() => router.back()}
         onMenuClick={() => setSidebarOpen(true)}
+        userAvatarUrl={backendUser?.avatarUrl}
+        tabs={TABS}
+        tab={tab}
+        setTab={setTab}
       />
 
       {galleryDialogOpen && (
@@ -746,12 +758,6 @@ export default function GeneratedPlanPage() {
           onCoverChanged={(coverImage, mediaSummary) => applyPatch({ coverImage, mediaSummary })}
         />
       )}
-
-      <div className="sticky top-0 z-40 px-4 py-3 sm:px-6" style={{ backgroundColor: "#0F2419" }}>
-        <div className="mx-auto max-w-2xl">
-          <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
-        </div>
-      </div>
 
       <div className="relative rounded-t-[28px] bg-white">
         <TripAttributionBar
@@ -780,7 +786,7 @@ export default function GeneratedPlanPage() {
               onConfirm={handleConfirm}
               onEditTrip={handleEditTripClick}
               onEditAccommodation={() => setAccommodationDialogOpen(true)}
-              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
+              onAddActivity={(dayId) => setRecommendRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onAddActivityDirect={handleSaveActivity}
@@ -799,7 +805,7 @@ export default function GeneratedPlanPage() {
               onRemixClick={handleRemixClick}
               canEdit={canEdit}
               onAddDay={handleAddDay}
-              onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
+              onAddActivity={(dayId) => setRecommendRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivityTravel={handleUpdateActivityTravel}
@@ -838,6 +844,21 @@ export default function GeneratedPlanPage() {
           onSave={handleSaveActivity}
         />
       )}
+      {recommendRequest && (
+        <RecommendPlacesFlow
+          trip={trip}
+          initialDayId={recommendRequest.dayId}
+          onAddDay={handleAddDay}
+          onClose={() => setRecommendRequest(null)}
+          onAddActivityDirect={handleSaveActivity}
+          onSaveAccommodation={(accommodation) => applyPatch({ accommodation })}
+          onAddManually={() => {
+            const dayId = recommendRequest.dayId;
+            setRecommendRequest(null);
+            setActivityDialogRequest({ dayId });
+          }}
+        />
+      )}
 
       {remixDialogOpen && (
         <RemixSetupDialog
@@ -865,26 +886,45 @@ function Hero({
   onManagePhotos,
   onBack,
   onMenuClick,
+  userAvatarUrl,
+  tabs,
+  tab,
+  setTab,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
   onManagePhotos: () => void;
   onBack: () => void;
   onMenuClick: () => void;
+  userAvatarUrl?: string | null;
+  tabs: { key: TabKey; label: string }[];
+  tab: TabKey;
+  setTab: (t: TabKey) => void;
 }) {
-  const placeStats = getTripPlaceStats(trip);
-  const placeCount = placeStats.attractions + placeStats.restaurants + placeStats.cafes + placeStats.bars;
-  const statLabel = placeCount > 0 ? `${placeCount} places` : trip.durationLabel;
+  const [saved, setSaved] = useState(false);
 
-  const updatedAtSource = trip.publishedAt ?? trip.createdAt;
-  const updatedLabel = updatedAtSource
-    ? new Date(updatedAtSource).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : undefined;
+  const dateRangeLabel =
+    trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : undefined;
+  // GeneratedTripStatus has no "active" state of its own — a confirmed trip
+  // (i.e. locked in, not just an AI draft) is what the design calls "Active".
+  const statusLabel = trip.status === "confirmed" ? "Active" : "แบบร่าง";
 
-  const pills = [
-    { key: "pace", icon: Footprints, label: trip.paceLabel },
-    { key: "budget", icon: Wallet, label: trip.budgetLabel },
-    { key: "conditions", icon: Asterisk, label: trip.conditionsLabel },
+  // "ทริปของฉัน" (plan tab) swaps the status/style badges for a trip-summary
+  // stat row instead — same figures the old standalone TripStatsCard showed,
+  // now living directly in the header.
+  const placeStats = useMemo(() => getTripPlaceStats(trip), [trip]);
+  const distanceKm = useMemo(() => getTripDistanceKm(trip), [trip]);
+  const costPerDay = useMemo(() => {
+    const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
+    if (plannedDays === 0) return 0;
+    return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
+  }, [trip]);
+  const summaryStats = [
+    { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
+    { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
+    { key: "stays", label: "ที่พัก", value: trip.accommodation ? "1" : "0" },
+    { key: "budget", label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
+    { key: "distance", label: "Total Distance", value: `${distanceKm} km` },
   ];
 
   // resolveCoverImageUrl falls back to the static /images/hero-mountain.jpg
@@ -919,7 +959,7 @@ function Hero({
   const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
 
   return (
-    <div className="relative flex min-h-[440px] flex-col justify-between overflow-hidden sm:min-h-[560px]">
+    <div className="relative flex min-h-[300px] flex-col overflow-hidden rounded-b-[28px] sm:min-h-[380px]">
       {/* Editing keeps a single static cover — swiping through photos is a
           viewing affordance, and would fight with "จัดการรูปภาพ" for the same
           tap target. The read-only detail view (canEdit === false, i.e.
@@ -935,11 +975,14 @@ function Hero({
       ) : (
         <HeroImageCarousel images={images} title={trip.title || trip.destination} />
       )}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/5 to-black/70" />
+      {/* Darker at the very top only, for nav-bar icon contrast — fades to
+          fully transparent well before the bottom edge so the photo itself
+          (not a color wash) reaches the rounded corners. */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-transparent" />
 
-      {/* Top controls — back/menu on the left; the owner's photo-management
-          affordance on the right while editing. */}
-      <div className="relative z-20 flex items-center justify-between gap-3 p-4 sm:p-6">
+      {/* Top nav — back/menu on the left, PunGuide wordmark centered, save +
+          the viewer's own avatar on the right. */}
+      <div className="relative z-20 flex items-center justify-between gap-3 p-3 sm:p-4">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -959,7 +1002,33 @@ function Hero({
           </button>
         </div>
 
-        {canEdit && (
+        <Logo className="rounded-full bg-white/90 px-4 py-1.5 text-base shadow-md sm:text-lg" />
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSaved((s) => !s)}
+            aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
+            aria-pressed={saved}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md transition hover:bg-white"
+          >
+            <Bookmark
+              size={16}
+              fill={saved ? "var(--color-brand-green)" : "none"}
+              style={{ color: "var(--color-brand-green)" }}
+            />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={userAvatarUrl || "/images/profile-avatar.jpg"}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-full border-2 border-white/80 object-cover"
+          />
+        </div>
+      </div>
+
+      {canEdit && (
+        <div className="relative z-20 flex justify-end px-4 sm:px-6">
           <button
             type="button"
             onClick={onManagePhotos}
@@ -968,55 +1037,77 @@ function Hero({
             <ImagePlus size={14} />
             จัดการรูปภาพ
           </button>
-        )}
+        </div>
+      )}
+
+      <div className="relative z-20 px-4 pt-2 sm:px-6">
+        <div className="mx-auto max-w-2xl">
+          <PlanTabs tabs={tabs} tab={tab} setTab={setTab} />
+        </div>
       </div>
 
-      {/* Bottom overlay — title + creator/place-count + location + last
-          updated, same layout as a Mindtrip-style guide header, with the
-          existing pace/budget/conditions pills kept underneath since those
-          carry real trip data the reference page has no equivalent for. */}
-      <div className="relative z-10 flex flex-col items-center gap-2.5 px-6 pb-8 text-center sm:pb-10">
-        <h1 className="text-3xl font-extrabold text-white drop-shadow-sm sm:text-6xl">
-          {trip.title || trip.destination}
-        </h1>
+      {/* Bottom overlay — left-aligned title, date range + duration, then
+          either the status/style-tag badges (trip.styles doubles as the
+          reference design's transport/theme tags) or, on the plan tab, a
+          trip-summary stat row instead. White text throughout, no
+          shadow/halo. */}
+      <div className="relative z-10 mt-auto flex flex-col gap-2 px-5 pb-5 sm:px-8 sm:pb-6">
+        <h1 className="text-2xl font-extrabold text-white sm:text-4xl">{trip.title || trip.destination}</h1>
 
-        <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-white sm:text-base">
-          {trip.creator && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={trip.creator.avatarUrl || "/images/profile-avatar.jpg"}
-                alt=""
-                className="h-6 w-6 shrink-0 rounded-full object-cover"
-              />
-              <span>{trip.creator.name}</span>
-              <span className="text-white/50">|</span>
-            </>
-          )}
-          <span>{statLabel}</span>
-        </div>
-
-        <p className="flex items-center gap-1.5 text-sm text-white/85">
-          <MapPin size={14} className="shrink-0" />
-          {trip.destination}
-        </p>
-
-        {updatedLabel && <p className="text-xs text-white/60">Updated: {updatedLabel}</p>}
-
-        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
-          {pills.map((p) => (
-            <span
-              key={p.key}
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
-            >
-              <p.icon size={14} style={{ color: "var(--color-brand-green)" }} />
-              {p.label}
-            </span>
-          ))}
-        </div>
+        {tab === "plan" ? (
+          <>
+            {dateRangeLabel && (
+              <p className="flex items-center gap-1.5 text-sm font-medium text-white">
+                <CalendarDays size={16} className="shrink-0" />
+                {dateRangeLabel} · {trip.durationLabel}
+              </p>
+            )}
+            <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
+              {summaryStats.map((s) => (
+                <div
+                  key={s.key}
+                  className="flex flex-col items-center gap-0.5 rounded-2xl bg-black/35 px-2 py-2 text-center text-white backdrop-blur-sm"
+                >
+                  <span className="text-sm font-extrabold sm:text-base">{s.value}</span>
+                  <span className="text-[10px] font-medium text-white/85">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {dateRangeLabel && (
+              <p className="flex items-center gap-1.5 text-sm font-medium text-white">
+                <CalendarDays size={16} className="shrink-0" />
+                {dateRangeLabel} · {trip.durationLabel}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-white">
+                {statusLabel}
+              </span>
+              {trip.styles.map((style) => (
+                <span key={style} className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-white">
+                  {style}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+function formatSlashDateRange(startDate: string, endDate: string): string {
+  return `${formatSlashDate(startDate)} - ${formatSlashDate(endDate)}`;
+}
+
+function formatSlashDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${d.getFullYear()}`;
 }
 
 // Snap-scrolling photo strip for the read-only trip detail view — same
@@ -1581,19 +1672,6 @@ function OverviewTab({
         />
       )}
 
-      {/* Moved to the top of "ตารางแพลน" while actively editing — see
-          ItineraryAccordion — so it reads as that section's header instead
-          of floating disconnected above the accommodation/discovery panels. */}
-      {!canEdit && <TripStatsCard trip={trip} />}
-      <PlaceDiscoveryPanel
-        trip={trip}
-        canEdit={canEdit}
-        onAddActivityDirect={onAddActivityDirect}
-        onRemoveActivity={onDeleteActivity}
-        onSaveAccommodation={onSaveAccommodation}
-        onAddDay={onAddDay}
-        onManualEditAccommodation={onEditAccommodation}
-      />
       <ItineraryAccordion
         trip={trip}
         canEdit={canEdit}
@@ -1603,57 +1681,18 @@ function OverviewTab({
         onGoToPlanTab={onGoToPlanTab}
         onUpdateActivityTravel={onUpdateActivityTravel}
         onReorderActivities={onReorderActivities}
+        onAddDay={onAddDay}
+      />
+      <PlaceDiscoveryPanel
+        trip={trip}
+        canEdit={canEdit}
+        onAddActivityDirect={onAddActivityDirect}
+        onRemoveActivity={onDeleteActivity}
+        onSaveAccommodation={onSaveAccommodation}
+        onAddDay={onAddDay}
+        onManualEditAccommodation={onEditAccommodation}
       />
       <TripModeBar />
-    </div>
-  );
-}
-
-// All six figures are derived from the itinerary itself — see
-// getTripPlaceStats (distinct places per kind, so a hotel or market visited
-// twice isn't double-counted) and getTripDistanceKm in lib/trip-utils.ts.
-function TripStatsCard({ trip }: { trip: GeneratedTrip }) {
-  const places = useMemo(() => getTripPlaceStats(trip), [trip]);
-  const distanceKm = useMemo(() => getTripDistanceKm(trip), [trip]);
-  // Prefer the backend's own total (activity/travel costs × travelers, plus
-  // accommodation and standalone trip_expenses rows — see
-  // BackendTrip.totalBudget) over summing just activity.cost client-side,
-  // which under-counts as soon as anything's logged straight into the budget
-  // tab instead of an itinerary stop. Only a never-synced local draft (no
-  // totalBudget from a server response yet) falls back to the local sum —
-  // same "planned days only" divisor as getAverageDailyCost.
-  const costPerDay = useMemo(() => {
-    const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
-    if (plannedDays === 0) return 0;
-    return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
-  }, [trip]);
-
-  const stats = [
-    { label: "ที่เที่ยว", value: `${places.attractions}` },
-    { label: "ร้านอาหาร", value: `${places.restaurants}` },
-    { label: "คาเฟ่", value: `${places.cafes}` },
-    { label: "บาร์ / ผับ", value: `${places.bars}` },
-    { label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
-    { label: "Total Distance", value: `${distanceKm} km` },
-  ];
-
-  return (
-    <div className="rounded-3xl p-5 text-white sm:p-6" style={{ backgroundColor: "var(--color-brand-green)" }}>
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-4">
-        <h3 className="text-lg font-bold">{trip.destination}</h3>
-        {trip.styles.length > 0 && (
-          <p className="text-xs font-medium text-white/80 sm:text-sm">{trip.styles.join(" · ")}</p>
-        )}
-      </div>
-      <div className="h-px w-full bg-white/20" />
-      <div className="grid grid-cols-3 gap-2.5 pt-4 sm:grid-cols-6">
-        {stats.map((s) => (
-          <div key={s.label} className="flex flex-col items-center gap-1 rounded-2xl bg-white px-2 py-3 text-center">
-            <p className="text-base font-extrabold text-[var(--foreground)]">{s.value}</p>
-            <p className="text-[11px] text-[var(--color-muted)]">{s.label}</p>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1682,6 +1721,7 @@ function ItineraryAccordion({
   onGoToPlanTab,
   onUpdateActivityTravel,
   onReorderActivities,
+  onAddDay,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1691,28 +1731,44 @@ function ItineraryAccordion({
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
+  onAddDay: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4"
-      >
-        <h3 className="text-base font-bold sm:text-lg">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        </span>
-      </button>
+      <div className="flex w-full items-center justify-between gap-3 px-5 py-4">
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="text-left">
+          <h3 className="text-base font-bold sm:text-lg">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onAddDay}
+              className="inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <Plus size={12} />
+              เพิ่มวัน
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? "ย่อตารางแพลน" : "ขยายตารางแพลน"}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white"
+          >
+            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </button>
+        </div>
+      </div>
 
       {expanded && canEdit && (
         // Fuller, one-column day list while actively building/editing — place
         // count + date per day, plus a jump straight to the Plan tab for the
         // per-day travel-connector view, which this compact card doesn't have.
         <div className="flex flex-col gap-3 px-5 pb-5">
-          <TripStatsCard trip={trip} />
           <div className="flex justify-end">
             <button
               type="button"
@@ -1725,46 +1781,70 @@ function ItineraryAccordion({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {trip.days.map((day) => (
-              <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
+          <div className="flex flex-col gap-4">
+            {trip.days.map((day) => {
+              const hasActivities = day.activities.length > 0;
+              return (
                 <div
-                  className="flex items-center justify-between px-4 py-3"
-                  style={{ backgroundColor: "var(--color-sel-bg)" }}
+                  key={day.id}
+                  className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
+                  style={{ borderColor: "var(--color-border)" }}
                 >
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-bold">วันที่ {day.dayNumber}</h4>
-                    <span
-                      className="flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold"
-                      style={{ color: "var(--color-muted)" }}
-                    >
-                      <MapPin size={10} />
-                      {day.activities.length} จุด
-                    </span>
-                  </div>
-                  <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
-                </div>
-                <div className="flex flex-col gap-1 p-3">
-                  <button
-                    type="button"
-                    onClick={() => onAddActivity(day.id)}
-                    className="mb-1 rounded-xl border-2 border-dashed py-2.5 text-xs font-bold"
-                    style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                  <div
+                    className={hasActivities ? "flex items-center justify-between gap-3 border-b pb-2.5" : "flex items-center justify-between gap-3"}
+                    style={hasActivities ? { borderColor: "var(--color-border)" } : undefined}
                   >
-                    + เพิ่มสถานที่
-                  </button>
-                  <SortableItineraryList
-                    activities={day.activities}
-                    canEdit={canEdit}
-                    onEdit={(a) => onEditActivity(day.id, a)}
-                    onDelete={(a) => onDeleteActivity(day.id, a.id)}
-                    onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
-                    onReorder={(activities) => onReorderActivities(day.id, activities)}
-                  />
+                    <div className="flex items-baseline gap-2">
+                      <h4 className="text-sm font-bold" style={{ color: "var(--color-brand-green)" }}>
+                        วันที่ {day.dayNumber}
+                      </h4>
+                      <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onAddActivity(day.id)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full border-2 border-dashed px-3.5 py-1.5 text-xs font-bold"
+                      style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                    >
+                      <Plus size={12} />
+                      สถานที่
+                    </button>
+                  </div>
+                  {hasActivities && (
+                    <div className="flex flex-col gap-2">
+                      <SortableItineraryList
+                        activities={day.activities}
+                        canEdit={canEdit}
+                        onEdit={(a) => onEditActivity(day.id, a)}
+                        onDelete={(a) => onDeleteActivity(day.id, a.id)}
+                        onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
+                        onReorder={(activities) => onReorderActivities(day.id, activities)}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          <button
+            type="button"
+            onClick={() => onAddActivity(trip.days[trip.days.length - 1].id)}
+            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed px-4 py-3.5 text-left"
+            style={{ borderColor: "var(--color-accent-orange)", backgroundColor: "#FDF0E7" }}
+          >
+            <span className="flex items-center gap-2.5">
+              <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+              <span className="text-sm font-semibold">ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ</span>
+            </span>
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
+              style={{ backgroundColor: "var(--color-accent-orange)" }}
+            >
+              สำรวจ
+              <ChevronRight size={12} />
+            </span>
+          </button>
         </div>
       )}
 
@@ -1840,7 +1920,14 @@ function SortableItineraryList({
           return (
             <div key={a.id}>
               <ItineraryRow activity={a} index={i + 1} canEdit={canEdit} onEdit={() => onEdit(a)} onDelete={() => onDelete(a)} />
-              {next && <TravelConnectorRow toActivity={next} canEdit={canEdit} onSave={(travel) => onSaveTravel(next.id, travel)} />}
+              {next && (
+                <TravelConnectorRow
+                  fromTitle={a.title}
+                  toActivity={next}
+                  canEdit={canEdit}
+                  onSave={(travel) => onSaveTravel(next.id, travel)}
+                />
+              )}
             </div>
           );
         })}
@@ -1902,7 +1989,9 @@ function SortableItineraryEntry({
         onDelete={onDelete}
         dragHandleProps={{ attributes, listeners }}
       />
-      {next && onSaveTravel && <TravelConnectorRow toActivity={next} canEdit onSave={onSaveTravel} />}
+      {next && onSaveTravel && (
+        <TravelConnectorRow fromTitle={activity.title} toActivity={next} canEdit onSave={onSaveTravel} />
+      )}
     </div>
   );
 }
@@ -1924,58 +2013,76 @@ function ItineraryRow({
 }) {
   const Icon = (activity.icon && ACTIVITY_ICON_OVERRIDE[activity.icon]) || categoryIcon[activity.category];
   const color = categoryColorVar[activity.category];
+  const imageUrl = activity.images?.[0] ?? activity.location?.imageUrl;
 
   return (
-    <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+    <div className="flex items-center gap-3 rounded-2xl bg-white p-2.5">
       {dragHandleProps && (
         <button
           type="button"
           {...dragHandleProps.attributes}
           {...dragHandleProps.listeners}
-          className="flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[var(--color-muted)] active:cursor-grabbing"
+          className="flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[var(--color-muted)] active:cursor-grabbing"
           aria-label={`ลากเพื่อจัดลำดับ ${activity.title}`}
         >
-          <GripVertical size={14} />
+          <GripVertical size={16} />
         </button>
       )}
-      <span
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-        style={{ backgroundColor: "var(--color-brand-green)" }}
+      <div
+        className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl"
+        style={{ backgroundColor: "var(--color-sel-bg)" }}
       >
-        {index}
-      </span>
-      <Icon size={13} style={{ color }} className="shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold">{activity.title}</p>
-        <p className="text-[11px] text-[var(--color-muted)]">
-          {activity.time && (
-            <span className="font-semibold" style={{ color: "var(--color-accent-orange)" }}>
-              {activity.time}
-            </span>
-          )}
-          {activity.travelNote && <> {activity.time && "· "}{activity.travelNote}</>}
-          {activity.cost > 0 && <> {(activity.time || activity.travelNote) && "· "}{formatTHB(activity.cost)}</>}
-        </p>
-        {activity.notes && <p className="truncate text-[11px] text-[var(--color-muted)]">{activity.notes}</p>}
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <Icon size={18} style={{ color }} />
+          </div>
+        )}
+        <span className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[10px] font-bold text-white">
+          {index}
+        </span>
       </div>
-      {canEdit && (
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
+      <div className="min-w-0 flex-1">
+        {activity.time && (
+          <p className="text-xs font-bold" style={{ color: "var(--color-accent-orange)" }}>
+            {activity.time}
+          </p>
+        )}
+        <p className="truncate text-sm font-bold">{activity.title}</p>
+        {(activity.notes || activity.travelNote) && (
+          <p className="truncate text-xs text-[var(--color-muted)]">{activity.notes || activity.travelNote}</p>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {activity.cost > 0 && (
+          <span
+            className="flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+            style={{ borderColor: "var(--color-border)" }}
           >
-            <Pencil size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
-      )}
+            {formatTHB(activity.cost)}
+          </span>
+        )}
+        {canEdit && (
+          <>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
+            >
+              <Trash2 size={13} />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -2189,6 +2296,7 @@ function PlanTab({
                     />
                     {next && (
                       <TravelConnectorRow
+                        fromTitle={a.title}
                         toActivity={next}
                         canEdit={canEdit}
                         onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
@@ -2994,95 +3102,6 @@ function AccommodationEditDialog({
   );
 }
 
-const ACTIVITY_CATEGORY_OPTIONS: ActivityCategory[] = [
-  "sightseeing",
-  "food",
-  "hotel",
-  "activity",
-  "transport",
-  "other",
-];
-
-// Replaces the native <select> for "ประเภท" — a dropdown panel of category
-// rows (colored icon badge + label), styled consistently with
-// ActivityPlaceSearchField's suggestion dropdown (same focus-border,
-// selected-row highlight, and click-outside-to-close behavior) instead of
-// deferring to the browser's own <select> UI.
-function ActivityCategoryField({
-  value,
-  onChange,
-}: {
-  value: ActivityCategory;
-  onChange: (category: ActivityCategory) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const Icon = categoryIcon[value];
-
-  return (
-    <div ref={containerRef} className="relative">
-      <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ประเภท</label>
-      <button
-        type="button"
-        onClick={() => setIsOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-xl border-2 px-3.5 py-2.5 text-left text-sm transition-colors"
-        style={{ borderColor: isOpen ? "var(--color-brand-green)" : "var(--color-border)" }}
-      >
-        <span
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-          style={{ backgroundColor: categoryBgVar[value] }}
-        >
-          <Icon size={11} style={{ color: categoryColorVar[value] }} />
-        </span>
-        <span className="flex-1 truncate">{categoryLabel[value]}</span>
-        <ChevronDown size={14} className="shrink-0" style={{ color: "var(--color-muted)" }} />
-      </button>
-
-      {isOpen && (
-        <div
-          className="absolute inset-x-0 top-[calc(100%+4px)] z-10 max-h-64 overflow-y-auto rounded-xl border bg-white py-1.5 shadow-lg"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          {ACTIVITY_CATEGORY_OPTIONS.map((c) => {
-            const OptionIcon = categoryIcon[c];
-            const isSelected = c === value;
-            return (
-              <button
-                key={c}
-                type="button"
-                onClick={() => {
-                  onChange(c);
-                  setIsOpen(false);
-                }}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm hover:bg-[var(--color-sel-bg)]"
-                style={isSelected ? { backgroundColor: "var(--color-sel-bg)" } : undefined}
-              >
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                  style={{ backgroundColor: categoryBgVar[c] }}
-                >
-                  <OptionIcon size={12} style={{ color: categoryColorVar[c] }} />
-                </span>
-                <span className="flex-1 truncate font-medium">{categoryLabel[c]}</span>
-                {isSelected && <Check size={14} style={{ color: "var(--color-brand-green)" }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const PLACE_SEARCH_DEBOUNCE_MS = 350;
 
 // Free-text POI search + dropdown for the activity name field — picking a
@@ -3515,197 +3534,6 @@ function AddActivityDialog({
       {showTimePicker && (
         <TimePickerDialog value={time || "09:00"} onConfirm={setTime} onClose={() => setShowTimePicker(false)} />
       )}
-    </>
-  );
-}
-
-// Custom wheel-style "เลือกเวลา" picker (matches the Figma spec) that opens
-// on top of AddActivityDialog when the "เวลา" field is tapped — replaces the
-// browser-native <input type="time"> so the look is consistent across
-// platforms instead of deferring to each OS's own time picker UI.
-const WHEEL_HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1);
-const WHEEL_MINUTES_60 = Array.from({ length: 60 }, (_, i) => i);
-const WHEEL_ITEM_HEIGHT = 44;
-
-function parseTime12(time24: string): { hour12: number; minute: number; period: "AM" | "PM" } {
-  const [hStr, mStr] = time24.split(":");
-  const h = Number(hStr) || 0;
-  const minute = Number(mStr) || 0;
-  const period: "AM" | "PM" = h >= 12 ? "PM" : "AM";
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return { hour12, minute, period };
-}
-
-function toTime24(hour12: number, minute: number, period: "AM" | "PM"): string {
-  const h = period === "PM" ? (hour12 % 12) + 12 : hour12 % 12;
-  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function formatTimeDisplay(time24: string): string {
-  const { hour12, minute, period } = parseTime12(time24);
-  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${period}`;
-}
-
-// One scrollable wheel column (hour or minute) — snaps to the nearest value
-// on scroll-end and centers the picked value, matching the reference's
-// 3-row wheel (dimmed neighbors above/below a bold, larger selected row).
-function TimeWheelColumn({
-  values,
-  selectedIndex,
-  onChange,
-}: {
-  values: number[];
-  selectedIndex: number;
-  onChange: (index: number) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const scrollTimeoutRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (containerRef.current) containerRef.current.scrollTop = selectedIndex * WHEEL_ITEM_HEIGHT;
-    // Only run once on mount — later scrollTop updates come from the user's
-    // own scroll/click, not from selectedIndex changing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function settleToIndex(index: number) {
-    const clamped = Math.max(0, Math.min(values.length - 1, index));
-    onChange(clamped);
-    containerRef.current?.scrollTo({ top: clamped * WHEEL_ITEM_HEIGHT, behavior: "smooth" });
-  }
-
-  function handleScroll() {
-    if (scrollTimeoutRef.current) window.clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = window.setTimeout(() => {
-      const el = containerRef.current;
-      if (!el) return;
-      settleToIndex(Math.round(el.scrollTop / WHEEL_ITEM_HEIGHT));
-    }, 100);
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="relative overflow-y-scroll [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      style={{ height: WHEEL_ITEM_HEIGHT * 3, scrollSnapType: "y mandatory" }}
-    >
-      <div style={{ height: WHEEL_ITEM_HEIGHT }} />
-      {values.map((v, i) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => settleToIndex(i)}
-          className="flex w-16 items-center justify-center transition-colors"
-          style={{
-            height: WHEEL_ITEM_HEIGHT,
-            scrollSnapAlign: "center",
-            fontSize: i === selectedIndex ? "1.375rem" : "1rem",
-            fontWeight: i === selectedIndex ? 700 : 500,
-            color: i === selectedIndex ? "var(--foreground)" : "var(--color-muted)",
-          }}
-        >
-          {String(v).padStart(2, "0")}
-        </button>
-      ))}
-      <div style={{ height: WHEEL_ITEM_HEIGHT }} />
-    </div>
-  );
-}
-
-function TimePickerDialog({
-  value,
-  onConfirm,
-  onClose,
-}: {
-  value: string;
-  onConfirm: (time24: string) => void;
-  onClose: () => void;
-}) {
-  const initial = parseTime12(value);
-  const [period, setPeriod] = useState<"AM" | "PM">(initial.period);
-  const [hourIndex, setHourIndex] = useState(WHEEL_HOURS_12.indexOf(initial.hour12));
-  const [minuteIndex, setMinuteIndex] = useState(initial.minute);
-
-  function handleConfirm() {
-    onConfirm(toTime24(WHEEL_HOURS_12[hourIndex], WHEEL_MINUTES_60[minuteIndex], period));
-    onClose();
-  }
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose} />
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-        <div className="flex w-full max-w-sm flex-col gap-5 rounded-3xl bg-white p-6 shadow-2xl">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-bold">เลือกเวลา</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-              style={{ backgroundColor: "var(--color-surface)" }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 rounded-2xl p-1.5" style={{ backgroundColor: "var(--color-page-cream)" }}>
-            <button
-              type="button"
-              onClick={() => setPeriod("AM")}
-              className="flex-1 rounded-xl py-2.5 text-sm font-bold transition-colors"
-              style={
-                period === "AM"
-                  ? { backgroundColor: "white", color: "var(--foreground)", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }
-                  : { color: "var(--color-muted)" }
-              }
-            >
-              ก่อนเที่ยง (AM)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPeriod("PM")}
-              className="flex-1 rounded-xl py-2.5 text-sm font-bold transition-colors"
-              style={
-                period === "PM"
-                  ? { backgroundColor: "white", color: "var(--foreground)", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }
-                  : { color: "var(--color-muted)" }
-              }
-            >
-              หลังเที่ยง (PM)
-            </button>
-          </div>
-
-          <div className="relative flex items-center justify-center gap-2">
-            <div
-              className="pointer-events-none absolute inset-x-0 rounded-2xl"
-              style={{ top: WHEEL_ITEM_HEIGHT, height: WHEEL_ITEM_HEIGHT, backgroundColor: "var(--color-page-cream)" }}
-            />
-            <TimeWheelColumn values={WHEEL_HOURS_12} selectedIndex={hourIndex} onChange={setHourIndex} />
-            <span className="text-xl font-bold">:</span>
-            <TimeWheelColumn values={WHEEL_MINUTES_60} selectedIndex={minuteIndex} onChange={setMinuteIndex} />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-full border py-3 text-sm font-bold"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              className="flex-1 rounded-full py-3 text-sm font-bold text-white"
-              style={{ backgroundColor: "var(--color-accent-orange)" }}
-            >
-              ตกลง
-            </button>
-          </div>
-        </div>
-      </div>
     </>
   );
 }
