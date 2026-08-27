@@ -51,6 +51,11 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08);
   --container-max: 80rem; /* = max-w-7xl, backs components/layout/PageContainer.tsx */
+  /* /main's feed runs wider than the standard page width: at 80rem a large
+     display was mostly empty margin. Shared by HomeNavbar's two rows,
+     FeedControls and the feed container so all four keep one left edge —
+     they drifted onto different grids once before. */
+  --container-feed: 96rem;
 }
 
 @theme inline {
@@ -71,16 +76,8 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display), var(--font-thai), Arial, Helvetica, sans-serif;
 }
 
-/* /main fills ultrawide screens with a fifth guide column while keeping the
-   recommendation rail at the same comfortable width. Below 1800px the page
-   retains its reference-matched four-column feed. */
-@media (min-width: 1800px) {
-  .main-page-container {
-    max-width: none !important;
-    padding-right: 2rem !important;
-  }
-
-  .main-guide-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
+/* /main's feed caps at four columns at every width. This used to break out to
+   five columns past 1800px and drop the container's max-width entirely, which
+   let the grid run the full width of an ultrawide display — cards got narrow
+   and the feed lost its side margins. The cap now comes from the grid classes
+   on the element itself, so there's no override here to fight with. */

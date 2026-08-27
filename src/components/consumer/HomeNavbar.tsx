@@ -23,7 +23,13 @@ export function HomeNavbar({ children }: { children?: ReactNode }) {
   return (
     <>
     <div className="sticky top-0 z-30 shrink-0 bg-white shadow-[0_2px_10px_rgba(0,0,0,0.04)]">
-      <header className="flex h-[92px] items-center justify-between gap-4 border-b border-[#eeeeee] px-5 sm:px-10 lg:px-[7.5vw]">
+      {/* Same width cap and padding scale as PageContainer/FeedControls, so
+          the wordmark, the filter chips, the search field and the cards all
+          share one left edge. This row used to be uncapped with lg:px-[7.5vw],
+          which put it on a different grid from the feed — three different left
+          edges at 1280px, drifting further apart the wider the screen got. */}
+      <header className="border-b border-[#eeeeee]">
+        <div className="mx-auto flex h-[92px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-6 sm:px-8 lg:px-12 xl:px-16">
         <div className="flex shrink-0 items-center gap-2">
           {appShell && (
             <button
@@ -69,10 +75,13 @@ export function HomeNavbar({ children }: { children?: ReactNode }) {
             </button>
           )}
         </div>
+        </div>
       </header>
       {children && (
-        <div className="overflow-x-auto px-4 py-3 sm:px-8 lg:px-[7.5vw]">
-          <div className="flex min-w-max items-center gap-2">{children}</div>
+        <div className="overflow-x-auto bg-[var(--color-surface)]">
+          <div className="mx-auto w-full max-w-[var(--container-feed)] py-3 px-6 sm:px-8 lg:px-12 xl:px-16">
+            <div className="flex min-w-max items-center gap-2">{children}</div>
+          </div>
         </div>
       )}
     </div>

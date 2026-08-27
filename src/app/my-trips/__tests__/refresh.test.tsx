@@ -17,6 +17,11 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/layout/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  // The page's header now opens the shell's drawer through this hook, so the
+  // stub has to provide it too. Returning null is the "outside an AppShell"
+  // case, which makes the menu button render nothing — fine for these tests,
+  // which are about the refetch listener, not the nav.
+  useAppShell: () => null,
 }));
 
 vi.mock("@/components/LogoutButton", () => ({ default: () => <button>logout</button> }));

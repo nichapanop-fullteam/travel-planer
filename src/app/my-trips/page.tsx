@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, LoaderCircle, Pencil, Search, X } from "lucide-react";
+import { CheckCircle2, LoaderCircle, Menu, Pencil, Search, X } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
-import { AppShell } from "@/components/layout/AppShell";
+import { AppShell, useAppShell } from "@/components/layout/AppShell";
 import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { CreateTripButton } from "@/components/ui/CreateTripButton";
@@ -105,11 +105,14 @@ export default function MyTripsPage() {
   });
 
   return (
-    <AppShell hideDesktopSidebar hideDesktopTopbar>
+    <AppShell hideDesktopSidebar hideTopbar>
       <div className="min-h-full bg-[#f7faf8]">
         <header className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur">
-          <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
-            <Link href="/main" className="text-xl font-extrabold tracking-[-0.04em] text-[var(--color-brand-green)]">PUNGUIDE</Link>
+          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-6 sm:px-8 lg:px-12 xl:px-16">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <MyTripsMenuButton />
+              <Link href="/main" className="text-xl font-extrabold tracking-[-0.04em] text-[var(--color-brand-green)]">PUNGUIDE</Link>
+            </div>
             <div className="flex items-center gap-2 sm:gap-4">
               <Link href="/main" className="hidden text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--foreground)] sm:block">สำรวจทริป</Link>
               <CreateTripButton />
@@ -121,7 +124,7 @@ export default function MyTripsPage() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+        <main className="mx-auto w-full max-w-[var(--container-feed)] px-6 py-8 sm:px-8 sm:py-12 lg:px-12 xl:px-16">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="text-sm font-semibold text-[var(--color-primary)]">ยินดีต้อนรับกลับมา</p>
@@ -185,5 +188,22 @@ export default function MyTripsPage() {
       </div>
       {accountOpen && <UserAccountDialog onClose={() => setAccountOpen(false)} />}
     </AppShell>
+  );
+}
+
+// The shell's Topbar is hidden on this page (it duplicated this header), so
+// this is the only way into the nav drawer at any width.
+function MyTripsMenuButton() {
+  const appShell = useAppShell();
+  if (!appShell) return null;
+  return (
+    <button
+      type="button"
+      onClick={appShell.openSidebar}
+      aria-label="เปิดเมนู"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)]"
+    >
+      <Menu size={20} />
+    </button>
   );
 }
