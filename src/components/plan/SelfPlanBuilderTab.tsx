@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   Building2,
+  CalendarDays,
   Car,
   Check,
   ChevronDown,
@@ -27,7 +29,7 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import type { Activity, Day, GeneratedTrip, TravelFromPrevious, TravelType, TripAccommodation } from "@/types";
+import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious, TravelType, TripAccommodation } from "@/types";
 import {
   fetchExternalPlaceSuggestionSections,
   searchExternalPlaces,
@@ -39,6 +41,8 @@ import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
 import { formatTHB, resolveNightlyRate } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
+import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
+import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 
 // Matches the three carousels this tab always shows (แนะนำสถานที่ห้ามพลาด /
 // ร้านอาหารแนะนำ / ที่พักแนะนำ) — see docs for GET /places/suggest/sections,
@@ -239,7 +243,13 @@ export function PlaceDiscoveryPanel({
         />
       )}
 
-      <AccommodationAccordion trip={trip} canEdit={canEdit} onManualEdit={onManualEditAccommodation} />
+      <AccommodationAccordion
+        trip={trip}
+        canEdit={canEdit}
+        center={center}
+        onManualEdit={onManualEditAccommodation}
+        onSaveAccommodation={onSaveAccommodation}
+      />
 
       {dayPickerRequest && (
         <AddPlaceDialog
@@ -989,23 +999,54 @@ export function DayTab({ label, isActive, onClick }: { label: string; isActive: 
 // places at once). Combines day-picking and final place selection into one
 // step, against this trip's real Day[]/dayId — replaces the old two-stage
 // bottom-sheet flow (day-only picker, then a separate staging confirm).
+// Per-place editable fields shown once a card is (re-)checked in the
+// showDetailsForm review step — mirrors AddActivityDialog's เวลา/ประเภท/
+// ค่าใช้จ่าย fields, prefilled with sensible defaults (see nextDefaultTime)
+// rather than left blank, since the whole point of this step is reviewing
+// what's about to be added, not filling out a form from scratch.
+interface PlaceDraft {
+  time: string;
+  category: ActivityCategory;
+  cost: string;
+  notes: string;
+}
+
 function AddPlaceDialog({
   places,
   initialCheckedIds,
   days,
+  initialDayId,
   onAddDay,
   onConfirm,
   onClose,
+  title = "เพิ่มสถานที่",
+  confirmLabel = "เพิ่มสถานที่",
+  cancelLabel = "ยกเลิก",
+  showDayPicker = true,
+  showDetailsForm = false,
 }: {
   places: EnrichedPlace[];
   initialCheckedIds: Set<string>;
   days: Day[];
+  initialDayId?: string;
   onAddDay: () => void;
-  onConfirm: (day: Day, places: EnrichedPlace[]) => void;
+  onConfirm: (day: Day, places: EnrichedPlace[], drafts: Record<string, PlaceDraft>) => void;
   onClose: () => void;
+  title?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  // RecommendPlacesFlow already knows which day it's adding to (the one the
+  // "+ สถานที่" that opened it belongs to) — this step becomes a pure
+  // re-confirm-the-picks review, not a day picker, so hide it there.
+  showDayPicker?: boolean;
+  // Same flow — expands each (re-)checked card into an editable เวลา/ประเภท/
+  // ค่าใช้จ่าย/โน้ต form instead of the plain PlaceCheckCard row, since this
+  // step doubles as the only chance to adjust those before they're added.
+  showDetailsForm?: boolean;
 }) {
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(days[0]?.id ?? null);
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(initialDayId ?? days[0]?.id ?? null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(initialCheckedIds);
+  const [drafts, setDrafts] = useState<Record<string, PlaceDraft>>({});
   const prevDayCountRef = useRef(days.length);
 
   // Jump to the newly-created day once "+เพิ่มวัน" resolves — trip.days only
@@ -1018,20 +1059,49 @@ function AddPlaceDialog({
     prevDayCountRef.current = days.length;
   }, [days]);
 
+  // Staggers each newly-checked place an hour apart from the day's existing
+  // stops (and any other drafts opened this session) — same spirit as
+  // toActivity's own auto time, just visible/editable here instead of silent.
+  function nextDefaultTime(): string {
+    const day = days.find((d) => d.id === selectedDayId);
+    const count = (day?.activities.length ?? 0) + Object.keys(drafts).length;
+    const hour = Math.min(9 + count, 22);
+    return `${String(hour).padStart(2, "0")}:00`;
+  }
+
   function toggleChecked(id: string) {
+    const isChecking = !checkedIds.has(id);
     setCheckedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    if (isChecking && showDetailsForm && !drafts[id]) {
+      const place = places.find((p) => p.id === id);
+      if (place) {
+        setDrafts((prev) => ({
+          ...prev,
+          [id]: {
+            time: nextDefaultTime(),
+            category: EXTERNAL_TO_ACTIVITY_CATEGORY[place.category],
+            cost: "",
+            notes: "",
+          },
+        }));
+      }
+    }
+  }
+
+  function patchDraft(id: string, patch: Partial<PlaceDraft>) {
+    setDrafts((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], ...patch } } : prev));
   }
 
   function handleConfirm() {
     const day = days.find((d) => d.id === selectedDayId);
     const chosen = places.filter((p) => checkedIds.has(p.id));
     if (!day || chosen.length === 0) return;
-    onConfirm(day, chosen);
+    onConfirm(day, chosen, drafts);
   }
 
   const canConfirm = selectedDayId !== null && checkedIds.size > 0;
@@ -1042,7 +1112,7 @@ function AddPlaceDialog({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="flex max-h-[90vh] w-full max-w-2xl flex-col gap-5 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-bold">เพิ่มสถานที่</h3>
+            <h3 className="text-lg font-bold">{title}</h3>
             <button
               type="button"
               onClick={onClose}
@@ -1053,44 +1123,57 @@ function AddPlaceDialog({
             </button>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-[var(--color-muted)]">เลือกวันที่ต้องการเพิ่มแพลน</p>
-            <div
-              className="flex items-center gap-1.5 overflow-x-auto rounded-2xl p-1.5"
-              style={{ backgroundColor: "var(--color-page-cream)" }}
-            >
-              <DayTab label="ทุกวัน" isActive={selectedDayId === null} onClick={() => setSelectedDayId(null)} />
-              {days.map((day) => (
-                <DayTab
-                  key={day.id}
-                  label={`วันที่ ${day.dayNumber}`}
-                  isActive={selectedDayId === day.id}
-                  onClick={() => setSelectedDayId(day.id)}
-                />
-              ))}
-              <button
-                type="button"
-                onClick={onAddDay}
-                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold"
-                style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }}
+          {showDayPicker && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-semibold text-[var(--color-muted)]">เลือกวันที่ต้องการเพิ่มแพลน</p>
+              <div
+                className="flex items-center gap-1.5 overflow-x-auto rounded-2xl p-1.5"
+                style={{ backgroundColor: "var(--color-page-cream)" }}
               >
-                <Plus size={14} />
-                เพิ่มวัน
-              </button>
+                <DayTab label="ทุกวัน" isActive={selectedDayId === null} onClick={() => setSelectedDayId(null)} />
+                {days.map((day) => (
+                  <DayTab
+                    key={day.id}
+                    label={`วันที่ ${day.dayNumber}`}
+                    isActive={selectedDayId === day.id}
+                    onClick={() => setSelectedDayId(day.id)}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={onAddDay}
+                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold"
+                  style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }}
+                >
+                  <Plus size={14} />
+                  เพิ่มวัน
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-[var(--color-muted)]">สถานที่ต้องการเพิ่ม</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {places.map((place) => (
-                <PlaceCheckCard
-                  key={place.id}
-                  place={place}
-                  checked={checkedIds.has(place.id)}
-                  onToggle={() => toggleChecked(place.id)}
-                />
-              ))}
+            <div className={showDetailsForm ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>
+              {places.map((place) =>
+                showDetailsForm ? (
+                  <SelectedPlaceCard
+                    key={place.id}
+                    place={place}
+                    checked={checkedIds.has(place.id)}
+                    draft={drafts[place.id]}
+                    onToggle={() => toggleChecked(place.id)}
+                    onChangeDraft={(patch) => patchDraft(place.id, patch)}
+                  />
+                ) : (
+                  <PlaceCheckCard
+                    key={place.id}
+                    place={place}
+                    checked={checkedIds.has(place.id)}
+                    onToggle={() => toggleChecked(place.id)}
+                  />
+                )
+              )}
             </div>
           </div>
 
@@ -1117,6 +1200,366 @@ function AddPlaceDialog({
             <button
               type="button"
               onClick={onClose}
+              className={showDetailsForm ? "flex-1 rounded-full py-3 text-sm font-bold" : "flex-1 rounded-full border py-3 text-sm font-bold"}
+              style={showDetailsForm ? { backgroundColor: "#FDF0E7", color: "var(--color-accent-orange)" } : { borderColor: "var(--color-border)" }}
+            >
+              {cancelLabel}
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!canConfirm}
+              className="flex-1 rounded-full py-3 text-sm font-bold text-white transition-opacity disabled:opacity-40"
+              style={{ backgroundColor: showDetailsForm ? "#3D2B24" : "var(--color-accent-orange)" }}
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Checked = the header row (photo/name/address/checkbox, same as
+// PlaceCheckCard) plus an inline เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form underneath,
+// all inside one bordered card — only used by AddPlaceDialog's
+// showDetailsForm mode (the recommend-flow's review step).
+function SelectedPlaceCard({
+  place,
+  checked,
+  draft,
+  onToggle,
+  onChangeDraft,
+}: {
+  place: EnrichedPlace;
+  checked: boolean;
+  draft?: PlaceDraft;
+  onToggle: () => void;
+  onChangeDraft: (patch: Partial<PlaceDraft>) => void;
+}) {
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  return (
+    <div
+      className="relative flex flex-col gap-3 rounded-2xl border p-3"
+      style={
+        checked
+          ? { backgroundColor: "var(--color-page-cream)", borderColor: "var(--color-accent-orange)" }
+          : { borderColor: "var(--color-border)" }
+      }
+    >
+      {/* Floating corner badge once checked — replaces the inline square
+          checkbox, matching the reference's checked-state treatment. */}
+      {checked && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={`เอา ${place.name} ออกจากรายการที่เลือก`}
+          className="absolute -right-2 -top-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white shadow-md"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          <Check size={14} />
+        </button>
+      )}
+
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+        className="flex cursor-pointer items-center gap-3 text-left"
+      >
+        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
+          {place.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center">
+              <MapPin size={16} style={{ color: "var(--color-muted)" }} />
+            </span>
+          )}
+          {place.rating !== undefined && (
+            <span className="absolute left-1 top-1 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              <Star size={8} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+              {place.rating.toFixed(1)}
+            </span>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold">{place.name}</p>
+          <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
+        </div>
+        {!checked && <Checkbox checked={false} onClick={onToggle} color="var(--color-accent-orange)" />}
+      </div>
+
+      {checked && draft && (
+        <div className="flex flex-col gap-3 border-t pt-3" style={{ borderColor: "var(--color-border)" }}>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เวลา</label>
+              <button
+                type="button"
+                onClick={() => setShowTimePicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                {formatTimeDisplay(draft.time)}
+              </button>
+            </div>
+            <ActivityCategoryField value={draft.category} onChange={(category) => onChangeDraft({ category })} />
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ค่าใช้จ่าย (ต่อคน)</label>
+              <div
+                className="flex items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={draft.cost}
+                  onChange={(e) => onChangeDraft({ cost: e.target.value.replace(/[^\d]/g, "") })}
+                  placeholder="0"
+                  className="w-full bg-transparent text-sm focus:outline-none"
+                />
+                <span className="shrink-0 text-xs font-semibold text-[var(--color-muted)]">THB</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เพิ่มโน้ต</label>
+            <textarea
+              value={draft.notes}
+              onChange={(e) => onChangeDraft({ notes: e.target.value })}
+              rows={1}
+              className="w-full resize-none rounded-xl border bg-white px-3.5 py-2.5 text-sm focus:outline-none"
+              style={{ borderColor: "var(--color-border)" }}
+            />
+          </div>
+        </div>
+      )}
+
+      {showTimePicker && draft && (
+        <TimePickerDialog
+          value={draft.time || "09:00"}
+          onConfirm={(time) => onChangeDraft({ time })}
+          onClose={() => setShowTimePicker(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// "แนะนำสถานที่" — the day header's "+ สถานที่" button and the "ยังไม่รู้จะไปไหน?"
+// banner both open this instead of the old single-place AddActivityDialog:
+// browse/search/filter recommended places, multi-select several, then review
+// + pick a day in step two (AddPlaceDialog, reused as-is). Self-contained
+// local staging state rather than PlaceDiscoveryPanel's shared/lifted one —
+// each open here is its own "pick some places for this day" session, same
+// spirit as AddActivityDialog/AddPlaceDialog's own local state.
+export function RecommendPlacesFlow({
+  trip,
+  initialDayId,
+  onAddDay,
+  onClose,
+  onAddActivityDirect,
+  onSaveAccommodation,
+  onAddManually,
+}: {
+  trip: GeneratedTrip;
+  initialDayId: string;
+  onAddDay: () => void;
+  onClose: () => void;
+  onAddActivityDirect: (dayId: string, activity: Activity) => void;
+  onSaveAccommodation: (accommodation: TripAccommodation) => void;
+  onAddManually: () => void;
+}) {
+  const center = trip.destinationPlace
+    ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
+    : DEFAULT_RECOMMENDATION_CENTER;
+  const places = usePlaceSuggestions(center, ["mixed"]);
+
+  const [filterKey, setFilterKey] = useState("all");
+  const [query, setQuery] = useState("");
+  const [stagedPlaces, setStagedPlaces] = useState<EnrichedPlace[]>([]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [reviewing, setReviewing] = useState(false);
+
+  const activeFilter = DRAWER_FILTERS.find((f) => f.key === filterKey) ?? DRAWER_FILTERS[0];
+  const filtered = useMemo(() => {
+    if (!places) return null;
+    const trimmed = query.trim().toLowerCase();
+    return places.filter(
+      (p) =>
+        (activeFilter.categories.length === 0 || activeFilter.categories.includes(p.category)) &&
+        (!trimmed || p.name.toLowerCase().includes(trimmed))
+    );
+  }, [places, query, activeFilter]);
+
+  function toggle(place: EnrichedPlace) {
+    setStagedPlaces((prev) => (prev.some((p) => p.id === place.id) ? prev : [...prev, place]));
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(place.id)) next.delete(place.id);
+      else next.add(place.id);
+      return next;
+    });
+  }
+
+  function clearChecked() {
+    setStagedPlaces([]);
+    setCheckedIds(new Set());
+  }
+
+  // Step 2 — same day-picker/review dialog PlaceDiscoveryPanel's carousel
+  // already uses. "ย้อนกลับ"/closing it returns to the browse grid instead of
+  // exiting the whole flow, so a wrong day pick doesn't lose the selection.
+  if (reviewing) {
+    return (
+      <AddPlaceDialog
+        places={stagedPlaces}
+        // Re-confirm, not carry-over — arriving here shows every staged place
+        // unchecked (count 0) even though it was already picked in the browse
+        // grid, so "เพิ่มลงแพลน" is a deliberate final step, not a rubber stamp.
+        initialCheckedIds={new Set()}
+        days={trip.days}
+        initialDayId={initialDayId}
+        title="รายละเอียดเพิ่มสถานที่"
+        confirmLabel="เพิ่มลงแพลน"
+        cancelLabel="ย้อนกลับ"
+        showDayPicker={false}
+        showDetailsForm
+        onAddDay={onAddDay}
+        onClose={() => setReviewing(false)}
+        onConfirm={(day, chosenPlaces, drafts) => {
+          chosenPlaces.forEach((place, i) => {
+            const isHotel = place.category === "hotel";
+            const draft = drafts[place.id];
+            const activity: Activity = draft
+              ? {
+                  id: crypto.randomUUID(),
+                  time: draft.time,
+                  title: isHotel ? `เช็คอิน ${place.name}` : place.name,
+                  category: draft.category,
+                  notes: draft.notes.trim() || undefined,
+                  cost: Number(draft.cost) || 0,
+                  location: {
+                    name: place.name,
+                    lat: place.lat,
+                    lng: place.lng,
+                    rating: place.rating,
+                    imageUrl: place.imageUrl,
+                    googlePlaceId: place.id,
+                  },
+                }
+              : toActivity(place, day, isHotel ? `เช็คอิน ${place.name}` : undefined, i);
+            if (isHotel) {
+              onSaveAccommodation({ name: place.name, imageUrl: place.imageUrl, amenities: [], description: place.priceLabel });
+            }
+            onAddActivityDirect(day.id, activity);
+          });
+          onClose();
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="flex max-h-[90vh] w-full max-w-4xl flex-col gap-4 overflow-hidden rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-bold">แนะนำสถานที่</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: "var(--color-surface)" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
+            <Search size={16} style={{ color: "var(--color-muted)" }} />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
+              className="w-full bg-transparent text-sm focus:outline-none"
+            />
+          </div>
+
+          <div className="flex shrink-0 gap-2 overflow-x-auto [scrollbar-width:none]">
+            {DRAWER_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilterKey(f.key)}
+                className="flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
+                style={
+                  activeFilter.key === f.key
+                    ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
+                    : { borderColor: "var(--color-border)" }
+                }
+              >
+                {f.icon && <f.icon size={13} />}
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid flex-1 auto-rows-min grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
+            {filtered === null && (
+              <p className="col-span-full py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
+            )}
+            {filtered !== null && filtered.length === 0 && (
+              <p className="col-span-full py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
+            )}
+            {filtered?.map((place) => (
+              <RecommendPlaceCard
+                key={place.id}
+                place={place}
+                selected={checkedIds.has(place.id)}
+                onToggle={() => toggle(place)}
+              />
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: "var(--color-border)" }}>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                  style={{ backgroundColor: "var(--color-accent-orange)" }}
+                >
+                  {checkedIds.size}
+                </span>
+                {checkedIds.size > 0 ? `คุณได้เลือกสถานที่แล้ว กด "ถัดไป" เพื่อใส่รายละเอียดแพลน` : "เลือกสถานที่ที่คุณสนใจ"}
+              </span>
+              {checkedIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={clearChecked}
+                  className="text-xs font-semibold underline text-[var(--color-muted)]"
+                >
+                  ล้างที่เลือก
+                </button>
+              )}
+            </div>
+            <button type="button" onClick={onAddManually} className="text-xs font-semibold underline" style={{ color: "var(--color-brand-green)" }}>
+              เพิ่มสถานที่เอง
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
               className="flex-1 rounded-full border py-3 text-sm font-bold"
               style={{ borderColor: "var(--color-border)" }}
             >
@@ -1124,17 +1567,84 @@ function AddPlaceDialog({
             </button>
             <button
               type="button"
-              onClick={handleConfirm}
-              disabled={!canConfirm}
+              onClick={() => setReviewing(true)}
+              disabled={checkedIds.size === 0}
               className="flex-1 rounded-full py-3 text-sm font-bold text-white transition-opacity disabled:opacity-40"
               style={{ backgroundColor: "var(--color-accent-orange)" }}
             >
-              เพิ่มสถานที่
+              ถัดไป
             </button>
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+function RecommendPlaceCard({
+  place,
+  selected,
+  onToggle,
+}: {
+  place: EnrichedPlace;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className="flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm"
+      style={{ borderColor: selected ? "var(--color-accent-orange)" : "var(--color-border)" }}
+    >
+      <div className="relative h-28 w-full" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <MapPin size={20} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
+        <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
+          {place.rating !== undefined && (
+            <span className="flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              <Star size={9} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+              {place.rating.toFixed(1)}
+            </span>
+          )}
+          <span className="rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+            {CATEGORY_LABEL_TH[place.category]}
+          </span>
+        </div>
+        {selected && (
+          <span
+            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            <Check size={12} />
+          </span>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-1 p-3">
+        <p className="truncate text-sm font-bold">{place.name}</p>
+        <p className="line-clamp-2 flex-1 text-xs text-[var(--color-muted)]">{place.address}</p>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mt-1 w-full rounded-full py-2 text-xs font-bold transition-colors"
+          style={
+            selected
+              ? { backgroundColor: "var(--color-accent-orange)", color: "#fff" }
+              : {
+                  backgroundColor: "var(--color-page-cream)",
+                  color: "var(--color-accent-orange)",
+                  border: "1px solid var(--color-accent-orange)",
+                }
+          }
+        >
+          {selected ? "เลือกแล้ว" : "เลือก"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1302,25 +1812,23 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
 function AccommodationAccordion({
   trip,
   canEdit,
+  center,
   onManualEdit,
+  onSaveAccommodation,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
+  center: { lat: number; lng: number };
   // Opens the free-text "แก้ไขที่พัก" dialog (generated-plan/[id]/page.tsx's
   // AccommodationEditDialog) for overriding name/description/amenities/price
-  // manually. Hotel search/recommendations used to live here too, but they're
-  // now folded into the unified "เพิ่มสถานที่คุณอยากไป" carousel/drawer above
-  // (see PlaceDiscoveryPanel) — picking a hotel there already sets this same
-  // accommodation via onSaveAccommodation, so this card just shows it.
+  // manually.
   onManualEdit?: () => void;
+  // Backs the "จองแล้ว"/"ยังไม่จอง" setup form below — same callback the
+  // recommended-places carousel above already uses to set trip.accommodation.
+  onSaveAccommodation: (accommodation: TripAccommodation) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-
-  // Nothing to show — no hotel stop in the itinerary yet and no manual
-  // override set via "แก้ไขรายละเอียด" — so hide the whole card instead of
-  // an accordion whose body (AccommodationGallery) renders empty anyway.
   const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
-  if (!hasData) return null;
 
   return (
     <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
@@ -1333,7 +1841,7 @@ function AccommodationAccordion({
           <h3 className="text-base font-bold sm:text-lg">โรงแรม หรือที่พักของคุณ</h3>
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          {canEdit && onManualEdit && (
+          {canEdit && onManualEdit && hasData && (
             <button
               type="button"
               onClick={onManualEdit}
@@ -1356,9 +1864,366 @@ function AccommodationAccordion({
 
       {expanded && (
         <div className="flex flex-col gap-4 px-5 pb-5">
-          <AccommodationGallery trip={trip} />
+          {hasData && <AccommodationGallery trip={trip} />}
+          {canEdit && (
+            <AccommodationSetupForm accommodation={trip.accommodation} center={center} onSave={onSaveAccommodation} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+const HOTEL_STYLE_OPTIONS = ["บูทีค", "รีสอร์ท", "โรงแรมทั่วไป", "โฮมสเตย์", "วิลล่า", "ฮอสเทล"];
+const HOTEL_GRADE_OPTIONS = ["1", "2", "3", "4", "5"];
+
+// Same visual family as create-trip's own tag chips (Tag/RecommendChip
+// there) — small, self-contained copies rather than importing from a route
+// page, since these two are the only pieces this form actually needs.
+function StyleTag({ label, isOn, onClick }: { label: string; isOn: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors"
+      style={
+        isOn
+          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }
+          : { borderColor: "var(--color-border-tag)", color: "var(--foreground)" }
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function RecommendTag({ isOn, onClick }: { isOn: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center rounded-full border px-3.5 py-2 text-xs font-bold transition-colors"
+      style={
+        isOn
+          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }
+          : { borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
+      }
+    >
+      แนะนำมาให้เลย
+    </button>
+  );
+}
+
+// The "โรงแรม หรือที่พักของคุณ" setup form — booking-status toggle switches
+// between confirming an already-booked stay's details (name/address/dates/
+// times) and gathering preferences for one that isn't booked yet (desired
+// style/grade + a free-text hint), the latter backed by a recommended-hotels
+// carousel. Every field autosaves onto trip.accommodation via onSave — same
+// client-only object AccommodationEditDialog and the recommend carousel
+// above already write to, no separate "save" step.
+function AccommodationSetupForm({
+  accommodation,
+  center,
+  onSave,
+}: {
+  accommodation?: TripAccommodation;
+  center: { lat: number; lng: number };
+  onSave: (accommodation: TripAccommodation) => void;
+}) {
+  // Defaults to showing the "จองแล้ว" form open even before anything's been
+  // saved — this is local UI state only, so nothing lands in trip.accommodation
+  // (see patch below) until the user actually types/selects something in it.
+  const [status, setStatus] = useState<"booked" | "unbooked" | null>(accommodation?.bookingStatus ?? "booked");
+  const [name, setName] = useState(accommodation?.name ?? "");
+  const [address, setAddress] = useState(accommodation?.address ?? "");
+  const [checkInTime, setCheckInTime] = useState(accommodation?.checkIn ?? "");
+  const [checkOutTime, setCheckOutTime] = useState(accommodation?.checkOut ?? "");
+  const [preferredHotelName, setPreferredHotelName] = useState(accommodation?.preferredHotelName ?? "");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCheckInPicker, setShowCheckInPicker] = useState(false);
+  const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
+
+  const desiredStyles = accommodation?.desiredStyles ?? [];
+  const desiredGrade = accommodation?.desiredGrade;
+  const hotelSuggestions = usePlaceSuggestions(center, ["hotel"]);
+
+  function patch(next: Partial<TripAccommodation>) {
+    onSave({ name: "", amenities: [], ...accommodation, ...next });
+  }
+
+  function setBookingStatus(next: "booked" | "unbooked") {
+    const resolved = status === next ? null : next;
+    setStatus(resolved);
+    patch({ bookingStatus: resolved ?? undefined });
+  }
+
+  function toggleStyle(style: string) {
+    const next = desiredStyles.includes(style) ? desiredStyles.filter((s) => s !== style) : [...desiredStyles, style];
+    patch({ desiredStyles: next });
+  }
+
+  function toggleGrade(grade: string) {
+    patch({ desiredGrade: desiredGrade === grade ? undefined : grade });
+  }
+
+  function pickHotel(place: EnrichedPlace) {
+    setStatus("booked");
+    setName(place.name);
+    setAddress(place.address);
+    onSave({
+      ...accommodation,
+      name: place.name,
+      imageUrl: place.imageUrl,
+      address: place.address,
+      amenities: accommodation?.amenities ?? [],
+      bookingStatus: "booked",
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        <AccommodationStatusToggle
+          icon={Check}
+          title="จองแล้ว"
+          subtitle="แนบไฟล์การจองหรือลิงก์"
+          isOn={status === "booked"}
+          onClick={() => setBookingStatus("booked")}
+        />
+        <AccommodationStatusToggle
+          icon={Search}
+          title="ยังไม่จอง"
+          subtitle="บอกสไตล์กับเกรดคร่าวๆ"
+          isOn={status === "unbooked"}
+          onClick={() => setBookingStatus("unbooked")}
+        />
+      </div>
+
+      {status === "booked" && (
+        <div className="flex flex-col gap-3">
+          <LabeledInput label="ชื่อโรงแรม" value={name} onChange={setName} onBlur={() => patch({ name })} placeholder="ชื่อโรงแรม" />
+          <LabeledInput
+            label="ตำแหน่งที่อยู่ของที่พัก"
+            value={address}
+            onChange={setAddress}
+            onBlur={() => patch({ address })}
+            placeholder="ตำแหน่งที่อยู่ของที่พัก"
+          />
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">วันที่เข้าพัก - วันที่ออก</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
+                {accommodation?.checkInDate ? formatShortDate(accommodation.checkInDate) : (
+                  <span className="text-[var(--color-muted)]">วันที่เข้าพัก</span>
+                )}
+              </button>
+              <span className="shrink-0 text-[var(--color-muted)]">-</span>
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
+                {accommodation?.checkOutDate ? formatShortDate(accommodation.checkOutDate) : (
+                  <span className="text-[var(--color-muted)]">วันที่ออก</span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เวลา Check in - Check out</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCheckInPicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                {checkInTime ? formatTimeDisplay(checkInTime) : <span className="text-[var(--color-muted)]">เวลา Check in</span>}
+              </button>
+              <span className="shrink-0 text-[var(--color-muted)]">-</span>
+              <button
+                type="button"
+                onClick={() => setShowCheckOutPicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                {checkOutTime ? formatTimeDisplay(checkOutTime) : <span className="text-[var(--color-muted)]">เวลา Check out</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {status === "unbooked" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-[var(--color-muted)]">สไตล์โรงแรมที่ต้องการ</label>
+            <div className="flex flex-wrap items-center gap-2">
+              {HOTEL_STYLE_OPTIONS.map((style) => (
+                <StyleTag key={style} label={style} isOn={desiredStyles.includes(style)} onClick={() => toggleStyle(style)} />
+              ))}
+              <RecommendTag isOn={desiredGrade === "แนะนำมาให้เลย"} onClick={() => toggleGrade("แนะนำมาให้เลย")} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-[var(--color-muted)]">เกรดที่พัก</label>
+            <div className="flex flex-wrap items-center gap-2">
+              {HOTEL_GRADE_OPTIONS.map((grade) => (
+                <StyleTag key={grade} label={`${grade}★`} isOn={desiredGrade === grade} onClick={() => toggleGrade(grade)} />
+              ))}
+              <RecommendTag isOn={desiredGrade === "แนะนำมาให้เลย"} onClick={() => toggleGrade("แนะนำมาให้เลย")} />
+            </div>
+          </div>
+
+          <LabeledInput
+            label="ถ้ามีที่พักในใจแล้ว บอกเราได้"
+            value={preferredHotelName}
+            onChange={setPreferredHotelName}
+            onBlur={() => patch({ preferredHotelName })}
+            placeholder="ชื่อโรงแรม หรือย่านที่สนใจ"
+          />
+
+          <div className="flex flex-col gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-bold">
+              <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
+              ที่พักแนะนำ
+            </p>
+            {hotelSuggestions === null && <p className="py-4 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
+            {hotelSuggestions !== null && hotelSuggestions.length === 0 && (
+              <p className="py-4 text-center text-sm text-[var(--color-muted)]">ไม่พบที่พักแนะนำ</p>
+            )}
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {hotelSuggestions?.map((place) => (
+                <RecommendedHotelCard key={place.id} place={place} onAdd={() => pickHotel(place)} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <DatePickerDialog
+        isOpen={showDatePicker}
+        initialStartDate={accommodation?.checkInDate}
+        initialEndDate={accommodation?.checkOutDate}
+        onClose={() => setShowDatePicker(false)}
+        onConfirm={(result) => {
+          patch({ checkInDate: result.startDate, checkOutDate: result.endDate });
+          setShowDatePicker(false);
+        }}
+      />
+      {showCheckInPicker && (
+        <TimePickerDialog
+          value={checkInTime || "14:00"}
+          onConfirm={(time) => {
+            setCheckInTime(time);
+            patch({ checkIn: time });
+          }}
+          onClose={() => setShowCheckInPicker(false)}
+        />
+      )}
+      {showCheckOutPicker && (
+        <TimePickerDialog
+          value={checkOutTime || "12:00"}
+          onConfirm={(time) => {
+            setCheckOutTime(time);
+            patch({ checkOut: time });
+          }}
+          onClose={() => setShowCheckOutPicker(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+}
+
+function AccommodationStatusToggle({
+  icon: Icon,
+  title,
+  subtitle,
+  isOn,
+  onClick,
+}: {
+  icon: typeof Check;
+  title: string;
+  subtitle: string;
+  isOn: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-2.5 rounded-2xl border p-3 text-left transition-colors"
+      style={isOn ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" } : { borderColor: "var(--color-border)" }}
+    >
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: isOn ? "var(--color-brand-green)" : "var(--color-surface)" }}
+      >
+        <Icon size={14} style={{ color: isOn ? "#fff" : "var(--color-muted)" }} />
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-bold">{title}</span>
+        <span className="text-xs text-[var(--color-muted)]">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
+// Compact horizontal card for the "ที่พักแนะนำ" carousel — image+rating
+// badge like the other recommend cards in this file, but with the name and
+// "+ เพิ่ม" button sharing a row (rather than the button pinned below) to fit
+// this narrower card.
+function RecommendedHotelCard({ place, onAdd }: { place: EnrichedPlace; onAdd: () => void }) {
+  return (
+    <div className="flex w-60 shrink-0 flex-col gap-2 rounded-2xl bg-white p-3 shadow-sm">
+      <div className="relative h-24 w-full overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            <Building2 size={20} style={{ color: "var(--color-muted)" }} />
+          </span>
+        )}
+        {place.rating !== undefined && (
+          <span className="absolute left-1.5 top-1.5 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            <Star size={9} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
+            {place.rating.toFixed(1)}
+          </span>
+        )}
+      </div>
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-bold">{place.name}</p>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          <Plus size={11} />
+          เพิ่ม
+        </button>
+      </div>
+      <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
     </div>
   );
 }
@@ -1402,11 +2267,13 @@ function LabeledInput({
 // travelFromPrevious leg attached, it instead shows every available piece of
 // travel information and reopens the same dialog to edit it.
 export function TravelConnectorRow({
+  fromTitle,
   toActivity,
   canEdit,
   onSave,
   onDelete,
 }: {
+  fromTitle: string;
   toActivity: Activity;
   canEdit: boolean;
   onSave: (travel: TravelFromPrevious) => void;
@@ -1517,6 +2384,7 @@ export function TravelConnectorRow({
 
       {showDialog && (
         <TravelLegDialog
+          fromTitle={fromTitle}
           destinationTitle={toActivity.title}
           initial={travel}
           onSave={(next) => {
@@ -1574,11 +2442,13 @@ export function TravelConnectorRow({
 // travelFromPrevious (see types/index.ts), matching the
 // travelTypeFromPrev/travelTimeFromPrevMin/etc. fields the backend accepts.
 function TravelLegDialog({
+  fromTitle,
   destinationTitle,
   initial,
   onSave,
   onClose,
 }: {
+  fromTitle: string;
   destinationTitle: string;
   initial?: TravelFromPrevious;
   onSave: (travel: TravelFromPrevious) => void;
@@ -1607,12 +2477,9 @@ function TravelLegDialog({
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-lg font-bold">เพิ่มการเดินทาง</h3>
-              <p className="truncate text-xs text-[var(--color-muted)]">ไปยัง {destinationTitle}</p>
-            </div>
+            <h3 className="text-lg font-bold">เพิ่มการเดินทาง</h3>
             <button
               type="button"
               onClick={onClose}
@@ -1621,6 +2488,33 @@ function TravelLegDialog({
             >
               <X size={16} />
             </button>
+          </div>
+
+          {/* From/to summary — which two stops this leg connects, so it's
+              clear at a glance without reading the surrounding itinerary. */}
+          <div
+            className="flex items-center justify-center gap-3 rounded-2xl px-3 py-4"
+            style={{ backgroundColor: "var(--color-page-cream)" }}
+          >
+            <div className="flex min-w-0 max-w-[40%] flex-col items-center gap-1.5 text-center">
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-brand-green)" }}
+              >
+                1
+              </span>
+              <span className="line-clamp-2 text-sm font-semibold">{fromTitle}</span>
+            </div>
+            <ArrowRight size={18} className="shrink-0" style={{ color: "var(--color-muted)" }} />
+            <div className="flex min-w-0 max-w-[40%] flex-col items-center gap-1.5 text-center">
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-brand-green)" }}
+              >
+                2
+              </span>
+              <span className="line-clamp-2 text-sm font-semibold">{destinationTitle}</span>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
