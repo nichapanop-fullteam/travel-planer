@@ -1,33 +1,37 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, Clock, Link2Off, MapPin, Star } from "lucide-react";
-import { getSharedTrip, type SharedTripActivity } from "@/lib/share-api";
+import { notFound } from "next/navigation";
+import { CalendarDays, Link2, MapPin } from "lucide-react";
+import { getSharedTrip } from "@/lib/share-api";
+import { SharedTripPlan } from "@/app/shared-trips/[shareToken]/SharedTripPlan";
 
-// The public read-only view behind a share link. Server-rendered on purpose:
-// the backend is called directly (no CORS off the browser, so no proxy route
-// is needed), the plan is in the HTML for link previews, and GET
-// /shared-trips/:token is hit exactly once per page load — the doc's
-// 30 req/min/IP limit is generous but a client-side effect without a guard
-// could still walk into it.
+// The public read-only view behind a share link, laid out to match
+// generated-plan/[id]: full-bleed hero with the title centred over the cover,
+// the dark-green band, then the rounded-top white sheet the plan sits on.
+//
+// Server-rendered on purpose: the backend is called directly (no CORS off the
+// browser, so no proxy route is needed), the plan is in the HTML for link
+// previews, and GET /shared-trips/:token is hit exactly once per page load —
+// the doc's 30 req/min/IP limit is generous but a client-side effect without a
+// guard could still walk into it.
 //
 // No auth of any kind: the shareToken in the URL is the whole credential, and
-// nothing on this page assumes a signed-in viewer.
+// nothing here assumes a signed-in viewer.
 
 type PageProps = { params: Promise<{ shareToken: string }> };
 
-// Deliberately minimal, and deliberately not derived from the trip when the
-// link is dead — the title itself shouldn't confirm that a trip exists to
-// someone holding a revoked link.
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { shareToken } = await params;
   const trip = await getSharedTrip(shareToken);
+  // Deliberately not derived from the trip when the link is dead — the title
+  // itself shouldn't confirm a trip exists to someone holding a revoked link.
   if (!trip) return { title: "ลิงก์นี้ใช้ไม่ได้แล้ว", robots: { index: false, follow: false } };
 
   return {
     title: `${trip.title} · PunGuide`,
     description: `แผนเที่ยว ${trip.destination}${trip.owner ? ` โดย ${trip.owner.name}` : ""}`,
-    // A share link is meant for the people the owner sent it to, not for
-    // search results.
+    // A share link is for the people the owner sent it to, not for search
+    // results.
     robots: { index: false, follow: false },
     openGraph: {
       title: trip.title,
@@ -37,114 +41,118 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  transport: "การเดินทาง",
-  food: "อาหาร",
-  hotel: "ที่พัก",
-  sightseeing: "เที่ยวชม",
-  activity: "กิจกรรม",
-  other: "อื่นๆ",
-};
-
-const CATEGORY_COLOR: Record<string, string> = {
-  transport: "var(--color-cat-transport)",
-  food: "var(--color-cat-food)",
-  hotel: "var(--color-cat-hotel)",
-  sightseeing: "var(--color-cat-sightseeing)",
-  activity: "var(--color-cat-activity)",
-  other: "var(--color-cat-other)",
-};
-
 export default async function SharedTripPage({ params }: PageProps) {
   const { shareToken } = await params;
   const trip = await getSharedTrip(shareToken);
 
-  // One neutral page for all four cases the API folds into a 404 (unknown
-  // token, revoked, expired, trip deleted). It must not guess which — the API
-  // hides that on purpose so an ex-recipient can't tell whether the trip still
-  // exists or whether they were singled out.
-  if (!trip) return <DeadLink />;
+  // All four cases the API folds into a 404 (unknown token, revoked, expired,
+  // trip deleted) land here. notFound() renders this segment's not-found.tsx
+  // *with* a 404 status — returning the markup inline instead answered 200 OK,
+  // so a revoked link looked like a live page to crawlers and unfurlers.
+  if (!trip) notFound();
 
   const days = trip.days ?? [];
-  const dateRange = formatDateRange(trip.schedule?.startDate, trip.schedule?.endDate);
+  const activityCount = days.reduce((total, day) => total + (day.activities?.length ?? 0), 0);
+
+  // Mirrors Hero's statLabel in generated-plan: the place count when there is
+  // one, otherwise fall back to the duration.
   const durationLabel =
     trip.schedule?.durationDays != null
       ? `${trip.schedule.durationDays} วัน${trip.schedule.durationNights != null ? ` ${trip.schedule.durationNights} คืน` : ""}`
       : null;
+  const statLabel = activityCount > 0 ? `${activityCount} จุดเช็คอิน` : durationLabel;
+
+  const dateRange = formatDateRange(trip.schedule?.startDate, trip.schedule?.endDate);
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="relative flex min-h-[320px] flex-col justify-end overflow-hidden sm:min-h-[420px]">
-        {trip.coverImage?.large ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={trip.coverImage.large}
-            alt={trip.coverImage.altText ?? ""}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 bg-[var(--color-surface)]" />
-        )}
-        {/* Two layers, because a cover can be anything. Plenty of trips use a
-            generated share-card as their cover — an image with the trip name
-            already set in huge type — and a light scrim left our own title
-            sitting on top of that baked-in text, illegible. The lower band is
-            near-opaque and slightly blurred where the text block sits, so the
-            heading stays readable over a busy photo and over a poster alike. */}
-        <div className="pointer-events-none absolute inset-0 bg-black/25" />
+      <div className="relative flex min-h-[440px] flex-col justify-between overflow-hidden sm:min-h-[560px]">
+        {/* coverImage is genuinely absent on plenty of shared trips (the field
+            only appears once PUT /trips/:id/cover has run), and a flat colour
+            fill behind the hero's dark gradients read as a broken image rather
+            than a deliberate blank. Falls back to the same placeholder photo
+            generated-plan's Hero uses, so the header always looks like a
+            header. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={trip.coverImage?.large ?? "/images/hero-mountain.jpg"}
+          alt={trip.coverImage?.altText ?? ""}
+          className="absolute inset-0 h-full w-full object-cover object-[80%_30%]"
+        />
+
+        {/* generated-plan's own hero gradient, plus a heavier band under the
+            text. Plenty of trips use a generated share-card as their cover — an
+            image with the trip name already set in huge type — and the base
+            gradient alone left our title sitting on that baked-in text,
+            illegible. The extra band keeps the heading readable over a busy
+            photo and over a poster alike. */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/5 to-black/70" />
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-3/4"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
           style={{
-            background:
-              "linear-gradient(to top, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.82) 35%, rgba(0,0,0,0.45) 70%, rgba(0,0,0,0) 100%)",
-            backdropFilter: "blur(3px)",
-            WebkitBackdropFilter: "blur(3px)",
-            maskImage: "linear-gradient(to top, black 55%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to top, black 55%, transparent 100%)",
+            background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 40%, rgba(0,0,0,0) 100%)",
+            backdropFilter: "blur(2px)",
+            WebkitBackdropFilter: "blur(2px)",
+            maskImage: "linear-gradient(to top, black 60%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to top, black 60%, transparent 100%)",
           }}
         />
 
-        <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-10 pt-16 text-white sm:px-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/70">แผนเที่ยวที่แชร์กับคุณ</p>
-          <h1 className="mt-2 text-3xl font-extrabold leading-tight drop-shadow-sm sm:text-4xl">{trip.title}</h1>
+        {/* Marks the page as something someone handed you — the real trip page
+            has no equivalent, and it sits where Hero puts its back/menu row. */}
+        <div className="relative z-20 flex justify-center px-6 pt-6">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+            <Link2 size={13} />
+            แผนเที่ยวที่แชร์กับคุณ
+          </span>
+        </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm font-medium text-white/90">
-            <span className="inline-flex items-center gap-1.5">
-              <MapPin size={15} className="shrink-0" />
-              {trip.destination}
-            </span>
-            {durationLabel && (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays size={15} className="shrink-0" />
-                {durationLabel}
-              </span>
-            )}
-            {dateRange && <span className="text-white/75">{dateRange}</span>}
-          </div>
+        {/* Same centred title / byline / location / pills stack as Hero. */}
+        <div className="relative z-10 flex flex-col items-center gap-2.5 px-6 pb-8 text-center sm:pb-10">
+          <h1 className="text-3xl font-extrabold text-white drop-shadow-sm sm:text-6xl">{trip.title}</h1>
 
           {/* `owner` is absent entirely when the creator never set a display
-              name — there's no username fallback, so the byline just goes away
-              rather than showing something like "@user_28f1". */}
-          {trip.owner && (
-            <div className="mt-5 flex items-center gap-2.5">
-              {trip.owner.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={trip.owner.avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
-              ) : (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/25 text-sm font-bold">
-                  {trip.owner.name.charAt(0).toUpperCase()}
-                </div>
+              name — there's no username fallback by design, so the byline goes
+              away rather than showing something like "@user_28f1". */}
+          {(trip.owner || statLabel) && (
+            <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-white sm:text-base">
+              {trip.owner && (
+                <>
+                  {trip.owner.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={trip.owner.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/25 text-[11px] font-bold">
+                      {trip.owner.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <span>{trip.owner.name}</span>
+                  {statLabel && <span className="text-white/50">|</span>}
+                </>
               )}
-              <span className="text-sm font-semibold">แผนโดย {trip.owner.name}</span>
+              {statLabel && <span>{statLabel}</span>}
             </div>
           )}
 
+          <p className="flex items-center gap-1.5 text-sm text-white/85">
+            <MapPin size={14} className="shrink-0" />
+            {trip.destination}
+          </p>
+
+          {dateRange && (
+            <p className="flex items-center gap-1.5 text-xs text-white/60">
+              <CalendarDays size={12} className="shrink-0" />
+              {dateRange}
+            </p>
+          )}
+
           {trip.tags && trip.tags.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-1.5">
+            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
               {trip.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm"
+                  className="inline-flex items-center rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
+                  style={{ color: "var(--color-brand-green)" }}
                 >
                   {tag}
                 </span>
@@ -152,126 +160,32 @@ export default async function SharedTripPage({ params }: PageProps) {
             </div>
           )}
         </div>
-      </header>
+      </div>
 
-      <main className="mx-auto w-full max-w-3xl px-6 py-10 sm:px-8">
-        {days.length === 0 ? (
-          <p className="rounded-2xl bg-[var(--color-surface)] p-10 text-center text-sm text-[var(--color-muted)]">
-            แผนนี้ยังไม่มีรายละเอียดกิจกรรม
-          </p>
-        ) : (
-          <ol className="flex flex-col gap-8">
-            {/* Keyed by dayNumber / order — this payload carries no ids at all,
-                by design (see SharedTrip's doc comment). */}
-            {days.map((day) => (
-              <li key={day.dayNumber}>
-                <div className="mb-4 flex items-baseline gap-3">
-                  <h2 className="text-xl font-extrabold">วันที่ {day.dayNumber}</h2>
-                  {day.date && <span className="text-sm text-[var(--color-muted)]">{formatThaiDate(day.date)}</span>}
-                </div>
+      {/* The dark-green band the white sheet curves up from — the signature
+          seam on generated-plan. No section tabs here: weather, budget and chat
+          all depend on fields the share payload deliberately withholds, so a
+          tab row would promise content that cannot exist. */}
+      <div className="h-8" style={{ backgroundColor: "#0F2419" }} />
 
-                {day.activities.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed px-4 py-6 text-center text-xs text-[var(--color-muted)]" style={{ borderColor: "var(--color-border)" }}>
-                    ยังไม่มีกิจกรรมในวันนี้
-                  </p>
-                ) : (
-                  <ol className="flex flex-col gap-3">
-                    {day.activities.map((activity) => (
-                      <ActivityRow key={activity.order} activity={activity} />
-                    ))}
-                  </ol>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
+      <div className="relative -mt-5 rounded-t-[28px] bg-white">
+        <div className="mx-auto max-w-3xl px-6 py-8 sm:px-10">
+          <SharedTripPlan days={days} />
 
-        <footer className="mt-12 flex flex-col items-center gap-3 border-t pt-8 text-center" style={{ borderColor: "var(--color-border)" }}>
-          <p className="text-sm text-[var(--color-muted)]">อยากวางแผนทริปของตัวเอง?</p>
-          <Link
-            href="/main"
-            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
+          <footer
+            className="mt-12 flex flex-col items-center gap-3 border-t pt-8 text-center"
+            style={{ borderColor: "var(--color-border)" }}
           >
-            เริ่มใช้ PunGuide
-          </Link>
-        </footer>
-      </main>
-    </div>
-  );
-}
-
-function ActivityRow({ activity }: { activity: SharedTripActivity }) {
-  const color = CATEGORY_COLOR[activity.category] ?? "var(--color-cat-other)";
-  const label = CATEGORY_LABEL[activity.category] ?? activity.category;
-
-  return (
-    <li className="rounded-2xl border bg-white p-4" style={{ borderColor: "var(--color-border)" }}>
-      {activity.travelFromPrevious && (
-        <p className="mb-2.5 text-xs text-[var(--color-muted)]">
-          {activity.travelNote ??
-            [
-              activity.travelFromPrevious.durationMin != null ? `~${activity.travelFromPrevious.durationMin} นาที` : null,
-              activity.travelFromPrevious.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-        </p>
-      )}
-
-      <div className="flex items-start gap-3">
-        {activity.time ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--color-surface)] px-2 py-1 text-xs font-bold">
-            <Clock size={12} />
-            {activity.time}
-          </span>
-        ) : (
-          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-        )}
-
-        <div className="min-w-0 flex-1">
-          <p className="font-bold leading-snug">{activity.title}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
-            <span className="font-semibold" style={{ color }}>
-              {label}
-            </span>
-            {activity.place?.name && activity.place.name !== activity.title && (
-              <span className="inline-flex items-center gap-1">
-                <MapPin size={11} />
-                {activity.place.name}
-              </span>
-            )}
-            {activity.place?.rating != null && (
-              <span className="inline-flex items-center gap-1">
-                <Star size={11} />
-                {activity.place.rating}
-              </span>
-            )}
-          </div>
+            <p className="text-sm text-[var(--color-muted)]">อยากวางแผนทริปของตัวเอง?</p>
+            <Link
+              href="/main"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
+            >
+              เริ่มใช้ PunGuide
+            </Link>
+          </footer>
         </div>
       </div>
-    </li>
-  );
-}
-
-function DeadLink() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]">
-        <Link2Off size={28} />
-      </div>
-      <h1 className="text-2xl font-extrabold">ลิงก์นี้ใช้ไม่ได้แล้ว</h1>
-      {/* Intentionally vague: the API doesn't say whether the link was
-          revoked, expired, never existed, or the trip was deleted, so this
-          page must not invent a reason. */}
-      <p className="max-w-sm text-sm leading-relaxed text-[var(--color-muted)]">
-        ลิงก์อาจถูกยกเลิก หมดอายุ หรือไม่ถูกต้อง ลองขอลิงก์ใหม่จากผู้ที่แชร์ให้คุณ
-      </p>
-      <Link
-        href="/main"
-        className="mt-2 inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
-      >
-        ไปหน้าสำรวจทริป
-      </Link>
     </div>
   );
 }

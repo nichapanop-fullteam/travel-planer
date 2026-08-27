@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SharedTripPage from "@/app/shared-trips/[shareToken]/page";
+import SharedTripNotFound from "@/app/shared-trips/[shareToken]/not-found";
 import { getSharedTrip, type SharedTrip } from "@/lib/share-api";
 
 vi.mock("@/lib/share-api", () => ({ getSharedTrip: vi.fn() }));
@@ -49,21 +50,34 @@ describe("GET /shared-trips/:shareToken page", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: /หลวงพระบาง 3 วัน 2 คืน/ })).toBeInTheDocument();
     expect(screen.getByText("หลวงพระบาง, ลาว")).toBeInTheDocument();
-    expect(screen.getByText(/แผนโดย นุ้ย/)).toBeInTheDocument();
-    expect(screen.getByText("วันที่ 1")).toBeInTheDocument();
+    // Byline is just the name, matching generated-plan's Hero.
+    expect(screen.getByText("นุ้ย")).toBeInTheDocument();
+    expect(screen.getByText("ลำดับแพลน")).toBeInTheDocument();
     expect(screen.getByText("วัดเชียงทอง")).toBeInTheDocument();
   });
 
   // The four failure cases (unknown token, revoked, expired, deleted trip) all
-  // arrive as one 404 → null. The page must show a single neutral message and
-  // must never state which of the four it was.
-  it("shows one neutral dead-link page when the link no longer works", async () => {
+  // arrive as one 404 → null. The page must call notFound() rather than
+  // returning the dead-link markup itself, so the response carries a real HTTP
+  // 404 instead of 200 OK.
+  it("calls notFound() when the link no longer works, so the response is a 404", async () => {
     mockedGetSharedTrip.mockResolvedValue(null);
-    await renderPage();
+
+    // notFound() signals by throwing; Next turns that into the 404 response.
+    await expect(renderPage()).rejects.toThrow();
+  });
+
+  // The 404 body itself must stay neutral about which of the four cases it was
+  // — the API hides that so an ex-recipient can't tell whether the trip still
+  // exists or whether they were specifically cut off.
+  it("renders a neutral 404 body that names no reason and leaks no plan content", () => {
+    render(<SharedTripNotFound />);
 
     expect(screen.getByRole("heading", { level: 1, name: "ลิงก์นี้ใช้ไม่ได้แล้ว" })).toBeInTheDocument();
-    // No plan content leaks through.
     expect(screen.queryByText(/หลวงพระบาง/)).not.toBeInTheDocument();
+    for (const leak of [/ถูกยกเลิกโดย/, /หมดอายุเมื่อ/, /ไม่มีทริปนี้/]) {
+      expect(screen.queryByText(leak)).not.toBeInTheDocument();
+    }
   });
 
   it("omits the byline entirely when the owner has no display name", async () => {
@@ -72,8 +86,30 @@ describe("GET /shared-trips/:shareToken page", () => {
     mockedGetSharedTrip.mockResolvedValue({ ...sharedTrip, owner: undefined });
     await renderPage();
 
-    expect(screen.queryByText(/แผนโดย/)).not.toBeInTheDocument();
+    expect(screen.queryByText("นุ้ย")).not.toBeInTheDocument();
+    // The rest of the header still renders.
     expect(screen.getByRole("heading", { level: 1, name: /หลวงพระบาง/ })).toBeInTheDocument();
+    expect(screen.getByText("หลวงพระบาง, ลาว")).toBeInTheDocument();
+  });
+
+  // A single-day plan has nothing to switch between, so the day tabs are
+  // suppressed — they only earn their space once there's more than one day.
+  it("shows day tabs only when the plan has more than one day", async () => {
+    mockedGetSharedTrip.mockResolvedValue(sharedTrip);
+    const single = await renderPage();
+    expect(screen.queryByRole("button", { name: "วันที่ 1" })).not.toBeInTheDocument();
+    single.unmount();
+
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [
+        sharedTrip.days![0],
+        { dayNumber: 2, date: "2026-09-11", activities: [{ order: 0, title: "น้ำตกตาดกวางสี", category: "sightseeing" }] },
+      ],
+    });
+    await renderPage();
+    expect(screen.getByRole("button", { name: "วันที่ 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "วันที่ 2" })).toBeInTheDocument();
   });
 
   it("passes the raw token through to the API so the URL is the only credential", async () => {

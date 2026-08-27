@@ -106,7 +106,9 @@ export interface SharedTripActivity {
   time?: string;
   title: string;
   category: string;
-  place?: { name: string; lat?: number; lng?: number; rating?: number };
+  /** `imageUrl` isn't in the API doc's example but the live payload sends it
+   *  (a Google place photo), and it's what the activity thumbnails use. */
+  place?: { name: string; lat?: number; lng?: number; rating?: number; imageUrl?: string };
   travelNote?: string;
   travelFromPrevious?: { type: string; durationMin?: number; distanceKm?: number };
 }
