@@ -85,7 +85,24 @@ export default async function SharedTripPage({ params }: PageProps) {
         ) : (
           <div className="absolute inset-0 bg-[var(--color-surface)]" />
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/40" />
+        {/* Two layers, because a cover can be anything. Plenty of trips use a
+            generated share-card as their cover — an image with the trip name
+            already set in huge type — and a light scrim left our own title
+            sitting on top of that baked-in text, illegible. The lower band is
+            near-opaque and slightly blurred where the text block sits, so the
+            heading stays readable over a busy photo and over a poster alike. */}
+        <div className="pointer-events-none absolute inset-0 bg-black/25" />
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-3/4"
+          style={{
+            background:
+              "linear-gradient(to top, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.82) 35%, rgba(0,0,0,0.45) 70%, rgba(0,0,0,0) 100%)",
+            backdropFilter: "blur(3px)",
+            WebkitBackdropFilter: "blur(3px)",
+            maskImage: "linear-gradient(to top, black 55%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to top, black 55%, transparent 100%)",
+          }}
+        />
 
         <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-10 pt-16 text-white sm:px-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-white/70">แผนเที่ยวที่แชร์กับคุณ</p>
