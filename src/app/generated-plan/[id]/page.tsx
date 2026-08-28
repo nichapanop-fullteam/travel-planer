@@ -971,6 +971,7 @@ function Hero({
     if (plannedDays === 0) return 0;
     return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
   }, [trip]);
+  const showSummaryStats = tab === "overview" || tab === "plan";
   const summaryStats = [
     { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
     { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
@@ -1122,14 +1123,17 @@ function Hero({
       )}
 
       {/* Bottom overlay — left-aligned title, date range + duration, then
-          either the status/style-tag badges (trip.styles doubles as the
-          reference design's transport/theme tags) or, on the plan tab, a
-          trip-summary stat row instead. White text throughout, no
-          shadow/halo. */}
+          either the trip-summary stat row or the status/style-tag badges
+          (trip.styles doubles as the reference design's transport/theme tags).
+          White text throughout, no shadow/halo. */}
       <div className={`relative z-10 mt-auto flex flex-col gap-2 pb-5 sm:pb-6 ${SHELL}`}>
         <h1 className="text-2xl font-extrabold text-white sm:text-4xl">{trip.title || trip.destination}</h1>
 
-        {tab === "plan" ? (
+        {/* ภาพรวมทริป and แพลนทริป are the two tabs the itinerary itself
+            lives on, so both lead with the counts/budget/distance summary —
+            the overview used to show the status/style badges here instead.
+            The remaining tabs keep the badges. */}
+        {showSummaryStats ? (
           <>
             {dateRangeLabel && (
               <p className="flex items-center gap-1.5 text-sm font-medium text-white">
