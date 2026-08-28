@@ -240,8 +240,6 @@ export function PlaceDiscoveryPanel({
         />
       )}
 
-      <AccommodationAccordion trip={trip} canEdit={canEdit} center={center} onSaveAccommodation={onSaveAccommodation} />
-
       {dayPickerRequest && (
         <AddPlaceDialog
           places={dayPickerRequest.places}
@@ -1807,6 +1805,33 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Standalone mount for the accommodation accordion. It used to render inside
+// PlaceDiscoveryPanel's own fragment, which pinned it below the add-places
+// accordion — and so below ตารางแพลน on the overview tab. Exported on its own
+// so the overview can lead with it instead: you settle where you're staying,
+// then build the days around it.
+//
+// `center` is derived here rather than passed in, so the caller doesn't have
+// to know about DEFAULT_RECOMMENDATION_CENTER; it's the same derivation
+// PlaceDiscoveryPanel does for its own carousels.
+export function AccommodationSection({
+  trip,
+  canEdit,
+  onSaveAccommodation,
+}: {
+  trip: GeneratedTrip;
+  canEdit: boolean;
+  onSaveAccommodation: (accommodation: TripAccommodation) => void;
+}) {
+  const center = trip.destinationPlace
+    ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
+    : DEFAULT_RECOMMENDATION_CENTER;
+
+  return (
+    <AccommodationAccordion trip={trip} canEdit={canEdit} center={center} onSaveAccommodation={onSaveAccommodation} />
   );
 }
 

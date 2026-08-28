@@ -119,7 +119,7 @@ import {
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
-import { PlaceDiscoveryPanel, DayTab, TravelConnectorRow, RecommendPlacesFlow } from "@/components/plan/SelfPlanBuilderTab";
+import { PlaceDiscoveryPanel, AccommodationSection, DayTab, TravelConnectorRow, RecommendPlacesFlow } from "@/components/plan/SelfPlanBuilderTab";
 import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -1780,6 +1780,11 @@ function OverviewTab({
           onConfirm={onConfirm}
         />
       )}
+
+      {/* Above ตารางแพลน on purpose: where you sleep anchors the days, so it
+          reads first. Returns null when the trip has no stay yet, and the
+          flex gap collapses with it — no empty band left behind. */}
+      <AccommodationSection trip={trip} canEdit={canEdit} onSaveAccommodation={onSaveAccommodation} />
 
       <ItineraryAccordion
         trip={trip}

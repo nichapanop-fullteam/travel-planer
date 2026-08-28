@@ -105,6 +105,11 @@ const MORE_HOTEL_STYLE_OPTIONS = ["อพาร์ทเมนท์", "แค�
 const HOTEL_GRADE_OPTIONS = ["1★", "2★", "3★", "4★", "5★"];
 const MORE_HOTEL_GRADE_OPTIONS = ["ไม่ระบุ", "หรูหราพิเศษ"];
 
+// "PunGuide จัดแพลนให้ (AI)" is hidden for now — the form runs in self mode
+// only, so the ModeToggle is not rendered and ?mode= is ignored. Flip this back
+// to true to bring the AI mode (and its step 2) back.
+const AI_MODE_ENABLED = false;
+
 const COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
 const MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
 
@@ -126,7 +131,7 @@ function CreateTripForm() {
   const prefillDefaults = destinationParam.includes("หลวงพระบาง");
 
   const [mode, setMode] = useState<TripCreationMode>(
-    searchParams.get("mode") === "self" ? "self" : "ai"
+    !AI_MODE_ENABLED || searchParams.get("mode") === "self" ? "self" : "ai"
   );
   const [destination, setDestination] = useState(destinationParam);
   const [destinationPlace, setDestinationPlace] = useState<Destination | undefined>(undefined);
@@ -509,7 +514,7 @@ function CreateTripForm() {
           }}
         />
 
-        <ModeToggle mode={mode} setMode={setMode} />
+        {AI_MODE_ENABLED && <ModeToggle mode={mode} setMode={setMode} />}
 
         <div className="relative">
           {status === "error" && (
