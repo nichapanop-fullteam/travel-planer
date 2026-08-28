@@ -307,12 +307,34 @@ export default function GeneratedPlanPage() {
           return;
         }
         const loaded = buildGeneratedTripFromBackendTrip(backendTrip, local?.remixedFrom);
-        // draftId only ever exists locally (links back to the TripDraft this
-        // trip was generated from, e.g. for handleRegenerate's "AI plan I can
-        // redo from its original brief" lookup) — buildGeneratedTripFromBackendTrip
-        // has no draft to read it from, so it defaults to the trip's own id.
-        // Keep the real one instead of clobbering it on every reconcile.
-        if (local) loaded.draftId = local.draftId;
+        // Carry over everything buildGeneratedTripFromBackendTrip can't
+        // produce, because the updateGeneratedTrip below writes `loaded` back
+        // to storage: anything missing here isn't just absent for this render,
+        // it's destroyed on the first reconcile after a reload.
+        //
+        // - draftId links back to the TripDraft this trip was generated from
+        //   (handleRegenerate's "AI plan I can redo from its original brief"
+        //   lookup). The builder has no draft to read it from, so it defaults
+        //   to the trip's own id.
+        // - destinationPlace is the one with a user-visible symptom. GET
+        //   /trips/:id returns only the plain `destination` string — no
+        //   lat/lng — so without this SelfPlanBuilderTab's place search falls
+        //   back to DEFAULT_RECOMMENDATION_CENTER and a Bangkok trip listed
+        //   Luang Prabang temples. Backend ticket open to return it; this
+        //   keeps trips created in this browser correct meanwhile, and can't
+        //   fix a trip opened on another device (nothing local to restore).
+        // - accommodation / expenses / generationNotice have no backend
+        //   representation on this endpoint at all.
+        //
+        // ??= rather than = so that if the backend starts returning any of
+        // these, the server's value wins instead of a stale local one.
+        if (local) {
+          loaded.draftId = local.draftId;
+          loaded.destinationPlace ??= local.destinationPlace;
+          loaded.accommodation ??= local.accommodation;
+          loaded.expenses ??= local.expenses;
+          loaded.generationNotice ??= local.generationNotice;
+        }
         if (local) updateGeneratedTrip(loaded.id, loaded);
         setTrip(loaded);
         if (loaded.status === "confirmed") setTab("plan");
