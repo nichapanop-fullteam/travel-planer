@@ -829,6 +829,10 @@ export default function GeneratedPlanPage() {
           isOwner={isOwner}
           visibilitySaving={visibilitySaving}
           onChangeVisibility={trip.backendSynced ? handleChangeVisibility : undefined}
+          onShareClick={canShare ? handleShareClick : undefined}
+          canRemix={canRemix}
+          onRemixClick={handleRemixClick}
+          onEditTrip={handleEditTripClick}
         />
 
         <div className={`${SHELL} py-8`}>
@@ -839,17 +843,12 @@ export default function GeneratedPlanPage() {
             <OverviewTab
               trip={trip}
               isConfirmed={isConfirmed}
-              isOwner={isOwner}
-              onShareClick={canShare ? handleShareClick : undefined}
-              canRemix={canRemix}
-              onRemixClick={handleRemixClick}
               canEdit={canEdit}
               bannerDismissed={bannerDismissed}
               regenerating={regenerating}
               onDismissBanner={() => setBannerDismissed(true)}
               onRegenerate={handleRegenerate}
               onConfirm={handleConfirm}
-              onEditTrip={handleEditTripClick}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
@@ -866,10 +865,6 @@ export default function GeneratedPlanPage() {
           {tab === "plan" && (
             <PlanTab
               trip={trip}
-              isOwner={isOwner}
-              onShareClick={canShare ? handleShareClick : undefined}
-              canRemix={canRemix}
-              onRemixClick={handleRemixClick}
               canEdit={canEdit}
               onAddDay={handleAddDay}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
@@ -1297,21 +1292,37 @@ function TripAttributionBar({
   isOwner,
   visibilitySaving,
   onChangeVisibility,
+  onShareClick,
+  canRemix,
+  onRemixClick,
+  onEditTrip,
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
   onShareClick?: () => void;
   visibilitySaving: boolean;
   onChangeVisibility?: (next: "private" | "public") => void;
+  canRemix: boolean;
+  onRemixClick: () => void;
+  onEditTrip: () => void;
 }) {
   const showRealExperienceBadge = !isOwner && (trip.planMode === "self" || trip.planMode === "manual");
   const hasCounts = trip.saveCount != null || trip.remixCount != null;
 
-  if (!trip.creator && !showRealExperienceBadge && !hasCounts && isOwner && !onChangeVisibility) return null;
+  // Rewritten from `!creator && !badge && !hasCounts && isOwner &&
+  // !onChangeVisibility`, which could only bail for an owner — a non-owner
+  // with no creator, badge or counts still got an empty bar. It also has to
+  // weigh the trip actions now that they live here.
+  const hasLeft = Boolean(trip.creator) || showRealExperienceBadge || hasCounts;
+  const hasRight = Boolean(onShareClick) || (!isOwner && canRemix) || isOwner;
+  if (!hasLeft && !hasRight) return null;
 
   return (
     <div className={`${SHELL} pt-6`}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* items-start, not items-center: the right side is a control row with
+          the visibility caption under it, and centring against that pushed
+          the creator block down out of line with the buttons. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {trip.creator && (
             <div className="flex items-center gap-2">
@@ -1356,13 +1367,51 @@ function TripAttributionBar({
           )}
         </div>
 
-        {isOwner && onChangeVisibility && (
-          <VisibilityControl
-            visibility={trip.visibility ?? "private"}
-            saving={visibilitySaving}
-            onChange={onChangeVisibility}
-          />
-        )}
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {onShareClick && (
+              <button
+                type="button"
+                onClick={onShareClick}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--color-surface)]"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Share2 size={13} />
+                แชร์
+              </button>
+            )}
+            {!isOwner && canRemix && (
+              <button
+                type="button"
+                onClick={onRemixClick}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-brand-green)" }}
+              >
+                <Repeat2 size={13} />
+                นำไปปรับเป็นทริปของฉัน
+              </button>
+            )}
+            {isOwner && (
+              <button
+                type="button"
+                onClick={onEditTrip}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-white"
+                style={{ backgroundColor: "var(--color-accent-orange)" }}
+              >
+                <Pencil size={13} />
+                แก้ไขทริป
+              </button>
+            )}
+            {isOwner && onChangeVisibility && (
+              <VisibilityControl
+                visibility={trip.visibility ?? "private"}
+                saving={visibilitySaving}
+                onChange={onChangeVisibility}
+              />
+            )}
+          </div>
+          {isOwner && onChangeVisibility && <VisibilityHint visibility={trip.visibility ?? "private"} />}
+        </div>
       </div>
     </div>
   );
@@ -1388,14 +1437,17 @@ function VisibilityControl({
     { value: "public", label: "เผยแพร่", icon: Globe2 },
   ];
 
+  // Pill only. The explanatory line moved out to VisibilityHint so this is a
+  // single-row element that can sit on one centred row with แชร์/แก้ไขทริป —
+  // while the caption was inside, the control was a two-row column and
+  // buttons beside it lined up with the gap between pill and text.
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div
-        className="inline-flex items-center rounded-full border p-1"
-        style={{ borderColor: "var(--color-border)" }}
-        role="radiogroup"
-        aria-label="สถานะการแชร์ทริปนี้"
-      >
+    <div
+      className="inline-flex items-center rounded-full border p-1"
+      style={{ borderColor: "var(--color-border)" }}
+      role="radiogroup"
+      aria-label="สถานะการแชร์ทริปนี้"
+    >
         {options.map(({ value, label, icon: Icon }) => {
           const active = visibility === value;
           return (
@@ -1416,14 +1468,18 @@ function VisibilityControl({
               {label}
             </button>
           );
-        })}
-      </div>
-      <p className="max-w-[240px] text-right text-[11px] text-[var(--color-muted)]">
-        {visibility === "public"
-          ? "ทริปนี้เผยแพร่อยู่ ผู้อื่นที่เห็นสามารถนำไปทำสำเนาเป็นของตัวเองได้"
-          : "ทริปนี้เป็นส่วนตัว มีแค่คุณที่เห็นและนำไปทำสำเนาได้"}
-      </p>
+      })}
     </div>
+  );
+}
+
+function VisibilityHint({ visibility }: { visibility: "private" | "public" }) {
+  return (
+    <p className="max-w-[320px] text-right text-[11px] text-[var(--color-muted)]">
+      {visibility === "public"
+        ? "ทริปนี้เผยแพร่อยู่ ผู้อื่นที่เห็นสามารถนำไปทำสำเนาเป็นของตัวเองได้"
+        : "ทริปนี้เป็นส่วนตัว มีแค่คุณที่เห็นและนำไปทำสำเนาได้"}
+    </p>
   );
 }
 
@@ -1656,17 +1712,12 @@ function PlanTabs({
 function OverviewTab({
   trip,
   isConfirmed,
-  isOwner,
-  onShareClick,
-  canRemix,
-  onRemixClick,
   canEdit,
   bannerDismissed,
   regenerating,
   onDismissBanner,
   onRegenerate,
   onConfirm,
-  onEditTrip,
   onAddActivity,
   onExploreRecommended,
   onEditActivity,
@@ -1681,17 +1732,12 @@ function OverviewTab({
 }: {
   trip: GeneratedTrip;
   isConfirmed: boolean;
-  isOwner: boolean;
-  onShareClick?: () => void;
-  canRemix: boolean;
-  onRemixClick: () => void;
   canEdit: boolean;
   bannerDismissed: boolean;
   regenerating: boolean;
   onDismissBanner: () => void;
   onRegenerate: () => void;
   onConfirm: () => void;
-  onEditTrip: () => void;
   onAddActivity: (dayId: string) => void;
   // "ยังไม่รู้จะไปไหน?" banner — opens the recommend-grid modal (defaulting
   // to day 1), distinct from onAddActivity which opens the plain manual-entry
@@ -1715,44 +1761,9 @@ function OverviewTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">สรุปภาพรวมแพลน</h2>
-        <div className="flex items-center gap-2">
-          {onShareClick && (
-            <button
-              type="button"
-              onClick={onShareClick}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--color-surface)]"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              <Share2 size={13} />
-              แชร์
-            </button>
-          )}
-          {!isOwner && canRemix && (
-            <button
-              type="button"
-              onClick={onRemixClick}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
-              style={{ backgroundColor: "var(--color-brand-green)" }}
-            >
-              <Repeat2 size={13} />
-              นำไปปรับเป็นทริปของฉัน
-            </button>
-          )}
-          {isOwner && (
-            <button
-              type="button"
-              onClick={onEditTrip}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-white"
-              style={{ backgroundColor: "var(--color-accent-orange)" }}
-            >
-              <Pencil size={13} />
-              แก้ไขทริป
-            </button>
-          )}
-        </div>
-      </div>
+      {/* แชร์ / remix / แก้ไขทริป used to sit on this row; they now share the
+          attribution bar's row with the visibility control, one band above. */}
+      <h2 className="text-xl font-bold">สรุปภาพรวมแพลน</h2>
 
       {showConfirmBanner && !isConfirmed && !bannerDismissed && (
         <ConfirmBanner
@@ -2230,10 +2241,6 @@ function WeatherTab() {
 
 function PlanTab({
   trip,
-  isOwner,
-  onShareClick,
-  canRemix,
-  onRemixClick,
   canEdit,
   onAddDay,
   onAddActivity,
@@ -2243,10 +2250,6 @@ function PlanTab({
   onDeleteActivityTravel,
 }: {
   trip: GeneratedTrip;
-  isOwner: boolean;
-  onShareClick?: () => void;
-  canRemix: boolean;
-  onRemixClick: () => void;
   canEdit: boolean;
   onAddDay: () => void;
   onAddActivity: (dayId: string) => void;
@@ -2258,35 +2261,10 @@ function PlanTab({
   const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
 
-  const header = (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <h2 className="text-2xl font-bold">แพลนเที่ยวของคุณ</h2>
-      <div className="flex items-center gap-2">
-        {onShareClick && (
-          <button
-            type="button"
-            onClick={onShareClick}
-            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)]"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <Share2 size={14} />
-            แชร์
-          </button>
-        )}
-        {!isOwner && canRemix && (
-          <button
-            type="button"
-            onClick={onRemixClick}
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
-          >
-            <Repeat2 size={14} />
-            นำไปปรับเป็นทริปของฉัน
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  // Its own แชร์/remix pair lived here too. Both are in the attribution bar
+  // now, which renders above every tab, so keeping these would have shown the
+  // same two buttons twice on this one.
+  const header = <h2 className="text-2xl font-bold">แพลนเที่ยวของคุณ</h2>;
 
   // A freshly-created backend trip can arrive with `days: []` (no itinerary
   // yet) — everything below assumes a current day exists, so bail out to an
