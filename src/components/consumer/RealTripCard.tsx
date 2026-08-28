@@ -3,40 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Bookmark,
-  CalendarDays,
-  Heart,
-  Landmark,
-  Leaf,
-  LoaderCircle,
-  MapPin,
-  Palmtree,
-  Repeat2,
-  Tag,
-  Trash2,
-  UtensilsCrossed,
-} from "lucide-react";
+import { Bookmark, Heart, LoaderCircle, Repeat2, Trash2 } from "lucide-react";
 import { likeTrip, saveTrip, unlikeTrip, unsaveTrip, type BackendTripCustomer, type BackendTripListItem } from "@/lib/trips-api";
 import { getTripGallery } from "@/lib/trip-media-api";
 import { formatTHB } from "@/lib/trip-utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
-
-// Same tag vocabulary as /main's CATEGORY_FILTERS — reused here purely for
-// a matching icon on each tag pill; falls back to a generic tag icon for
-// anything else the backend sends.
-const TAG_ICON: Record<string, typeof Leaf> = {
-  thailand: Palmtree,
-  japan: Landmark,
-  nature: Leaf,
-  food: UtensilsCrossed,
-  weekend: CalendarDays,
-};
-function tagIcon(tag: string): typeof Leaf {
-  return TAG_ICON[tag.toLowerCase()] ?? Tag;
-}
 
 // Shared feed card for real trip data from GET /trips, /trips/mine, and
 // /trips/saved (see lib/trips-api.ts) — used on /main and /saved.
@@ -67,6 +40,7 @@ export function RealTripCard({
   showStatus = false,
   onDelete,
   deleting = false,
+  tall = false,
 }: {
   trip: BackendTripListItem;
   isOwn: boolean;
@@ -74,12 +48,15 @@ export function RealTripCard({
   showStatus?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
+  /** Gives this card a different cover ratio on the masonry layout (<=1024px)
+   *  to seed the column stagger — masonry compounds any height difference down
+   *  the column, so it doesn't take much. Ignored from 1025px up, where the
+   *  feed is a uniform grid and a mismatched card would look like a mistake. */
+  tall?: boolean;
 }) {
   const { backendUser } = useAuth();
   const router = useRouter();
   const { showToast } = useToast();
-  const durationLabel = trip.schedule?.durationDays ? `${trip.schedule.durationDays} วัน` : null;
-  const tags = trip.tags ?? [];
 
   // Seeded from the list endpoint's own isSaved (accurate only when that
   // request carried a valid token — see listTrips's doc comment); toggled
@@ -210,29 +187,40 @@ export function RealTripCard({
   const perPersonBudget =
     creator && creator.groupSize > 0 && trip.totalBudget > 0 ? Math.round(trip.totalBudget / creator.groupSize) : null;
 
-  const PrimaryTagIcon = tags[0] ? tagIcon(tags[0]) : null;
-
   return (
-    <article className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
-      <Link href={`/generated-plan/${trip.id}`} className="relative block aspect-[4/5] overflow-hidden bg-[var(--color-surface)]">
+    // No card container: no white panel, border or shadow. The reference lets
+    // the cover carry the shape and drops everything to the page surface, and
+    // the chrome was competing with the photos for attention.
+    // h-full + the meta row's mt-auto pin the creator line to the bottom of
+    // every card in a grid row, so a card carrying a price line doesn't push
+    // its meta 20px below its neighbour's. Both are scoped to >=1025px: under
+    // the masonry layout there's no equal-height row to stretch to, and
+    // stretching there would defeat the stagger this is all for.
+    <article className="group flex flex-col min-[1025px]:h-full">
+      <Link
+        href={`/generated-plan/${trip.id}`}
+        className={`relative block overflow-hidden rounded-[6px] bg-[var(--color-surface)] ${
+          tall ? "aspect-[6/7] min-[1025px]:aspect-[4/5]" : "aspect-[4/5]"
+        }`}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={trip.coverImage?.urls.large ?? galleryCover ?? "/images/hero-mountain.jpg"}
           alt={trip.title || trip.destination}
           className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
         />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/25" />
 
-        <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {showStatus && <StatusBadge status={trip.status} />}
-            {PrimaryTagIcon && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
-                <PrimaryTagIcon size={12} />
-                {tags[0]}
-              </span>
-            )}
-          </div>
+        {/* The gradient only has to keep the corner controls legible now that
+            the title has moved off the image, so it's a fraction of what it
+            was — the photo is the point. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/35 to-transparent" />
+
+        <div className="absolute inset-x-3 top-3 flex items-start justify-between gap-2">
+          {/* The tag pill is gone (the reference has no chip, and the same tags
+              drive the filter row above the feed). The status badge stays: it's
+              owner-only and there's nowhere else on the card that says whether
+              a trip is a draft. */}
+          {showStatus ? <StatusBadge status={trip.status} /> : <span />}
 
           {onDelete ? (
             <button
@@ -244,9 +232,9 @@ export function RealTripCard({
               }}
               aria-label={`ลบทริป ${trip.title}`}
               disabled={deleting}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {deleting ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+              {deleting ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>
           ) : (
             !isOwn && (
@@ -255,104 +243,88 @@ export function RealTripCard({
                 onClick={handleToggleSaved}
                 aria-pressed={saved}
                 aria-label="บันทึกทริปนี้"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60 disabled:opacity-60"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60 disabled:opacity-60"
                 disabled={saving}
               >
-                <Bookmark size={15} className={saved ? "fill-white" : ""} />
+                <Bookmark size={14} className={saved ? "fill-white" : ""} />
               </button>
             )
           )}
         </div>
-
-        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-4">
-          <h2 className="line-clamp-2 text-xl font-extrabold leading-snug text-white drop-shadow-sm">
-            {trip.title || trip.destination}
-          </h2>
-
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-white/90">
-            <span className="inline-flex items-center gap-1">
-              <MapPin size={13} className="shrink-0" />
-              {trip.destination}
-            </span>
-            {durationLabel && (
-              <>
-                <span className="text-white/50">|</span>
-                <span className="inline-flex items-center gap-1">
-                  <CalendarDays size={13} className="shrink-0" />
-                  {durationLabel}
-                </span>
-              </>
-            )}
-          </div>
-
-        </div>
       </Link>
 
-      <div className="flex flex-col gap-2 bg-white p-3">
-        {creator && (
-          <div className="flex items-center gap-2">
-            {creator.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={creator.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
-            ) : (
-              <div
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                style={{ backgroundColor: "var(--color-primary)" }}
-              >
-                {creator.name.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <p className="truncate text-xs font-semibold text-[var(--foreground)]">{creator.name}</p>
-          </div>
-        )}
+      {/* Title sits under the cover in dark text rather than overlaid in white.
+          Reads at any cover brightness — the overlaid version had to fight
+          bright photos and covers that already have their own text baked in. */}
+      <Link href={`/generated-plan/${trip.id}`} className="mt-2 block">
+        <h2 className="line-clamp-2 text-[13px] font-bold leading-snug text-[var(--foreground)] min-[1025px]:text-sm">
+          {trip.title || trip.destination}
+        </h2>
+      </Link>
 
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {/* Independent from the bookmark button on the cover — this is
-                POST/DELETE /trips/:id/like. Unlike the bookmark, shown on
-                your own trips too — liking your own trip is allowed (it's
-                just a reaction, not a bookmark-yourself action).
-                likeCount is public and always accurate. */}
-            <button
-              type="button"
-              onClick={handleToggleLiked}
-              aria-pressed={liked}
-              aria-label="ถูกใจทริปนี้"
-              disabled={liking}
-              className="inline-flex items-center gap-1 text-xs font-semibold transition-colors disabled:opacity-60"
-              style={{ color: liked ? "var(--color-primary)" : "var(--color-muted)" }}
-            >
-              <Heart size={15} className={liked ? "fill-[var(--color-primary)]" : ""} />
-              {likeCount.toLocaleString()}
-            </button>
-
-            {remixCount != null && remixCount > 0 && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-muted)]">
-                <Repeat2 size={14} />
-                {remixCount}
-              </span>
-            )}
-          </div>
-
-          {/* Order matters: the pending case comes first so no number is shown
-              until it's known which unit it's in. Both resolved cases carry an
-              explicit unit — an unlabelled total used to be indistinguishable
-              from a neighbouring card's per-person price. */}
-          {trip.totalBudget <= 0 ? (
-            <span className="text-[11px] font-medium text-[var(--color-muted)]">ยังไม่ระบุราคา</span>
-          ) : !detailSettled ? (
-            <span aria-hidden className="h-4 w-16 animate-pulse rounded bg-[var(--color-surface)]" />
-          ) : perPersonBudget != null ? (
-            <span className="text-sm font-extrabold text-[var(--color-primary)]">
-              {formatTHB(perPersonBudget)}
-              <span className="text-[11px] font-semibold text-[var(--color-muted)]"> / คน</span>
+      {/* Destination and duration are usually already inside the title (real
+          titles read "หลวงพระบาง, ลาว 4 วัน 3 คืน"), so only the price gets its
+          own line — and only when there is one. Order matters: the pending case
+          comes first so no number shows until its unit is known. */}
+      {trip.totalBudget > 0 &&
+        (!detailSettled ? (
+          <span aria-hidden className="mt-1 h-3.5 w-16 animate-pulse rounded bg-[var(--color-surface)]" />
+        ) : (
+          <p className="mt-1 text-[11px] font-extrabold text-[var(--color-primary)] min-[1025px]:text-xs">
+            {formatTHB(perPersonBudget ?? trip.totalBudget)}
+            <span className="font-semibold text-[var(--color-muted)]">
+              {perPersonBudget != null ? " / คน" : " รวม"}
             </span>
+          </p>
+        ))}
+
+      {/* Creator left, reactions right — the reference's meta row. */}
+      <div className="flex items-center justify-between gap-2 pt-1.5 min-[1025px]:mt-auto">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {creator ? (
+            <>
+              {creator.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={creator.avatarUrl} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
+              ) : (
+                <span
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                  style={{ backgroundColor: "var(--color-primary)" }}
+                >
+                  {creator.name.charAt(0).toUpperCase()}
+                </span>
+              )}
+              <p className="truncate text-[10px] font-medium text-[var(--color-muted)] min-[1025px]:text-[11px]">{creator.name}</p>
+            </>
           ) : (
-            <span className="text-sm font-extrabold text-[var(--color-primary)]">
-              {formatTHB(trip.totalBudget)}
-              <span className="text-[11px] font-semibold text-[var(--color-muted)]"> รวม</span>
+            <span />
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {remixCount != null && remixCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--color-muted)] min-[1025px]:text-[11px]">
+              <Repeat2 size={13} />
+              {remixCount}
             </span>
           )}
+
+          {/* Independent from the bookmark on the cover — this is POST/DELETE
+              /trips/:id/like. Unlike the bookmark it stays on your own trips:
+              liking your own trip is just a reaction. likeCount is public and
+              always accurate. */}
+          <button
+            type="button"
+            onClick={handleToggleLiked}
+            aria-pressed={liked}
+            aria-label="ถูกใจทริปนี้"
+            disabled={liking}
+            className="inline-flex items-center gap-0.5 text-[10px] font-semibold transition-colors disabled:opacity-60 min-[1025px]:text-[11px]"
+            style={{ color: liked ? "var(--color-primary)" : "var(--color-muted)" }}
+          >
+            <Heart size={13} className={liked ? "fill-[var(--color-primary)]" : ""} />
+            {likeCount.toLocaleString()}
+          </button>
         </div>
       </div>
     </article>

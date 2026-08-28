@@ -98,7 +98,7 @@ export function AppShell({
           {/* Clears the fixed MobileBottomNav at exactly the widths it shows
               (<=1024px) — without it the last row of cards scrolls underneath
               the tab bar and can't be reached. */}
-          <main className="flex-1 pb-24 min-[1025px]:pb-0">{children}</main>
+          <main className="flex-1 pb-16 min-[1025px]:pb-0">{children}</main>
         </div>
 
         <MobileBottomNav active={active} />

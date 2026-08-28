@@ -107,7 +107,7 @@ export default function MyTripsPage() {
     <AppShell hideDesktopSidebar hideTopbar>
       <div className="min-h-full bg-[#f7faf8]">
         <header className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur">
-          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-7 sm:px-10 lg:px-16 xl:px-20">
+          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10 xl:px-14">
             <div className="flex min-w-0 items-center gap-1.5">
               <MyTripsMenuButton />
               <Link href="/main" className="text-xl font-extrabold tracking-[-0.04em] text-[var(--color-brand-green)]">PUNGUIDE</Link>
@@ -120,7 +120,7 @@ export default function MyTripsPage() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[var(--container-feed)] px-7 py-8 sm:px-10 sm:py-12 lg:px-16 xl:px-20">
+        <main className="mx-auto w-full max-w-[var(--container-feed)] px-4 py-8 sm:px-6 sm:py-12 lg:px-10 xl:px-14">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="text-sm font-semibold text-[var(--color-primary)]">ยินดีต้อนรับกลับมา</p>
@@ -196,7 +196,9 @@ function MyTripsMenuButton() {
       type="button"
       onClick={appShell.openSidebar}
       aria-label="เปิดเมนู"
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)]"
+      // Desktop only, same as /main's: below 1025px MobileBottomNav reaches
+      // everything the drawer does, so this was a duplicate route.
+      className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)] min-[1025px]:flex"
     >
       <Menu size={20} />
     </button>
@@ -213,7 +215,8 @@ function AccountAvatarButton({ src }: { src: string }) {
       type="button"
       onClick={appShell?.openAccount}
       aria-label="บัญชีผู้ใช้"
-      className="rounded-full hover:opacity-80"
+      // The bottom bar's โปรไฟล์ tab opens this same dialog below 1025px.
+      className="hidden rounded-full hover:opacity-80 min-[1025px]:block"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt="" className="h-9 w-9 rounded-full object-cover" />

@@ -35,15 +35,15 @@ export function FeedSearchBar({
   // makes it lift off this band.
   return (
     <div className="border-b border-[#e6efe9] bg-gradient-to-b from-[var(--color-surface)] to-[#f6faf8]">
-      <div className="mx-auto w-full max-w-[var(--container-feed)] px-7 py-4 sm:px-10 lg:px-16 xl:px-20">
+      <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 py-2.5 sm:px-6 lg:px-10 xl:px-14">
         <form onSubmit={handleSubmit} role="search" className="mx-auto w-full sm:w-[26rem] lg:w-[30rem]">
-          <div className="flex items-center gap-2 rounded-full border border-[#e5e5e5] bg-white py-1.5 pl-4 pr-1.5 transition-shadow focus-within:border-[var(--color-primary)]/40 focus-within:shadow-[0_4px_16px_rgba(42,158,100,0.12)]">
+          <div className="flex items-center gap-2 rounded-full border border-[#e5e5e5] bg-white py-1 pl-4 pr-1 transition-shadow focus-within:border-[var(--color-primary)]/40 focus-within:shadow-[0_4px_16px_rgba(42,158,100,0.12)]">
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               placeholder="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว..."
               aria-label="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว"
-              className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
             />
 
             {query.trim() && (
@@ -64,9 +64,9 @@ export function FeedSearchBar({
             <button
               type="submit"
               aria-label="ค้นหาทริป"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] text-white transition-all hover:bg-[var(--color-deep-green)] hover:shadow-[0_4px_14px_-2px_rgba(42,158,100,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] text-white transition-all hover:bg-[var(--color-deep-green)] hover:shadow-[0_4px_14px_-2px_rgba(42,158,100,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2"
             >
-              <Search size={17} strokeWidth={2.5} />
+              <Search size={16} strokeWidth={2.5} />
             </button>
           </div>
         </form>

@@ -176,7 +176,7 @@ export default function MainPage() {
               // which filter was on — and the filter is the only explanation
               // for why the grid shrank.
               aria-pressed={isActive}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-all min-[1025px]:px-3.5 min-[1025px]:py-2 min-[1025px]:text-sm ${
                 isActive
                   ? "bg-[var(--color-primary)] text-white shadow-[0_4px_12px_rgba(42,158,100,0.35)]"
                   : `border border-[var(--color-border)]/40 bg-white hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface)] hover:text-[var(--color-primary)] ${
@@ -209,51 +209,21 @@ export default function MainPage() {
               and a way out, right above it. */}
           <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">สำรวจทริป</h1>
-              <p className="text-sm text-[var(--color-muted)]">
-                {visibleTrips === undefined
-                  ? "กำลังโหลด..."
-                  : `${visibleTrips.length.toLocaleString()} ทริป`}
-              </p>
             </div>
-
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-              {hasActiveFilter && (
-                <>
-                  {query.trim() && (
-                    <FilterChip label={`"${query.trim()}"`} onClear={() => setQuery("")} />
-                  )}
-                  {activeCategory && category !== "forYou" && (
-                    <FilterChip label={activeCategory.label} onClear={() => setCategory("forYou")} />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery("");
-                      setCategory("forYou");
-                    }}
-                    className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--color-muted)] underline-offset-2 transition-colors hover:text-[var(--color-primary)] hover:underline"
-                  >
-                    ล้างทั้งหมด
-                  </button>
-                </>
-              )}
-              <FeedSortSelect sort={sort} onSortChange={setSort} />
             </div>
           </div>
 
           {visibleTrips === undefined ? (
             <div className={TRIP_GRID_CLASS}>
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-                  <div className="aspect-[4/5] w-full animate-pulse bg-[var(--color-surface)]" />
-                  {/* Mirrors the card's own footer so the skeleton keeps the
-                      same height as what replaces it and the grid doesn't jump
-                      when the real cards land. */}
-                  <div className="flex flex-col gap-2 p-3">
-                    <div className="h-3 w-2/3 animate-pulse rounded bg-[var(--color-surface)]" />
-                    <div className="h-3 w-1/3 animate-pulse rounded bg-[var(--color-surface)]" />
-                  </div>
+                // Mirrors RealTripCard exactly — square-cornered cover, no
+                // card chrome, then the title and meta lines — so the grid
+                // keeps its shape and height when the real cards replace it.
+                <div key={i}>
+                  <div className="aspect-[4/5] w-full animate-pulse rounded-[6px] bg-[var(--color-surface)]" />
+                  <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-[var(--color-surface)]" />
+                  <div className="mt-1.5 h-3 w-1/2 animate-pulse rounded bg-[var(--color-surface)]" />
                 </div>
               ))}
             </div>
@@ -267,8 +237,17 @@ export default function MainPage() {
             />
           ) : (
             <div className={TRIP_GRID_CLASS}>
-              {visibleTrips.map((trip) => (
-                <RealTripCard key={trip.id} trip={trip} isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)} />
+              {/* The first card gets the taller cover, which is what starts
+                  the masonry columns off at different heights — without a
+                  mismatch somewhere the two columns stay level and the layout
+                  reads as a plain grid. */}
+              {visibleTrips.map((trip, index) => (
+                <RealTripCard
+                  key={trip.id}
+                  trip={trip}
+                  isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)}
+                  tall={index === 0}
+                />
               ))}
             </div>
           )}
