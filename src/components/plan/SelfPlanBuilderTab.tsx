@@ -672,20 +672,20 @@ function AddPlacesAccordion({
   );
 
   return (
-    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
+    <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
       >
-        <h3 className="text-base font-bold sm:text-lg">{title}</h3>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white">
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        <h3 className="text-sm font-bold sm:text-base">{title}</h3>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white">
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
 
       {expanded && (
-        <div className="flex flex-col gap-4 px-5 pb-5">
+        <div className="flex flex-col gap-4 px-4 pb-4">
           <div className="relative">
             <div
               className="flex items-center gap-2.5 rounded-2xl border bg-white px-4 py-3"
@@ -1810,10 +1810,27 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
   );
 }
 
-// Always shows the gallery of whatever hotel stops are already in the
-// itinerary (or a manual override, see AccommodationGallery) — the
-// search-to-add carousel below it is an editing tool, so it's hidden once
-// "แก้ไขแพลน" is off, same as every other add-a-place control on this panel.
+// Renders only for a trip that actually has somewhere to stay — a hotel stop
+// in the itinerary, or a trip.accommodation set by the recommended-places
+// carousel / AccommodationEditDialog. It used to render unconditionally and
+// lead with the "จองแล้ว"/"ยังไม่จอง" setup form, so a trip with no stay yet
+// showed an empty section whose only content was a form asking for one.
+//
+// Note this makes the section read-only-by-arrival: it is no longer a way to
+// *add* accommodation, only to see and edit what's already there. The add
+// paths are the recommended-places carousel above and adding a hotel place to
+// a day in the itinerary.
+// Hides the whole setup form under the hotel card — the ชื่อโรงแรม /
+// ตำแหน่งที่อยู่ / วันที่เข้าพัก-วันที่ออก / เวลา Check in-Check out inputs,
+// and with them the จองแล้ว/ยังไม่จอง pair and the unbooked branch's
+// style/grade tags. Gated here at the call site rather than inside the form so
+// nothing renders an empty wrapper below the gallery.
+//
+// SHOW_BOOKING_STATUS_TOGGLE below is the inner switch for just the
+// จองแล้ว/ยังไม่จอง pair; it stays off independently, so turning this one back
+// on restores the inputs without the toggle unless that one is flipped too.
+const SHOW_ACCOMMODATION_SETUP_FORM = false;
+
 function AccommodationAccordion({
   trip,
   canEdit,
@@ -1830,31 +1847,34 @@ function AccommodationAccordion({
   const [expanded, setExpanded] = useState(true);
   const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
 
+  // After the hook, so the hook order stays stable across renders.
+  if (!hasData) return null;
+
   return (
-    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
-      <div className="flex w-full items-center justify-between gap-3 px-5 py-4">
+    <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
+      <div className="flex w-full items-center justify-between gap-3 px-4 py-2.5">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className="flex flex-1 items-center justify-between gap-3 text-left"
         >
-          <h3 className="text-base font-bold sm:text-lg">โรงแรม หรือที่พักของคุณ</h3>
+          <h3 className="text-sm font-bold sm:text-base">โรงแรม หรือที่พักของคุณ</h3>
         </button>
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white"
           >
-            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
       </div>
 
       {expanded && (
-        <div className="flex flex-col gap-4 px-5 pb-5">
-          {hasData && <AccommodationGallery trip={trip} />}
-          {canEdit && (
+        <div className="flex flex-col gap-4 px-4 pb-4">
+          <AccommodationGallery trip={trip} />
+          {canEdit && SHOW_ACCOMMODATION_SETUP_FORM && (
             <AccommodationSetupForm accommodation={trip.accommodation} center={center} onSave={onSaveAccommodation} />
           )}
         </div>
@@ -1902,6 +1922,13 @@ function RecommendTag({ isOn, onClick }: { isOn: boolean; onClick: () => void })
     </button>
   );
 }
+
+// Hides the "จองแล้ว"/"ยังไม่จอง" pair for now. A flag rather than deleted
+// code: the two branches it switches between are both still wired up, and the
+// toggle only needs one line flipped to come back. While it is off, `status`
+// still comes from accommodation.bookingStatus, so a stay already saved as
+// unbooked keeps showing its own style/grade fields instead of being reset.
+const SHOW_BOOKING_STATUS_TOGGLE = false;
 
 // The "โรงแรม หรือที่พักของคุณ" setup form — booking-status toggle switches
 // between confirming an already-booked stay's details (name/address/dates/
@@ -1971,22 +1998,24 @@ function AccommodationSetupForm({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <AccommodationStatusToggle
-          icon={Check}
-          title="จองแล้ว"
-          subtitle="แนบไฟล์การจองหรือลิงก์"
-          isOn={status === "booked"}
-          onClick={() => setBookingStatus("booked")}
-        />
-        <AccommodationStatusToggle
-          icon={Search}
-          title="ยังไม่จอง"
-          subtitle="บอกสไตล์กับเกรดคร่าวๆ"
-          isOn={status === "unbooked"}
-          onClick={() => setBookingStatus("unbooked")}
-        />
-      </div>
+      {SHOW_BOOKING_STATUS_TOGGLE && (
+        <div className="grid grid-cols-2 gap-3">
+          <AccommodationStatusToggle
+            icon={Check}
+            title="จองแล้ว"
+            subtitle="แนบไฟล์การจองหรือลิงก์"
+            isOn={status === "booked"}
+            onClick={() => setBookingStatus("booked")}
+          />
+          <AccommodationStatusToggle
+            icon={Search}
+            title="ยังไม่จอง"
+            subtitle="บอกสไตล์กับเกรดคร่าวๆ"
+            isOn={status === "unbooked"}
+            onClick={() => setBookingStatus("unbooked")}
+          />
+        </div>
+      )}
 
       {status === "booked" && (
         <div className="flex flex-col gap-3">

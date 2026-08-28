@@ -7,7 +7,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity as PulseIcon,
   Anchor,
-  ArrowLeft,
   Beer,
   Bike,
   Bookmark,
@@ -143,8 +142,16 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "plan", label: "แพลนทริป" },
   { key: "weather", label: "สภาพอากาศ" },
   { key: "budget", label: "สรุปงบ" },
-  { key: "chat", label: "ห้องแชท" },
+ // { key: "chat", label: "ห้องแชท" },
 ];
+
+// The one width grid for this whole route. The hero's own content (nav row,
+// tab bar, title block) used to be full-bleed while everything below it sat in
+// a centered max-w-7xl column, so on a 1900px display the hero title started
+// at x=32 and the itinerary at x=313 — two left edges 281px apart — and the
+// tab bar stretched to 1857px, giving each 80px label a 362px button. Every
+// band on the page now shares this, so they line up at every width.
+const SHELL = "mx-auto w-full max-w-[var(--container-max)] px-4 sm:px-6 lg:px-10";
 
 // Adjusts the day list to a new nights count — used both by "แก้ไขทริป"
 // (editing duration) and "เพิ่มวัน" (adding a single day). Never drops a day
@@ -789,9 +796,7 @@ export default function GeneratedPlanPage() {
         onBack={() => router.back()}
         onMenuClick={() => setSidebarOpen(true)}
         userAvatarUrl={backendUser?.avatarUrl}
-        tabs={TABS}
         tab={tab}
-        setTab={setTab}
       />
 
       {galleryDialogOpen && (
@@ -805,6 +810,20 @@ export default function GeneratedPlanPage() {
       {shareDialogOpen && <ShareTripDialog tripId={trip.id} onClose={() => setShareDialogOpen(false)} />}
 
       <div className="relative rounded-t-[28px] bg-white">
+        {/* The tab bar can't live inside Hero and still stick: `sticky` is
+            constrained to its own containing block, and Hero is additionally
+            overflow-hidden for its rounded-b photo clip — so pinned tabs got
+            clipped to the hero box and scrolled away with the photo. Sitting
+            here as the white container's first child, the same bar can stay
+            pinned for the whole length of the page. Translucent + blurred
+            rather than solid, so the itinerary reads as passing underneath;
+            over the page's own white it's invisible at rest. */}
+        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-md">
+          <div className={`${SHELL} py-3`}>
+            <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
+          </div>
+        </div>
+
         <TripAttributionBar
           trip={trip}
           isOwner={isOwner}
@@ -812,7 +831,7 @@ export default function GeneratedPlanPage() {
           onChangeVisibility={trip.backendSynced ? handleChangeVisibility : undefined}
         />
 
-        <div className="mx-auto max-w-7xl px-6 py-8 sm:px-10">
+        <div className={`${SHELL} py-8`}>
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
           {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
 
@@ -929,9 +948,7 @@ function Hero({
   onBack,
   onMenuClick,
   userAvatarUrl,
-  tabs,
   tab,
-  setTab,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -939,9 +956,7 @@ function Hero({
   onBack: () => void;
   onMenuClick: () => void;
   userAvatarUrl?: string | null;
-  tabs: { key: TabKey; label: string }[];
   tab: TabKey;
-  setTab: (t: TabKey) => void;
 }) {
   const [saved, setSaved] = useState(false);
 
@@ -1001,7 +1016,7 @@ function Hero({
   const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
 
   return (
-    <div className="relative flex min-h-[300px] flex-col overflow-hidden rounded-b-[28px] sm:min-h-[380px]">
+    <div className="relative flex min-h-[300px] flex-col overflow-hidden rounded-b-[28px] sm:min-h-[380px] lg:min-h-[440px]">
       {/* Editing keeps a single static cover — swiping through photos is a
           viewing affordance, and would fight with "จัดการรูปภาพ" for the same
           tap target. The read-only detail view (canEdit === false, i.e.
@@ -1017,48 +1032,67 @@ function Hero({
       ) : (
         <HeroImageCarousel images={images} title={trip.title || trip.destination} />
       )}
-      {/* Darker at the very top only, for nav-bar icon contrast — fades to
-          fully transparent well before the bottom edge so the photo itself
-          (not a color wash) reaches the rounded corners. */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-transparent" />
+      {/* Light at the top, clear through the middle, darker at the bottom.
+          The top stays weak because the nav bar above is a pale frosted panel
+          with dark icons — a heavy scrim showed through the blur and turned
+          that panel gray. The bottom band is what the white title/date/tags
+          sit on: with a fully transparent bottom, the sm text-sm date line
+          landed on whatever the photo happened to be (a sunlit river, in the
+          Luang Prabang cover) and became unreadable. */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/55" />
 
       {/* Top nav — back/menu on the left, PunGuide wordmark centered, save +
-          the viewer's own avatar on the right. Sits on its own translucent,
-          blurred panel (rounded bottom corners) instead of directly on the
-          photo, so the image shows through muted rather than a hard cut. */}
-      <div className="relative z-20 rounded-b-3xl bg-gradient-to-b from-black/35 via-black/15 to-transparent backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-3 p-3 sm:p-4">
+          the viewer's own avatar on the right. Sits on its own frosted panel
+          (pale, translucent, rounded bottom corners) instead of directly on
+          the photo, so the image reads through it softly rather than as a hard
+          cut. Light rather than dark: the wordmark and the icons carry the
+          brand colors, which need a pale ground to stay legible. */}
+      <div className="relative z-20 rounded-b-[28px] border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+        {/* `relative` + an absolutely centered wordmark rather than a third
+            flex child: the left and right icon groups aren't the same width
+            (and the right one changes with the avatar), so justify-between
+            left the wordmark visibly off-center. */}
+        <div className="relative flex items-center justify-between gap-3 p-3 sm:p-4">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onBack}
               aria-label="ย้อนกลับ"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+              style={{ color: "var(--color-brand-green)" }}
             >
-              <ArrowLeft size={18} />
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
             <button
               type="button"
               onClick={onMenuClick}
               aria-label="เมนู"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+              style={{ color: "var(--color-brand-green)" }}
             >
-              <Menu size={18} />
+              <Menu size={20} strokeWidth={2.5} />
             </button>
           </div>
 
-          <Logo className="rounded-full bg-white/90 px-4 py-1.5 text-base shadow-md sm:text-lg" />
+          {/* No white pill behind it any more — the panel is already pale
+              enough to read the dark wordmark against, and the pill made the
+              brand mark look like a button sitting between two real ones. */}
+          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-lg text-[var(--foreground)] sm:text-2xl" />
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Bare icon, no white disc: on the frosted panel the disc read as
+                a third button matching the two on the left, which put the
+                wordmark's visual weight in the wrong place. */}
             <button
               type="button"
               onClick={() => setSaved((s) => !s)}
               aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
               aria-pressed={saved}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-md transition hover:bg-white"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
             >
               <Bookmark
-                size={16}
+                size={20}
+                strokeWidth={2.25}
                 fill={saved ? "var(--color-brand-green)" : "none"}
                 style={{ color: "var(--color-brand-green)" }}
               />
@@ -1067,14 +1101,20 @@ function Hero({
             <img
               src={userAvatarUrl || "/images/profile-avatar.jpg"}
               alt=""
-              className="h-10 w-10 shrink-0 rounded-full border-2 border-white/80 object-cover"
+              className="h-10 w-10 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
             />
           </div>
         </div>
       </div>
 
+      {/* Sits under the app bar at the hero's top-right — the standard spot
+          for a cover-photo action, and clear of the title/date/tag block that
+          owns the bottom edge. It used to be squeezed into a bare row directly
+          above the tab bar, which put two right-aligned controls on stacked
+          rows; with the tabs gone it stands alone and just needed the vertical
+          breathing room. */}
       {canEdit && (
-        <div className="relative z-20 flex justify-end px-4 sm:px-6">
+        <div className={`relative z-20 flex justify-end pt-3 sm:pt-4 ${SHELL}`}>
           <button
             type="button"
             onClick={onManagePhotos}
@@ -1086,16 +1126,12 @@ function Hero({
         </div>
       )}
 
-      <div className="relative z-20 px-4 pt-2 sm:px-6">
-        <PlanTabs tabs={tabs} tab={tab} setTab={setTab} />
-      </div>
-
       {/* Bottom overlay — left-aligned title, date range + duration, then
           either the status/style-tag badges (trip.styles doubles as the
           reference design's transport/theme tags) or, on the plan tab, a
           trip-summary stat row instead. White text throughout, no
           shadow/halo. */}
-      <div className="relative z-10 mt-auto flex flex-col gap-2 px-5 pb-5 sm:px-8 sm:pb-6">
+      <div className={`relative z-10 mt-auto flex flex-col gap-2 pb-5 sm:pb-6 ${SHELL}`}>
         <h1 className="text-2xl font-extrabold text-white sm:text-4xl">{trip.title || trip.destination}</h1>
 
         {tab === "plan" ? (
@@ -1274,7 +1310,7 @@ function TripAttributionBar({
   if (!trip.creator && !showRealExperienceBadge && !hasCounts && isOwner && !onChangeVisibility) return null;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 sm:px-10">
+    <div className={`${SHELL} pt-6`}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {trip.creator && (
@@ -1585,7 +1621,7 @@ function PlanTabs({
     <div
       role="tablist"
       aria-label="ส่วนต่าง ๆ ของแผนทริป"
-      className="flex items-center gap-1 overflow-x-auto rounded-full p-1.5 shadow-md sm:gap-2 sm:p-2"
+      className="flex items-center gap-1 overflow-x-auto rounded-full p-1.5 shadow-md [scrollbar-width:none] sm:gap-2 sm:p-2 [&::-webkit-scrollbar]:hidden"
       style={{ backgroundColor: "#FAF8F5" }}
     >
       {tabs.map((t, i) => {
@@ -1678,18 +1714,18 @@ function OverviewTab({
   const showConfirmBanner = trip.planMode !== "manual" && trip.planMode !== "remixed";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold">สรุปภาพรวมแพลน</h2>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-bold">สรุปภาพรวมแพลน</h2>
         <div className="flex items-center gap-2">
           {onShareClick && (
             <button
               type="button"
               onClick={onShareClick}
-              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)]"
+              className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--color-surface)]"
               style={{ borderColor: "var(--color-border)" }}
             >
-              <Share2 size={14} />
+              <Share2 size={13} />
               แชร์
             </button>
           )}
@@ -1697,10 +1733,10 @@ function OverviewTab({
             <button
               type="button"
               onClick={onRemixClick}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
               style={{ backgroundColor: "var(--color-brand-green)" }}
             >
-              <Repeat2 size={14} />
+              <Repeat2 size={13} />
               นำไปปรับเป็นทริปของฉัน
             </button>
           )}
@@ -1708,10 +1744,10 @@ function OverviewTab({
             <button
               type="button"
               onClick={onEditTrip}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white"
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-white"
               style={{ backgroundColor: "var(--color-accent-orange)" }}
             >
-              <Pencil size={14} />
+              <Pencil size={13} />
               แก้ไขทริป
             </button>
           )}
@@ -1792,17 +1828,17 @@ function ItineraryAccordion({
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="overflow-hidden rounded-3xl" style={{ backgroundColor: "#FAF8F5" }}>
-      <div className="flex w-full items-center justify-between gap-3 px-5 py-4">
+    <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
+      <div className="flex w-full items-center justify-between gap-3 px-4 py-2.5">
         <button type="button" onClick={() => setExpanded((v) => !v)} className="text-left">
-          <h3 className="text-base font-bold sm:text-lg">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
+          <h3 className="text-sm font-bold sm:text-base">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {canEdit && (
             <button
               type="button"
               onClick={onAddDay}
-              className="inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold"
+              className="inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1 text-xs font-semibold"
               style={{ borderColor: "var(--color-border)" }}
             >
               <Plus size={12} />
@@ -1813,9 +1849,9 @@ function ItineraryAccordion({
             type="button"
             onClick={() => setExpanded((v) => !v)}
             aria-label={expanded ? "ย่อตารางแพลน" : "ขยายตารางแพลน"}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white"
           >
-            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
       </div>
@@ -1824,18 +1860,7 @@ function ItineraryAccordion({
         // Fuller, one-column day list while actively building/editing — place
         // count + date per day, plus a jump straight to the Plan tab for the
         // per-day travel-connector view, which this compact card doesn't have.
-        <div className="flex flex-col gap-3 px-5 pb-5">
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onGoToPlanTab}
-              className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              ดูแพลนรายวัน
-              <ChevronRight size={11} className="ml-0.5 inline" />
-            </button>
-          </div>
+        <div className="flex flex-col gap-3 px-4 pb-4">
 
           <div className="flex flex-col gap-4">
             {trip.days.map((day) => {
@@ -1843,12 +1868,18 @@ function ItineraryAccordion({
               return (
                 <div
                   key={day.id}
+                  // Warm cream rather than --color-border (#a3a0a0): that grey
+                  // read as a hard black outline against the card's white fill
+                  // and the accordion's #FAF8F5 ground. Same literal style as
+                  // the other warm surfaces on this panel (#FAF8F5, #FDF0E7);
+                  // --color-border-tag happens to hold this value too, but it
+                  // belongs to the tag chips, so it isn't reused here.
                   className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
-                  style={{ borderColor: "var(--color-border)" }}
+                  style={{ borderColor: "#E6D9B8" }}
                 >
                   <div
                     className={hasActivities ? "flex items-center justify-between gap-3 border-b pb-2.5" : "flex items-center justify-between gap-3"}
-                    style={hasActivities ? { borderColor: "var(--color-border)" } : undefined}
+                    style={hasActivities ? { borderColor: "#E6D9B8" } : undefined}
                   >
                     <div className="flex items-baseline gap-2">
                       <h4 className="text-sm font-bold" style={{ color: "var(--color-brand-green)" }}>
@@ -1906,7 +1937,7 @@ function ItineraryAccordion({
       )}
 
       {expanded && !canEdit && (
-        <div className="grid grid-cols-1 gap-4 px-5 pb-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 px-4 pb-4 md:grid-cols-3">
           {trip.days.map((day) => (
             <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
               <div
