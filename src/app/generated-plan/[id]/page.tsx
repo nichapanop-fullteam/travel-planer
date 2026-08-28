@@ -316,13 +316,12 @@ export default function GeneratedPlanPage() {
         //   (handleRegenerate's "AI plan I can redo from its original brief"
         //   lookup). The builder has no draft to read it from, so it defaults
         //   to the trip's own id.
-        // - destinationPlace is the one with a user-visible symptom. GET
-        //   /trips/:id returns only the plain `destination` string — no
-        //   lat/lng — so without this SelfPlanBuilderTab's place search falls
-        //   back to DEFAULT_RECOMMENDATION_CENTER and a Bangkok trip listed
-        //   Luang Prabang temples. Backend ticket open to return it; this
-        //   keeps trips created in this browser correct meanwhile, and can't
-        //   fix a trip opened on another device (nothing local to restore).
+        // - destinationPlace now comes back from GET /trips/:id, so ??=
+        //   normally keeps the server's value and this is just a backstop.
+        //   It still earns its place: a trip created before that API update
+        //   with no location_id has no coordinates server-side and never
+        //   will, so the local copy is the only place they exist. Without it,
+        //   SelfPlanBuilderTab has no centre to search around.
         // - accommodation / expenses / generationNotice have no backend
         //   representation on this endpoint at all.
         //

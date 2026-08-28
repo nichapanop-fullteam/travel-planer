@@ -393,12 +393,14 @@ function CreateTripForm() {
           // buildGeneratedTripFromBackendTrip sets draftId: trip.id (its own
           // backend id) by default — override it to this TripDraft's id,
           // otherwise isSelfMode's getTripDrafts() lookup on the trip page
-          // can't find a match and falls back to the AI-mode tabs. It also
-          // never sets destinationPlace at all — BackendTrip only carries a
-          // plain destination string, no lat/lng — so without this override
-          // SelfPlanBuilderTab's place-suggestion search always falls back to
-          // DEFAULT_RECOMMENDATION_CENTER (Luang Prabang) regardless of the
-          // destination actually picked here.
+          // can't find a match and falls back to the AI-mode tabs.
+          //
+          // destinationPlace is now returned by the trip API and mapped by
+          // that builder, so this override is no longer load-bearing for the
+          // usual path. It stays because POST /trips only sends placeId and
+          // the backend resolves the coordinates from Google itself — if that
+          // lookup fails, the response has no destinationPlace while the
+          // draft in hand still does.
           let tripShell = {
             ...buildGeneratedTripFromBackendTrip(backendTrip),
             draftId: draft.id,

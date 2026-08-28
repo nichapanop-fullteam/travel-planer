@@ -94,6 +94,27 @@ export interface BackendTrip {
   ownerId: string;
   title: string;
   destination: string;
+  // The structured place behind `destination`. Backend resolves the
+  // coordinates from placeId itself on write, so the manual-mode POST /trips
+  // still sends only placeId — no lat/lng from us.
+  //
+  // Contract worth relying on: the key is absent entirely when the trip has
+  // no coordinates — never null, never a zeroed object — and latitude and
+  // longitude are both present whenever the object appears. So a plain
+  // `trip.destinationPlace ? … : fallback` is sufficient; no 0/0 guard.
+  // placeId/country/countryCode are omitted rather than sent as "".
+  //
+  // Trips created before this API update that never had a location_id (33 on
+  // dev when it shipped) will never carry it — that's what the
+  // NoDestinationCoordsNotice empty state exists for.
+  destinationPlace?: {
+    placeId?: string;
+    name: string;
+    country?: string;
+    countryCode?: string;
+    latitude: number;
+    longitude: number;
+  };
   status: string; // "draft" | "confirmed" | "shared" | ... — kept as string, backend's enum isn't finalized yet
   schedule: BackendTripSchedule;
   // Server-computed real total: (activity + travel costs) × travelers, plus

@@ -431,6 +431,19 @@ export function buildGeneratedTripFromBackendTrip(
     createdAt: trip.createdAt,
     title: trip.title,
     destination: trip.destination,
+    // The whole point of the destinationPlace API update: without this,
+    // SelfPlanBuilderTab had no coordinates to search around and every
+    // recommendation list fell back to one hardcoded city.
+    //
+    // Destination.country is typed required while the API returns it optional
+    // (its own example omits it, sending only countryCode). "" is already how
+    // the rest of the app spells "unknown" for this field — see
+    // DestinationPickerDialog's `destination.country ? label : name` and
+    // generate-plan-mapping's `country || undefined` — so no shared type
+    // change is needed here.
+    destinationPlace: trip.destinationPlace
+      ? { ...trip.destinationPlace, country: trip.destinationPlace.country ?? "" }
+      : undefined,
     coverImageUrl: firstActivityImage ?? "/images/hero-mountain.jpg",
     coverImage: trip.coverImage,
     mediaSummary: trip.mediaSummary,
