@@ -1,37 +1,51 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Landmark, Leaf, Palmtree, SearchX, Sparkles, UtensilsCrossed, X } from "lucide-react";
+import { ChevronRight, SearchX } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { HomeNavbar } from "@/components/consumer/HomeNavbar";
-import { FeedSearchBar, FeedSortSelect, type FeedSort } from "@/components/consumer/FeedSearchBar";
+import { HomeHero } from "@/components/consumer/HomeHero";
+import { HomeQuickActions } from "@/components/consumer/HomeQuickActions";
+import { TopDestinationRow } from "@/components/consumer/TopDestinationRow";
+import { FeedSortSelect, type FeedSort } from "@/components/consumer/FeedSortSelect";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
+import { deriveTopDestinations } from "@/lib/top-destinations";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { useAuth } from "@/providers/AuthProvider";
 import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 
-// The app's home page — a social-travel-community "Discover your next
-// journey" feed. The trip grid itself is real data from GET /trips (see
-// listTrips in lib/trips-api.ts); only the trending-destinations and
-// creators-to-follow rail is still mock (see CONTRIBUTING.md for what's
-// real vs. visual — there's no trending/follow backend yet).
+// The app's home page. The trip grid is real data from GET /trips (see
+// listTrips in lib/trips-api.ts), and so is the Top Destination rail — it's
+// derived from those same rows rather than a hardcoded country list, because
+// there's no trending/destinations backend (see lib/top-destinations.ts).
 type Category = "thailand" | "japan" | "nature" | "food" | "weekend";
 
-const CATEGORY_FILTERS: { key: "forYou" | Category; label: string; icon: typeof Sparkles }[] = [
-  { key: "forYou", label: "For you", icon: Sparkles },
-  { key: "thailand", label: "Thailand", icon: Palmtree },
-  { key: "japan", label: "Japan", icon: Landmark },
-  { key: "nature", label: "Nature", icon: Leaf },
-  { key: "food", label: "Food", icon: UtensilsCrossed },
-  { key: "weekend", label: "Weekend", icon: CalendarDays },
+// The feed's tag filters. They sit in the row the reference gives to
+// ALL / Top Destination / Top Plan and wear that row's design — a near-black
+// pill with a lime label when active, an outlined white one otherwise. Plain
+// text pills, like that row: the per-chip lucide icons went with the old
+// design. What they filter on is unchanged (trip.tags, case-insensitive).
+const CATEGORY_FILTERS: { key: "forYou" | Category; label: string }[] = [
+  { key: "forYou", label: "For you" },
+  { key: "thailand", label: "Thailand" },
+  { key: "japan", label: "Japan" },
+  { key: "nature", label: "Nature" },
+  { key: "food", label: "Food" },
+  { key: "weekend", label: "Weekend" },
 ];
+
+// How many destinations the rail shows before "ดูทั้งหมด" reveals the rest.
+// The rail used to be capped at four with no way past it, which was fine while
+// a section switcher owned that pill — with the switcher gone, expanding here
+// is what "ดูทั้งหมด" actually means.
+const DESTINATION_PREVIEW_COUNT = 4;
 
 export default function MainPage() {
   const { backendUser, isLoading: authLoading } = useAuth();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
   const [sort, setSort] = useState<FeedSort>("latest");
+  const [destinationsExpanded, setDestinationsExpanded] = useState(false);
 
   // Both fetches below key off the user's *id*, not the backendUser object:
   // setBackendSession re-broadcasts a fresh object on every token refresh
@@ -100,6 +114,14 @@ export default function MainPage() {
     };
   }, [backendUserId]);
 
+  // Off the unfiltered feed on purpose: the rail is a way *into* the feed, so
+  // narrowing it by the search box it fills in would make a tile vanish the
+  // moment it was used.
+  const allDestinations = useMemo(() => deriveTopDestinations(trips ?? []), [trips]);
+  const visibleDestinations = destinationsExpanded
+    ? allDestinations
+    : allDestinations.slice(0, DESTINATION_PREVIEW_COUNT);
+
   // Per-category totals for the chip badges, computed off the search-filtered
   // set so a chip's number matches what clicking it would actually show. The
   // point is that a category with nothing in it now says so up front, instead
@@ -154,125 +176,145 @@ export default function MainPage() {
     );
   }, [trips, query, category, sort]);
 
-  const activeCategory = CATEGORY_FILTERS.find((f) => f.key === category);
   const hasActiveFilter = category !== "forYou" || query.trim().length > 0;
 
   return (
     <AppShell active="home" hideTopbar hideDesktopSidebar>
-      <HomeNavbar search={<FeedSearchBar query={query} onQueryChange={setQuery} />}>
-        {CATEGORY_FILTERS.map((filter) => {
-          const isActive = category === filter.key;
-          const count = categoryCounts?.[filter.key];
-          // Dimmed, not disabled: an empty category is still worth being able
-          // to select (and to see is empty) rather than becoming unclickable.
-          const isEmpty = count === 0 && !isActive;
-          return (
-            <button
-              key={filter.key}
-              type="button"
-              onClick={() => setCategory(filter.key)}
-              // The active chip was previously conveyed by colour alone, which
-              // left screen-reader and high-contrast users with no way to tell
-              // which filter was on — and the filter is the only explanation
-              // for why the grid shrank.
-              aria-pressed={isActive}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-all min-[1025px]:px-3.5 min-[1025px]:py-2 min-[1025px]:text-sm ${
-                isActive
-                  ? "bg-[var(--color-primary)] text-white shadow-[0_4px_12px_rgba(42,158,100,0.35)]"
-                  : `border border-[var(--color-border)]/40 bg-white hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface)] hover:text-[var(--color-primary)] ${
-                      isEmpty ? "text-[var(--color-muted)]/60" : "text-[var(--foreground)]"
-                    }`
-              }`}
-            >
-              <filter.icon size={14} />
-              {filter.label}
-              {count != null && (
-                <span
-                  className={`rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
-                    isActive ? "bg-white/25 text-white" : "bg-[var(--color-surface)] text-[var(--color-muted)]"
-                  }`}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </HomeNavbar>
+      <HomeHero query={query} onQueryChange={setQuery} />
 
       <div className="min-h-full bg-[#fbfdfc]">
-      <PageContainer width="feed" className="!py-6">
-        <div className="min-w-0">
-          {/* Heading, count and the active-filter summary on one line — this is
-              where the old hero's <h1> went. Showing the filters as removable
-              chips means a shrunken grid always carries its own explanation,
-              and a way out, right above it. */}
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-            </div>
+        <PageContainer width="feed" className="!py-6">
+          <HomeQuickActions />
+
+          {/* The feed's tag filters, in the row the reference gives to
+              ALL / Top Destination / Top Plan and wearing that row's design.
+              aria-pressed rather than colour alone: the active chip is the only
+              explanation for why the grid below shrank. */}
+          {/* No top margin below 1025px — HomeQuickActions is hidden there, so
+              this row is the first thing under the hero and the container's own
+              padding is already the gap. */}
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1 min-[1025px]:mt-6">
+            {CATEGORY_FILTERS.map((filter) => {
+              const isActive = category === filter.key;
+              const count = categoryCounts?.[filter.key];
+              // Dimmed, not disabled: an empty category is still worth being
+              // able to select (and to see is empty) rather than becoming
+              // unclickable.
+              const isEmpty = count === 0 && !isActive;
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setCategory(filter.key)}
+                  aria-pressed={isActive}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
+                    isActive
+                      ? "bg-[#111111] text-[var(--color-accent-lime)]"
+                      : `border border-[var(--color-border)]/40 bg-white hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] ${
+                          isEmpty ? "text-[var(--color-muted)]/60" : "text-[var(--foreground)]"
+                        }`
+                  }`}
+                >
+                  {filter.label}
+                  {count != null && (
+                    <span
+                      className={`rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
+                        isActive
+                          ? "bg-[var(--color-accent-lime)]/20 text-[var(--color-accent-lime)]"
+                          : "bg-[var(--color-surface)] text-[var(--color-muted)]"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {visibleTrips === undefined ? (
-            <div className={TRIP_GRID_CLASS}>
-              {Array.from({ length: 8 }).map((_, i) => (
-                // Mirrors RealTripCard exactly — square-cornered cover, no
-                // card chrome, then the title and meta lines — so the grid
-                // keeps its shape and height when the real cards replace it.
-                <div key={i}>
-                  <div className="aspect-[4/5] w-full animate-pulse rounded-[6px] bg-[var(--color-surface)]" />
-                  <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-[var(--color-surface)]" />
-                  <div className="mt-1.5 h-3 w-1/2 animate-pulse rounded bg-[var(--color-surface)]" />
-                </div>
-              ))}
+          <section className="mt-6">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-extrabold">Top Destination</h2>
+              {/* Reveals the destinations past the preview slice — the honest
+                  version of "ดูทั้งหมด" while there's no per-destination page
+                  to route to. Absent when there is nothing more to show. */}
+              {allDestinations.length > DESTINATION_PREVIEW_COUNT && (
+                <button
+                  type="button"
+                  onClick={() => setDestinationsExpanded((expanded) => !expanded)}
+                  aria-expanded={destinationsExpanded}
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--color-accent-lime)] px-2.5 py-1 text-xs font-bold text-[#1c2b12] transition-opacity hover:opacity-85"
+                >
+                  {destinationsExpanded ? "ย่อลง" : "ดูทั้งหมด"}
+                  <ChevronRight size={13} strokeWidth={2.5} />
+                </button>
+              )}
             </div>
-          ) : visibleTrips.length === 0 ? (
-            <EmptyFeed
-              hasActiveFilter={hasActiveFilter}
-              onClear={() => {
-                setQuery("");
+            <TopDestinationRow
+              destinations={visibleDestinations}
+              loading={trips === undefined}
+              // Fills in the feed's own search box. No section to switch to any
+              // more, so the grid below just narrows in place.
+              onSelect={(label) => {
+                setQuery(label);
                 setCategory("forYou");
               }}
             />
-          ) : (
-            <div className={TRIP_GRID_CLASS}>
-              {/* The first card gets the taller cover, which is what starts
-                  the masonry columns off at different heights — without a
-                  mismatch somewhere the two columns stay level and the layout
-                  reads as a plain grid. */}
-              {visibleTrips.map((trip, index) => (
-                <RealTripCard
-                  key={trip.id}
-                  trip={trip}
-                  isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)}
-                  tall={index === 0}
-                />
-              ))}
+          </section>
+
+          <section className="mt-8">
+            {/* Sort sits on this heading rather than on the filter row above:
+                it describes this grid's order, and the filter row is now the
+                page-level control at the top. */}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-extrabold">Top Plan From Creators</h2>
+              <FeedSortSelect sort={sort} onSortChange={setSort} />
             </div>
-          )}
-        </div>
-      </PageContainer>
+
+            {visibleTrips === undefined ? (
+              <div className={TRIP_GRID_CLASS}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  // Mirrors RealTripCard exactly — white card panel, cover,
+                  // then the title and meta lines — so the grid keeps its
+                  // shape and height when the real cards replace it.
+                  <div key={i} className="overflow-hidden rounded-[16px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)]">
+                    <div className="aspect-[5/4] w-full animate-pulse bg-[var(--color-surface)]" />
+                    <div className="p-3">
+                      <div className="h-3.5 w-4/5 animate-pulse rounded bg-[var(--color-surface)]" />
+                      <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-[var(--color-surface)]" />
+                      <div className="mt-4 h-5 w-24 animate-pulse rounded-full bg-[var(--color-surface)]" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : visibleTrips.length === 0 ? (
+              <EmptyFeed
+                hasActiveFilter={hasActiveFilter}
+                onClear={() => {
+                  setQuery("");
+                  setCategory("forYou");
+                }}
+              />
+            ) : (
+              <div className={TRIP_GRID_CLASS}>
+                {/* The first card gets the taller cover, which is what starts
+                    the masonry columns off at different heights — without a
+                    mismatch somewhere the two columns stay level and the
+                    layout reads as a plain grid. */}
+                {visibleTrips.map((trip, index) => (
+                  <RealTripCard
+                    key={trip.id}
+                    trip={trip}
+                    isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)}
+                    tall={index === 0}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </PageContainer>
       </div>
     </AppShell>
-  );
-}
-
-// One removable filter, shown above the grid so a shortened feed explains
-// itself instead of just looking empty.
-function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--color-sel-bg)] py-1 pl-2.5 pr-1 text-xs font-semibold text-[var(--color-deep-green)]">
-      <span className="min-w-0 truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={`ล้างตัวกรอง ${label}`}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/70"
-      >
-        <X size={12} />
-      </button>
-    </span>
   );
 }
 

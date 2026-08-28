@@ -44,7 +44,6 @@ import {
   Ticket,
   Trash2,
   TriangleAlert,
-  Wallet,
   X,
 } from "lucide-react";
 import {
@@ -59,7 +58,7 @@ import {
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TripAccommodation } from "@/types";
+import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TravelSegment, TripAccommodation } from "@/types";
 import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
 import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 import { categoryColorVar, categoryIcon } from "@/lib/category-styles";
@@ -94,11 +93,18 @@ import {
   updateGeneratedTrip,
 } from "@/lib/generated-trips";
 import { PACE_TO_INTENSITY } from "@/lib/generate-plan-mapping";
-import { buildActivity, createTripOnServer, reconcileTripWithServer } from "@/lib/trips-create-api";
+import {
+  buildActivity,
+  createTripOnServer,
+  reconcileTripWithServer,
+  uploadActivityImagesForItem,
+} from "@/lib/trips-create-api";
 import { getTrip } from "@/lib/trips-api";
 import {
   createTripDayOnServer,
   createTripItemOnServer,
+  deleteTripItemOnServer,
+  getDayTravelSegments,
   reorderTripItemsOnServer,
   updateTripDayOnServer,
   updateTripItemOnServer,
@@ -107,9 +113,7 @@ import {
 } from "@/lib/trips-update-api";
 import { getTripDrafts } from "@/lib/trip-drafts";
 import {
-  formatDuration,
   formatTHB,
-  getDayRouteEstimate,
   getDayTotalCost,
   getGoogleMapsUrl,
   getTripDistanceKm,
@@ -251,6 +255,7 @@ export default function GeneratedPlanPage() {
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const segmentBackfillRequestedRef = useRef(new Set<string>());
   const { backendUser } = useAuth();
   const { showToast } = useToast();
   const remix = useRemixTrip();
@@ -333,6 +338,18 @@ export default function GeneratedPlanPage() {
           loaded.accommodation ??= local.accommodation;
           loaded.expenses ??= local.expenses;
           loaded.generationNotice ??= local.generationNotice;
+          loaded.autoTravelCalculationEnabled ??= local.autoTravelCalculationEnabled;
+          const localActivities = new Map(
+            local.days.flatMap((day) => day.activities).map((activity) => [activity.id, activity])
+          );
+          loaded.days = loaded.days.map((day) => ({
+            ...day,
+            activities: day.activities.map((activity) => ({
+              ...activity,
+              dismissedTravelSegmentId:
+                localActivities.get(activity.id)?.dismissedTravelSegmentId,
+            })),
+          }));
         }
         if (local) updateGeneratedTrip(loaded.id, loaded);
         setTrip(loaded);
@@ -415,6 +432,40 @@ export default function GeneratedPlanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remix.status, remix.newTripId]);
 
+  const canBackfillSegments = Boolean(
+    trip && (!trip.ownerId || (!!backendUser && backendUser.id === trip.ownerId))
+  );
+  const autoTravelCalculationEnabled = trip?.autoTravelCalculationEnabled ?? false;
+
+  // Enabling preliminary calculation re-submits each day's current order
+  // once. The backend reconciles missing/stale adjacent legs while keeping
+  // the itinerary itself in exactly the same order. The per-day ref prevents
+  // repeated Routes API calls during ordinary local state updates.
+  useEffect(() => {
+    if (!trip || !canBackfillSegments || !trip.backendSynced || !autoTravelCalculationEnabled) return;
+
+    const backendItemIds = new Set(trip.backendItemIds ?? []);
+    for (const day of trip.days) {
+      const expectedSegments = Math.max(day.activities.length - 1, 0);
+      if (expectedSegments === 0) continue;
+      if (!day.activities.every((activity) => backendItemIds.has(activity.id))) continue;
+      if (segmentBackfillRequestedRef.current.has(day.id)) continue;
+
+      segmentBackfillRequestedRef.current.add(day.id);
+      reorderTripItemsOnServer(
+        day.id,
+        day.activities.map((activity) => activity.id),
+        true
+      )
+        .then(() => refreshDayTravelSegments(day.id))
+        .catch((error) => console.warn("สร้างเส้นทางสำหรับทริปเดิมไม่สำเร็จ", error));
+    }
+    // refreshDayTravelSegments is intentionally excluded: this effect is
+    // keyed by server itinerary state, and the per-day ref prevents duplicate
+    // reconciliation calls during local state updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTravelCalculationEnabled, canBackfillSegments, trip]);
+
   if (trip === undefined) return null;
 
   if (trip === null) {
@@ -496,11 +547,17 @@ export default function GeneratedPlanPage() {
     await Promise.all([
       ...current.days
         .filter((day) => knownDayIds.has(day.id))
-        .map((day) => updateTripDayOnServer(day.id, { dayNumber: day.dayNumber, date: day.date })),
+        .map((day) => updateTripDayOnServer(day.id, { date: day.date || null })),
       ...current.days
         .flatMap((day) => day.activities)
-        .filter((activity) => knownItemIds.has(activity.id) && activity.travelFromPrevious)
-        .map((activity) => updateTripItemOnServer(activity.id, travelPatch(activity.travelFromPrevious!))),
+        .filter((activity) => knownItemIds.has(activity.id))
+        .map((activity) =>
+          updateTripItemOnServer(
+            activity.id,
+            activityPatch(activity),
+            current.autoTravelCalculationEnabled ?? false
+          )
+        ),
     ]);
   }
 
@@ -513,14 +570,32 @@ export default function GeneratedPlanPage() {
       if (nextTrip.backendSynced) {
         await syncTripUpdatesToServer(nextTrip);
       } else {
-        const created = await createTripOnServer(nextTrip);
+        // Photos uploaded during this first sync come back keyed by their new
+        // server activity id, and have to be applied after the reconcile —
+        // that's what rebuilds `days` with those ids in the first place.
+        // Without this the local copy keeps its data URLs for photos already
+        // stored, and the next edit of that activity uploads them again.
+        const uploadedImages = new Map<string, string[]>();
+        const created = await createTripOnServer(nextTrip, uploadedImages);
         const reconciled = reconcileTripWithServer(nextTrip, created);
-        replaceGeneratedTripId(nextTrip.id, reconciled);
-        setTrip(reconciled);
+        const synced =
+          uploadedImages.size === 0
+            ? reconciled
+            : {
+                ...reconciled,
+                days: reconciled.days.map((day) => ({
+                  ...day,
+                  activities: day.activities.map((a) =>
+                    uploadedImages.has(a.id) ? { ...a, images: uploadedImages.get(a.id) } : a
+                  ),
+                })),
+              };
+        replaceGeneratedTripId(nextTrip.id, synced);
+        setTrip(synced);
         // The URL still points at the old client-generated id — swap it for
         // the real one so a reload/bookmark doesn't 404 (getGeneratedTrip
         // can no longer find the old id; it was just renamed in storage).
-        router.replace(`/generated-plan/${reconciled.id}`);
+        router.replace(`/generated-plan/${synced.id}`);
       }
     } catch (err) {
       console.warn("บันทึกทริปไปเซิร์ฟเวอร์ไม่สำเร็จ", err);
@@ -579,6 +654,11 @@ export default function GeneratedPlanPage() {
     });
   }
 
+  function handleAutoTravelCalculationChange(enabled: boolean) {
+    if (enabled) segmentBackfillRequestedRef.current.clear();
+    applyPatch({ autoTravelCalculationEnabled: enabled });
+  }
+
   // Swaps a locally-generated day/activity id for the real one the backend
   // just returned, via the same functional setTrip pattern as updateDay
   // below (safe against other edits landing in the same tick).
@@ -592,15 +672,65 @@ export default function GeneratedPlanPage() {
     });
   }
 
-  function replaceActivityId(dayId: string, localId: string, serverId: string) {
+  function replaceCreatedActivity(
+    dayId: string,
+    localId: string,
+    serverActivity: Activity,
+    travelSegment: TravelSegment | null
+  ) {
     setTrip((prev) => {
       if (!prev) return prev;
       const days = prev.days.map((d) =>
-        d.id === dayId ? { ...d, activities: d.activities.map((a) => (a.id === localId ? { ...a, id: serverId } : a)) } : d
+        d.id === dayId
+          ? {
+              ...d,
+              activities: d.activities.map((a) =>
+                a.id === localId
+                  ? { ...a, ...serverActivity, location: serverActivity.location ?? a.location, images: a.images }
+                  : a
+              ),
+              travelSegments: travelSegment
+                ? [...(d.travelSegments ?? []).filter((segment) => segment.id !== travelSegment.id), travelSegment]
+                : d.travelSegments,
+            }
+          : d
       );
-      const backendItemIds = [...(prev.backendItemIds ?? []), serverId];
+      const backendItemIds = [...(prev.backendItemIds ?? []), serverActivity.id];
       updateGeneratedTrip(prev.id, { days, backendItemIds });
       return { ...prev, days, backendItemIds };
+    });
+  }
+
+  function replaceDayTravelSegments(dayId: string, travelSegments: TravelSegment[]) {
+    updateDay(dayId, (day) => ({ ...day, travelSegments }));
+  }
+
+  async function refreshDayTravelSegments(dayId: string) {
+    try {
+      replaceDayTravelSegments(dayId, await getDayTravelSegments(dayId));
+    } catch (error) {
+      // The itinerary mutation itself has already succeeded. Older backend
+      // builds do not expose this additive endpoint yet, so keep the plan
+      // usable and let the next GET /trips/:id hydrate segments when present.
+      console.warn("รีเฟรชเส้นทางระหว่างสถานที่ไม่สำเร็จ", error);
+    }
+  }
+
+  // Swaps an activity's base64 photos for the hosted URLs the media API
+  // returned. Two reasons this has to be persisted, not just held in memory:
+  // "still a data: URL" is how the upload helper decides what hasn't been sent
+  // yet, so leaving them makes the next edit re-upload; and base64 photos in
+  // localStorage run to megabytes against a ~5MB origin quota.
+  function replaceActivityImages(dayId: string, activityId: string, images: string[]) {
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const days = prev.days.map((d) =>
+        d.id === dayId
+          ? { ...d, activities: d.activities.map((a) => (a.id === activityId ? { ...a, images } : a)) }
+          : d
+      );
+      updateGeneratedTrip(prev.id, { days });
+      return { ...prev, days };
     });
   }
 
@@ -664,6 +794,19 @@ export default function GeneratedPlanPage() {
     };
   }
 
+  function activityPatch(activity: Activity): UpdateTripItemRequest {
+    const placeId = activity.location?.googlePlaceId;
+    return {
+      customName: placeId ? undefined : activity.title,
+      category: placeId ? undefined : activity.category,
+      startTime: activity.time || null,
+      costAmount: activity.cost,
+      costCurrency: "THB",
+      notes: activity.notes ?? null,
+      ...(activity.travelFromPrevious ? travelPatch(activity.travelFromPrevious) : {}),
+    };
+  }
+
   // Shared by both the "+เพิ่มสถานที่" flow (a brand-new id, never matches an
   // existing activity, so it's always appended) and AddActivityDialog's edit
   // mode (the id matches an existing activity, so it's replaced in place).
@@ -685,34 +828,77 @@ export default function GeneratedPlanPage() {
       // "เพิ่มสถานที่/กิจกรรม" — POST /days/:dayId/items.
       const localId = activity.id;
       const placeId = activity.location?.googlePlaceId;
-      createTripItemOnServer(dayId, buildActivity(activity, orderIndex))
+      createTripItemOnServer(
+        dayId,
+        buildActivity(activity, orderIndex),
+        localId,
+        autoTravelCalculationEnabled
+      )
         .then((created) => {
-          replaceActivityId(dayId, localId, created.id);
+          replaceCreatedActivity(dayId, localId, created.place, created.travelSegment);
+          if (autoTravelCalculationEnabled) void refreshDayTravelSegments(dayId);
           // The place's own photo (activity.location.imageUrl) is only ever
           // a live link to the external API — it isn't part of this trip's
           // media gallery until explicitly attached here, so cover-image
           // fallback (see LemonCard on /main) and the gallery dialog can
           // actually find it later.
           if (placeId) {
-            addTripMediaFromPlace(trip!.id, placeId, created.id).catch((err) =>
+            addTripMediaFromPlace(trip!.id, placeId, created.place.id).catch((err) =>
               console.warn("บันทึกรูปสถานที่ไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
             );
           }
+          // The traveler's own "เพิ่มรูป" photos, which the item request
+          // itself can't carry (base64 data URLs — see buildActivity). Before
+          // this they only ever reached the server on a local-only trip's
+          // first sync, so a photo added to an already-synced trip lived in
+          // this browser's storage and nowhere else.
+          //
+          // Fire-and-forget with a warning, like the place photo above: the
+          // activity is already saved and visible, and failing the upload
+          // shouldn't read as the activity failing.
+          uploadActivityImagesForItem(trip!.id, created.place.id, activity)
+            .then((images) => {
+              if (images) replaceActivityImages(dayId, created.place.id, images);
+            })
+            .catch((err) => console.warn("อัปโหลดรูปกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
         })
         .catch((err) => console.warn("เพิ่มกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
-    } else if (exists && (trip!.backendItemIds ?? []).includes(activity.id) && activity.travelFromPrevious) {
-      // "แก้กิจกรรม" — PATCH /items/:itemId. Only the travel-from-previous
-      // fields are confirmed accepted by the backend's UpdateItemDto (see
-      // trips-update-api.ts) — other edited fields (title/time/cost/notes)
-      // have no confirmed server-side path yet and stay local-only.
-      updateTripItemOnServer(activity.id, travelPatch(activity.travelFromPrevious)).catch((err) =>
+    } else if (exists && (trip!.backendItemIds ?? []).includes(activity.id)) {
+      // "แก้กิจกรรม". This used to also require activity.travelFromPrevious to
+      // even enter the branch, which meant an edit that only added a photo
+      // took no server action at all.
+      //
+      // UpdateItemRequestDto now accepts the stop's editable fields as well
+      // as its travel leg, so title/time/category/cost/notes persist across
+      // reloads instead of changing only in localStorage.
+      updateTripItemOnServer(
+        activity.id,
+        activityPatch(activity),
+        autoTravelCalculationEnabled
+      ).catch((err) =>
         console.warn("แก้ไขกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
       );
+
+      // Photos go to the media API rather than through UpdateItemDto, so they
+      // are sent independently of that PATCH. Already-hosted ones are skipped
+      // by the helper, so re-saving an activity doesn't duplicate them.
+      uploadActivityImagesForItem(trip!.id, activity.id, activity)
+        .then((images) => {
+          if (images) replaceActivityImages(dayId, activity.id, images);
+        })
+        .catch((err) => console.warn("อัปโหลดรูปกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
     }
   }
 
   function handleDeleteActivity(dayId: string, activityId: string) {
     updateDay(dayId, (d) => ({ ...d, activities: d.activities.filter((a) => a.id !== activityId) }));
+    if (trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId)) {
+      deleteTripItemOnServer(activityId, autoTravelCalculationEnabled)
+        .then(() => {
+          if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+        })
+        .catch((err) => console.warn("ลบกิจกรรมจากเซิร์ฟเวอร์ไม่สำเร็จ", err));
+    }
   }
 
   // Drag-reordered stop order — PATCH /days/:dayId/items/order (see
@@ -729,39 +915,74 @@ export default function GeneratedPlanPage() {
 
     reorderTripItemsOnServer(
       dayId,
-      activities.map((a) => a.id)
-    ).catch((err) => console.warn("เรียงลำดับกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
+      activities.map((a) => a.id),
+      autoTravelCalculationEnabled
+    )
+      .then(() => {
+        if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+      })
+      .catch((err) => console.warn("เรียงลำดับกิจกรรมไปเซิร์ฟเวอร์ไม่สำเร็จ", err));
   }
 
   function handleUpdateActivityTravel(dayId: string, activityId: string, travel: TravelFromPrevious) {
     updateDay(dayId, (d) => ({
       ...d,
       activities: d.activities.map((a) =>
-        a.id === activityId ? { ...a, travelFromPrevious: travel, travelNote: summarizeTravelNote(travel) } : a
+        a.id === activityId
+          ? {
+              ...a,
+              travelFromPrevious: travel,
+              travelNote: summarizeTravelNote(travel),
+              dismissedTravelSegmentId: undefined,
+            }
+          : a
       ),
     }));
 
     // "แก้กิจกรรม" — PATCH /items/:itemId.
     if (trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId)) {
-      updateTripItemOnServer(activityId, travelPatch(travel)).catch((err) =>
+      updateTripItemOnServer(
+        activityId,
+        travelPatch(travel),
+        autoTravelCalculationEnabled
+      ).catch((err) =>
         console.warn("แก้ไขเส้นทางไปเซิร์ฟเวอร์ไม่สำเร็จ", err)
       );
     }
   }
 
-  async function handleDeleteActivityTravel(dayId: string, activityId: string): Promise<void> {
-    const isBackendItem = trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId);
+  async function handleDeleteActivityTravel(
+    dayId: string,
+    activityId: string,
+    estimatedSegmentId?: string
+  ): Promise<void> {
+    const currentActivity = trip!.days
+      .find((day) => day.id === dayId)
+      ?.activities.find((activity) => activity.id === activityId);
+    const isBackendItem =
+      Boolean(currentActivity?.travelFromPrevious) &&
+      trip!.backendSynced &&
+      (trip!.backendItemIds ?? []).includes(activityId);
 
     try {
       if (isBackendItem) {
-        await updateTripItemOnServer(activityId, clearedTravelPatch());
+        await updateTripItemOnServer(
+          activityId,
+          clearedTravelPatch(),
+          autoTravelCalculationEnabled
+        );
       }
 
       updateDay(dayId, (day) => ({
         ...day,
         activities: day.activities.map((activity) => {
           if (activity.id !== activityId) return activity;
-          return { ...activity, travelFromPrevious: undefined, travelNote: undefined };
+          return {
+            ...activity,
+            travelFromPrevious: undefined,
+            travelNote: undefined,
+            dismissedTravelSegmentId: estimatedSegmentId,
+          };
         }),
       }));
       showToast("ลบข้อมูลการเดินทางแล้ว");
@@ -881,6 +1102,8 @@ export default function GeneratedPlanPage() {
               onUpdateActivityTravel={handleUpdateActivityTravel}
               onDeleteActivityTravel={handleDeleteActivityTravel}
               onReorderActivities={handleReorderActivities}
+              autoTravelCalculationEnabled={autoTravelCalculationEnabled}
+              onAutoTravelCalculationChange={handleAutoTravelCalculationChange}
             />
           )}
           {tab === "plan" && (
@@ -893,6 +1116,7 @@ export default function GeneratedPlanPage() {
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivityTravel={handleUpdateActivityTravel}
               onDeleteActivityTravel={handleDeleteActivityTravel}
+              autoTravelCalculationEnabled={autoTravelCalculationEnabled}
             />
           )}
           {tab === "weather" && <WeatherTab />}
@@ -1069,32 +1293,32 @@ function Hero({
             flex child: the left and right icon groups aren't the same width
             (and the right one changes with the avatar), so justify-between
             left the wordmark visibly off-center. */}
-        <div className="relative flex items-center justify-between gap-3 p-3 sm:p-4">
+        <div className="relative flex items-center justify-between gap-3 p-2 sm:p-2.5">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onBack}
               aria-label="ย้อนกลับ"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
               style={{ color: "var(--color-brand-green)" }}
             >
-              <ChevronLeft size={20} strokeWidth={2.5} />
+              <ChevronLeft size={18} strokeWidth={2.5} />
             </button>
             <button
               type="button"
               onClick={onMenuClick}
               aria-label="เมนู"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
               style={{ color: "var(--color-brand-green)" }}
             >
-              <Menu size={20} strokeWidth={2.5} />
+              <Menu size={18} strokeWidth={2.5} />
             </button>
           </div>
 
           {/* No white pill behind it any more — the panel is already pale
               enough to read the dark wordmark against, and the pill made the
               brand mark look like a button sitting between two real ones. */}
-          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-lg text-[var(--foreground)] sm:text-2xl" />
+          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base text-[var(--foreground)] sm:text-xl" />
 
           <div className="flex items-center gap-1 sm:gap-2">
             {/* Bare icon, no white disc: on the frosted panel the disc read as
@@ -1105,10 +1329,10 @@ function Hero({
               onClick={() => setSaved((s) => !s)}
               aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
               aria-pressed={saved}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
             >
               <Bookmark
-                size={20}
+                size={18}
                 strokeWidth={2.25}
                 fill={saved ? "var(--color-brand-green)" : "none"}
                 style={{ color: "var(--color-brand-green)" }}
@@ -1118,7 +1342,7 @@ function Hero({
             <img
               src={userAvatarUrl || "/images/profile-avatar.jpg"}
               alt=""
-              className="h-10 w-10 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
+              className="h-9 w-9 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
             />
           </div>
         </div>
@@ -1741,6 +1965,16 @@ function PlanTabs({
   );
 }
 
+// Hides the "เพิ่มสถานที่คุณอยากไป" section for now.
+//
+// Gated here rather than inside PlaceDiscoveryPanel because that accordion is
+// the panel's only entry point — the "สำรวจเพิ่มเติม" drawer and the day-picker
+// dialog are both opened from it, so hiding just the accordion would leave the
+// panel rendering nothing while still firing its usePlaceSuggestions request
+// on mount. /places/suggest/sections costs three Google calls on an uncached
+// centre, so skipping the whole panel keeps that off the wire too.
+const SHOW_PLACE_DISCOVERY_PANEL = false;
+
 function OverviewTab({
   trip,
   isConfirmed,
@@ -1761,6 +1995,8 @@ function OverviewTab({
   onUpdateActivityTravel,
   onDeleteActivityTravel,
   onReorderActivities,
+  autoTravelCalculationEnabled,
+  onAutoTravelCalculationChange,
 }: {
   trip: GeneratedTrip;
   isConfirmed: boolean;
@@ -1782,8 +2018,10 @@ function OverviewTab({
   onAddDay: () => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
-  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
+  onDeleteActivityTravel: (dayId: string, activityId: string, estimatedSegmentId?: string) => Promise<void>;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
+  autoTravelCalculationEnabled: boolean;
+  onAutoTravelCalculationChange: (enabled: boolean) => void;
 }) {
   // "ยอมรับแพลนนี้ไหม?" only makes sense for a plan the AI actually
   // generated — a self-built/manual trip (or a remix, whose days were copied
@@ -1823,16 +2061,19 @@ function OverviewTab({
         onDeleteActivityTravel={onDeleteActivityTravel}
         onReorderActivities={onReorderActivities}
         onAddDay={onAddDay}
+        autoTravelCalculationEnabled={autoTravelCalculationEnabled}
+        onAutoTravelCalculationChange={onAutoTravelCalculationChange}
       />
-      <PlaceDiscoveryPanel
-        trip={trip}
-        canEdit={canEdit}
-        onAddActivityDirect={onAddActivityDirect}
-        onRemoveActivity={onDeleteActivity}
-        onSaveAccommodation={onSaveAccommodation}
-        onAddDay={onAddDay}
-      />
-      <TripModeBar />
+      {SHOW_PLACE_DISCOVERY_PANEL && (
+        <PlaceDiscoveryPanel
+          trip={trip}
+          canEdit={canEdit}
+          onAddActivityDirect={onAddActivityDirect}
+          onRemoveActivity={onDeleteActivity}
+          onSaveAccommodation={onSaveAccommodation}
+          onAddDay={onAddDay}
+        />
+      )}
     </div>
   );
 }
@@ -1860,6 +2101,8 @@ function ItineraryAccordion({
   onDeleteActivityTravel,
   onReorderActivities,
   onAddDay,
+  autoTravelCalculationEnabled,
+  onAutoTravelCalculationChange,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1869,9 +2112,11 @@ function ItineraryAccordion({
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onGoToPlanTab: () => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
-  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
+  onDeleteActivityTravel: (dayId: string, activityId: string, estimatedSegmentId?: string) => Promise<void>;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
   onAddDay: () => void;
+  autoTravelCalculationEnabled: boolean;
+  onAutoTravelCalculationChange: (enabled: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -1882,6 +2127,30 @@ function ItineraryAccordion({
           <h3 className="text-sm font-bold sm:text-base">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
         </button>
         <div className="flex shrink-0 items-center gap-2">
+          {canEdit && (
+            <div className="inline-flex items-center gap-2 rounded-full border bg-white px-2.5 py-1 text-xs font-semibold" style={{ borderColor: "var(--color-border)" }}>
+              <span className="hidden sm:inline">คำนวณการเดินทาง</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoTravelCalculationEnabled}
+                aria-label="คำนวณการเดินทางเบื้องต้น"
+                onClick={() => onAutoTravelCalculationChange(!autoTravelCalculationEnabled)}
+                className="inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors"
+                style={{
+                  backgroundColor: autoTravelCalculationEnabled
+                    ? "var(--color-brand-green)"
+                    : "#D1D5DB",
+                }}
+              >
+                <span
+                  className={`block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                    autoTravelCalculationEnabled ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
           {canEdit && (
             <button
               type="button"
@@ -1908,7 +2177,29 @@ function ItineraryAccordion({
         // Fuller, one-column day list while actively building/editing — place
         // count + date per day, plus a jump straight to the Plan tab for the
         // per-day travel-connector view, which this compact card doesn't have.
-        <div className="flex flex-col gap-3 px-4 pb-4">
+        <div className="flex flex-col gap-4 px-4 pb-5 pt-3">
+          {/* Leads the card, directly under the "ตารางแพลน" heading. It used to
+              sit below the day list, where on a multi-day trip it was several
+              screens down — past the point where someone who doesn't know what
+              to add has already given up looking. */}
+          <button
+            type="button"
+            onClick={onExploreRecommended}
+            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed px-4 py-2 text-left"
+            style={{ borderColor: "var(--color-accent-orange)", backgroundColor: "#FDF0E7" }}
+          >
+            <span className="flex items-center gap-2.5">
+              <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+              <span className="text-sm font-semibold">ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ</span>
+            </span>
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
+              style={{ backgroundColor: "var(--color-accent-orange)" }}
+            >
+              สำรวจ
+              <ChevronRight size={12} />
+            </span>
+          </button>
 
           <div className="flex flex-col gap-4">
             {trip.days.map((day) => {
@@ -1949,11 +2240,15 @@ function ItineraryAccordion({
                     <div className="flex flex-col gap-2">
                       <SortableItineraryList
                         activities={day.activities}
+                        travelSegments={day.travelSegments}
+                        showAutomaticTravel={autoTravelCalculationEnabled}
                         canEdit={canEdit}
                         onEdit={(a) => onEditActivity(day.id, a)}
                         onDelete={(a) => onDeleteActivity(day.id, a.id)}
                         onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
-                        onDeleteTravel={(activityId) => onDeleteActivityTravel(day.id, activityId)}
+                        onDeleteTravel={(activityId, segmentId) =>
+                          onDeleteActivityTravel(day.id, activityId, segmentId)
+                        }
                         onReorder={(activities) => onReorderActivities(day.id, activities)}
                       />
                     </div>
@@ -1962,25 +2257,6 @@ function ItineraryAccordion({
               );
             })}
           </div>
-
-          <button
-            type="button"
-            onClick={onExploreRecommended}
-            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed px-4 py-3.5 text-left"
-            style={{ borderColor: "var(--color-accent-orange)", backgroundColor: "#FDF0E7" }}
-          >
-            <span className="flex items-center gap-2.5">
-              <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
-              <span className="text-sm font-semibold">ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ</span>
-            </span>
-            <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
-              style={{ backgroundColor: "var(--color-accent-orange)" }}
-            >
-              สำรวจ
-              <ChevronRight size={12} />
-            </span>
-          </button>
         </div>
       )}
 
@@ -2022,8 +2298,22 @@ function ItineraryAccordion({
 // latter has no real touch support, and this list needs to work on mobile.
 // The grip handle (not the whole row) owns the drag listeners so taps on the
 // title, edit, and delete buttons keep working normally.
+function visibleTravelSegment(
+  travelSegments: TravelSegment[] | undefined,
+  fromActivity: Activity,
+  toActivity: Activity
+): TravelSegment | undefined {
+  const segment = travelSegments?.find(
+    (candidate) =>
+      candidate.fromPlaceId === fromActivity.id && candidate.toPlaceId === toActivity.id
+  );
+  return segment && toActivity.dismissedTravelSegmentId !== segment.id ? segment : undefined;
+}
+
 function SortableItineraryList({
   activities,
+  travelSegments,
+  showAutomaticTravel,
   canEdit,
   onEdit,
   onDelete,
@@ -2032,11 +2322,13 @@ function SortableItineraryList({
   onReorder,
 }: {
   activities: Activity[];
+  travelSegments?: TravelSegment[];
+  showAutomaticTravel: boolean;
   canEdit: boolean;
   onEdit: (activity: Activity) => void;
   onDelete: (activity: Activity) => void;
   onSaveTravel: (activityId: string, travel: TravelFromPrevious) => void;
-  onDeleteTravel: (activityId: string) => Promise<void>;
+  onDeleteTravel: (activityId: string, estimatedSegmentId?: string) => Promise<void>;
   onReorder: (activities: Activity[]) => void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -2062,9 +2354,15 @@ function SortableItineraryList({
                 <TravelConnectorRow
                   fromTitle={a.title}
                   toActivity={next}
+                  travelSegment={showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next) : undefined}
                   canEdit={canEdit}
                   onSave={(travel) => onSaveTravel(next.id, travel)}
-                  onDelete={() => onDeleteTravel(next.id)}
+                  onDelete={() =>
+                    onDeleteTravel(
+                      next.id,
+                      showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next)?.id : undefined
+                    )
+                  }
                 />
               )}
             </div>
@@ -2085,10 +2383,21 @@ function SortableItineraryList({
               activity={a}
               index={i + 1}
               next={next}
+              travelSegment={
+                next && showAutomaticTravel
+                  ? visibleTravelSegment(travelSegments, a, next)
+                  : undefined
+              }
               onEdit={() => onEdit(a)}
               onDelete={() => onDelete(a)}
               onSaveTravel={next ? (travel) => onSaveTravel(next.id, travel) : undefined}
-              onDeleteTravel={next ? () => onDeleteTravel(next.id) : undefined}
+              onDeleteTravel={next
+                ? () =>
+                    onDeleteTravel(
+                      next.id,
+                      showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next)?.id : undefined
+                    )
+                : undefined}
             />
           );
         })}
@@ -2101,6 +2410,7 @@ function SortableItineraryEntry({
   activity,
   index,
   next,
+  travelSegment,
   onEdit,
   onDelete,
   onSaveTravel,
@@ -2109,6 +2419,7 @@ function SortableItineraryEntry({
   activity: Activity;
   index: number;
   next?: Activity;
+  travelSegment?: TravelSegment;
   onEdit: () => void;
   onDelete: () => void;
   onSaveTravel?: (travel: TravelFromPrevious) => void;
@@ -2135,6 +2446,7 @@ function SortableItineraryEntry({
         <TravelConnectorRow
           fromTitle={activity.title}
           toActivity={next}
+          travelSegment={travelSegment}
           canEdit
           onSave={onSaveTravel}
           onDelete={onDeleteTravel}
@@ -2235,34 +2547,6 @@ function ItineraryRow({
   );
 }
 
-function TripModeBar() {
-  const [tripMode, setTripMode] = useState(false);
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl p-4" style={{ backgroundColor: "var(--color-sel-bg)" }}>
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white"
-        style={{ color: "var(--color-brand-green)" }}
-      >
-        <Navigation size={16} />
-      </span>
-      <div className="min-w-[160px] flex-1">
-        <p className="text-sm font-bold" style={{ color: "var(--color-brand-green)" }}>
-          เปิดโหมดนำทางท่องเที่ยว
-        </p>
-        <p className="text-xs text-[var(--color-muted)]">นำทางแบบเรียลไทม์ระหว่างเดินทาง</p>
-      </div>
-      <button
-        type="button"
-        onClick={() => setTripMode((v) => !v)}
-        className="shrink-0 rounded-full px-4 py-2 text-xs font-bold text-white"
-        style={{ backgroundColor: "var(--color-brand-green)" }}
-      >
-        {tripMode ? "ปิด" : "เปิด"} Trip Mode
-      </button>
-    </div>
-  );
-}
-
 function WeatherTab() {
   return (
     <div
@@ -2279,6 +2563,7 @@ function WeatherTab() {
 function PlanTab({
   trip,
   canEdit,
+  autoTravelCalculationEnabled,
   onAddDay,
   onAddActivity,
   onEditActivity,
@@ -2288,12 +2573,13 @@ function PlanTab({
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
+  autoTravelCalculationEnabled: boolean;
   onAddDay: () => void;
   onAddActivity: (dayId: string) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
-  onDeleteActivityTravel: (dayId: string, activityId: string) => Promise<void>;
+  onDeleteActivityTravel: (dayId: string, activityId: string, estimatedSegmentId?: string) => Promise<void>;
 }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
@@ -2332,7 +2618,7 @@ function PlanTab({
   }
 
   const day = trip.days[Math.min(dayIndex, trip.days.length - 1)];
-  const route = getDayRouteEstimate(day);
+  const showAutomaticTravel = !canEdit || autoTravelCalculationEnabled;
 
   return (
     <div className="flex flex-col gap-6">
@@ -2369,16 +2655,6 @@ function PlanTab({
               เพิ่มวัน
             </button>
           )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
-          <TripModeBar />
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <StatCard icon={Compass} label="Total Distance" value={`${route.distanceKm} km`} />
-            <StatCard icon={Clock} label="Total Time" value={formatDuration(route.minutes)} />
-            <StatCard icon={Wallet} label="Est. Cost" value={formatTHB(getDayTotalCost(day))} />
-          </div>
         </div>
 
         <div className={`grid grid-cols-1 gap-5 ${showMap ? "lg:grid-cols-[2fr_3fr]" : ""}`}>
@@ -2420,9 +2696,22 @@ function PlanTab({
                       <TravelConnectorRow
                         fromTitle={a.title}
                         toActivity={next}
+                        travelSegment={
+                          showAutomaticTravel
+                            ? visibleTravelSegment(day.travelSegments, a, next)
+                            : undefined
+                        }
                         canEdit={canEdit}
                         onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
-                        onDelete={() => onDeleteActivityTravel(day.id, next.id)}
+                        onDelete={() =>
+                          onDeleteActivityTravel(
+                            day.id,
+                            next.id,
+                            showAutomaticTravel
+                              ? visibleTravelSegment(day.travelSegments, a, next)?.id
+                              : undefined
+                          )
+                        }
                       />
                     )}
                   </div>
@@ -2442,21 +2731,6 @@ function PlanTab({
           {showMap && <TripMapPanel day={day} />}
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatCard({ icon: Icon, label, value }: { icon: typeof Wallet; label: string; value: string }) {
-  return (
-    <div
-      className="flex flex-col justify-center gap-1.5 rounded-2xl border border-[var(--color-border)]/25 p-4"
-      style={{ backgroundColor: "#FFFFFF" }}
-    >
-      <span className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-        <Icon size={13} />
-        {label}
-      </span>
-      <p className="text-base font-bold">{value}</p>
     </div>
   );
 }

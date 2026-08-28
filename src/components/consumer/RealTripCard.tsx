@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bookmark, Heart, LoaderCircle, Repeat2, Trash2 } from "lucide-react";
+import { Bookmark, Heart, LoaderCircle, MapPin, Shuffle, Trash2 } from "lucide-react";
 import { likeTrip, saveTrip, unlikeTrip, unsaveTrip, type BackendTripCustomer, type BackendTripListItem } from "@/lib/trips-api";
 import { getTripGallery } from "@/lib/trip-media-api";
 import { formatTHB } from "@/lib/trip-utils";
@@ -17,9 +17,9 @@ import { useToast } from "@/providers/ToastProvider";
 // (those only exist on the full BackendTrip from GET /trips/:id) — this
 // card fetches that one extra time per card, same pattern as the gallery
 // cover fallback below, and only renders the creator row / per-person price
-// / save count when that response actually has them. Nothing here is
-// fabricated: no fake "verified" badge, and the price only gets a "/คน"
-// suffix when it's a real total ÷ real groupSize, never just relabeled.
+// when that response actually has them. Nothing here is fabricated: no fake
+// "verified" badge, and the price only gets a "/คน" suffix when it's a real
+// total ÷ real groupSize, never just relabeled.
 // The bookmark toggle is real (POST/DELETE /trips/:id/save) and
 // hidden entirely for the signed-in user's own trips (isOwn) — saving your
 // own trip isn't a real action. `onSavedChange` fires once the save/unsave
@@ -27,9 +27,10 @@ import { useToast } from "@/providers/ToastProvider";
 // card the moment it's unsaved; /main just ignores it.
 // The footer heart is a separate real action (POST/DELETE /trips/:id/like)
 // from the bookmark — liking and saving are independent states now, each
-// with its own counter (likeCount is public and always accurate, unlike the
-// never-implemented saveCount). Unlike the bookmark, the heart is NOT hidden
-// for isOwn — you can like your own trip.
+// with its own counter. The pluno reference puts a bookmark count in that
+// second footer slot, but saveCount has no backend field in any environment
+// (see BackendTrip.saveCount), so the slot carries likeCount — the counter
+// that is real and public — rather than a number the API can't back.
 // `showStatus` and `onDelete` are the owner-management affordances /my-trips
 // needs on top of the plain feed card (draft/published badge, delete). Both
 // are opt-in so /main and /saved keep the unadorned card.
@@ -48,10 +49,11 @@ export function RealTripCard({
   showStatus?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
-  /** Gives this card a different cover ratio on the masonry layout (<=1024px)
-   *  to seed the column stagger — masonry compounds any height difference down
-   *  the column, so it doesn't take much. Ignored from 1025px up, where the
-   *  feed is a uniform grid and a mismatched card would look like a mistake. */
+  /** Gives this card a portrait cover on the masonry layout (<=1024px) instead
+   *  of the reference's landscape one, to seed the column stagger — masonry
+   *  compounds any height difference down the column, so it doesn't take much.
+   *  Ignored from 1025px up, where the feed is a uniform grid and a mismatched
+   *  card would look like a mistake. */
   tall?: boolean;
 }) {
   const { backendUser } = useAuth();
@@ -147,7 +149,18 @@ export function RealTripCard({
   // detail fetch needed for it. Fetched directly against the proxy route
   // (not the trips-api.ts getTrip() helper, which also pages through the
   // full media gallery for itinerary hydration this card doesn't need).
-  type TripDetail = { customer?: BackendTripCustomer; saveCount?: number; remixCount?: number };
+  //
+  // `username` is read off customer opportunistically and is NOT part of
+  // BackendTripCustomer: the reference's creator chip is an "@handle", and
+  // the confirmed customer fields are id/name/avatarUrl/groupSize only. So
+  // the chip renders "@username" when the response happens to carry one and
+  // falls back to the plain display name when it doesn't — never an "@" glued
+  // onto a display name to look like a handle.
+  type TripDetail = {
+    customer?: BackendTripCustomer & { username?: string };
+    saveCount?: number;
+    remixCount?: number;
+  };
   const [detail, setDetail] = useState<TripDetail | null>(null);
   // Whether the detail request above has *settled* (succeeded or not), as
   // opposed to `detail` being non-null. The price below needs this: groupSize
@@ -178,7 +191,19 @@ export function RealTripCard({
   }, [trip.id]);
 
   const creator = detail?.customer ?? null;
+  const creatorLabel = creator ? (creator.username ? `@${creator.username}` : creator.name) : null;
   const remixCount = trip.remixCount ?? detail?.remixCount ?? null;
+
+  // avatarUrl being present doesn't mean it loads — real rows point at URLs
+  // that 404 (expired signed links, deleted objects). Left unhandled the
+  // browser paints its broken-image glyph, and inside the reference's small
+  // creator chip that reads as a rendering bug rather than a missing photo, so
+  // a failed load falls through to the same initial-letter circle used when
+  // there's no avatarUrl at all. Storing the URL that failed rather than a
+  // boolean is what makes this self-correcting: a later detail response with a
+  // different avatarUrl is retried on its own, with no effect resetting a flag.
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  const avatarUrl = creator?.avatarUrl && creator.avatarUrl !== failedAvatarUrl ? creator.avatarUrl : null;
 
   // Real per-person split (totalBudget ÷ groupSize) only when both are
   // known — never just relabels the trip's total with "/คน". totalBudget 0
@@ -187,20 +212,31 @@ export function RealTripCard({
   const perPersonBudget =
     creator && creator.groupSize > 0 && trip.totalBudget > 0 ? Math.round(trip.totalBudget / creator.groupSize) : null;
 
+  // The reference's dark cover pill. It reads "Top Remix" there, but no
+  // endpoint exposes a remix ranking, so the pill is driven by the one real
+  // remix fact a feed row carries: sourceTripId, i.e. this trip was itself
+  // created through POST /trips/:sourceTripId/remix. Labelled for what that
+  // actually means rather than claiming a "top" the backend can't confirm.
+  const isRemix = Boolean(trip.sourceTripId);
+
+  const durationDays = trip.schedule?.durationDays ?? null;
+
   return (
-    // No card container: no white panel, border or shadow. The reference lets
-    // the cover carry the shape and drops everything to the page surface, and
-    // the chrome was competing with the photos for attention.
-    // h-full + the meta row's mt-auto pin the creator line to the bottom of
+    // The white card panel is back: the pluno reference frames the cover in a
+    // rounded, shadowed card with the title, meta line and creator/stats
+    // footer inside it, rather than letting the cover sit bare on the page.
+    // h-full + the footer's mt-auto pin the creator line to the bottom of
     // every card in a grid row, so a card carrying a price line doesn't push
-    // its meta 20px below its neighbour's. Both are scoped to >=1025px: under
-    // the masonry layout there's no equal-height row to stretch to, and
+    // its footer 20px below its neighbour's. Both are scoped to >=1025px:
+    // under the masonry layout there's no equal-height row to stretch to, and
     // stretching there would defeat the stagger this is all for.
-    <article className="group flex flex-col min-[1025px]:h-full">
+    <article className="group flex flex-col overflow-hidden rounded-[16px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)] transition-shadow hover:shadow-[0_6px_20px_rgba(16,24,40,0.12)] min-[1025px]:h-full">
       <Link
         href={`/generated-plan/${trip.id}`}
-        className={`relative block overflow-hidden rounded-[6px] bg-[var(--color-surface)] ${
-          tall ? "aspect-[6/7] min-[1025px]:aspect-[4/5]" : "aspect-[4/5]"
+        className={`relative block overflow-hidden bg-[var(--color-surface)] ${
+          // Landscape cover, per the reference. `tall` keeps a portrait one on
+          // masonry only, to seed the column stagger.
+          tall ? "aspect-[4/5] min-[1025px]:aspect-[5/4]" : "aspect-[5/4]"
         }`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -210,17 +246,19 @@ export function RealTripCard({
           className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
         />
 
-        {/* The gradient only has to keep the corner controls legible now that
-            the title has moved off the image, so it's a fraction of what it
-            was — the photo is the point. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/35 to-transparent" />
-
-        <div className="absolute inset-x-3 top-3 flex items-start justify-between gap-2">
-          {/* The tag pill is gone (the reference has no chip, and the same tags
-              drive the filter row above the feed). The status badge stays: it's
-              owner-only and there's nowhere else on the card that says whether
-              a trip is a draft. */}
-          {showStatus ? <StatusBadge status={trip.status} /> : <span />}
+        <div className="absolute inset-x-2.5 top-2.5 flex items-start justify-between gap-2">
+          {/* Owner-only status badge wins the slot on /my-trips — there's
+              nowhere else on the card that says whether a trip is a draft. */}
+          {showStatus ? (
+            <StatusBadge status={trip.status} />
+          ) : isRemix ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm min-[1025px]:text-xs">
+              <Shuffle size={12} />
+              รีมิกซ์
+            </span>
+          ) : (
+            <span />
+          )}
 
           {onDelete ? (
             <button
@@ -232,99 +270,132 @@ export function RealTripCard({
               }}
               aria-label={`ลบทริป ${trip.title}`}
               disabled={deleting}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[var(--color-danger)] shadow-[0_2px_6px_rgba(16,24,40,0.18)] transition hover:bg-[var(--color-danger)] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {deleting ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {deleting ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
             </button>
           ) : (
             !isOwn && (
+              // Solid white circle with a violet glyph, per the reference —
+              // it used to be a translucent black chip leaning on the cover
+              // gradient, which the reference doesn't have.
               <button
                 type="button"
                 onClick={handleToggleSaved}
                 aria-pressed={saved}
                 aria-label="บันทึกทริปนี้"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-black/60 disabled:opacity-60"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[var(--color-accent-violet)] shadow-[0_2px_6px_rgba(16,24,40,0.18)] transition hover:bg-white/90 disabled:opacity-60"
                 disabled={saving}
               >
-                <Bookmark size={14} className={saved ? "fill-white" : ""} />
+                <Bookmark size={16} className={saved ? "fill-[var(--color-accent-violet)]" : ""} />
               </button>
             )
           )}
         </div>
       </Link>
 
-      {/* Title sits under the cover in dark text rather than overlaid in white.
-          Reads at any cover brightness — the overlaid version had to fight
-          bright photos and covers that already have their own text baked in. */}
-      <Link href={`/generated-plan/${trip.id}`} className="mt-2 block">
-        <h2 className="line-clamp-2 text-[13px] font-bold leading-snug text-[var(--foreground)] min-[1025px]:text-sm">
-          {trip.title || trip.destination}
-        </h2>
-      </Link>
+      <div className="flex flex-1 flex-col p-3 min-[1025px]:p-3.5">
+        <Link href={`/generated-plan/${trip.id}`} className="block">
+          <h2 className="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--foreground)] min-[1025px]:text-base">
+            {trip.title || trip.destination}
+          </h2>
+        </Link>
 
-      {/* Destination and duration are usually already inside the title (real
-          titles read "หลวงพระบาง, ลาว 4 วัน 3 คืน"), so only the price gets its
-          own line — and only when there is one. Order matters: the pending case
-          comes first so no number shows until its unit is known. */}
-      {trip.totalBudget > 0 &&
-        (!detailSettled ? (
-          <span aria-hidden className="mt-1 h-3.5 w-16 animate-pulse rounded bg-[var(--color-surface)]" />
-        ) : (
-          <p className="mt-1 text-[11px] font-extrabold text-[var(--color-primary)] min-[1025px]:text-xs">
-            {formatTHB(perPersonBudget ?? trip.totalBudget)}
-            <span className="font-semibold text-[var(--color-muted)]">
-              {perPersonBudget != null ? " / คน" : " รวม"}
-            </span>
-          </p>
-        ))}
+        {/* One meta line — pinned destination, duration, price — bullet
+            separated, exactly the reference's row. Each segment is dropped
+            when its field is missing (schedule is absent on some real GET
+            /trips rows, and totalBudget 0 means "nothing costed yet"), so the
+            line never shows a stray bullet or an empty value. The price's
+            pending case comes first so no number shows before its unit is
+            known. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] font-medium text-[var(--color-muted)] min-[1025px]:text-xs">
+          <span className="inline-flex min-w-0 items-center gap-0.5 font-semibold text-[var(--color-accent-violet)]">
+            <MapPin size={12} className="shrink-0" />
+            <span className="truncate">{trip.destination}</span>
+          </span>
 
-      {/* Creator left, reactions right — the reference's meta row. */}
-      <div className="flex items-center justify-between gap-2 pt-1.5 min-[1025px]:mt-auto">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {creator ? (
+          {durationDays != null && (
             <>
-              {creator.avatarUrl ? (
+              <span aria-hidden>•</span>
+              <span>{durationDays} วัน</span>
+            </>
+          )}
+
+          {trip.totalBudget > 0 && (
+            <>
+              <span aria-hidden>•</span>
+              {!detailSettled ? (
+                <span aria-hidden className="h-3 w-14 animate-pulse rounded bg-[var(--color-surface)]" />
+              ) : (
+                <span className="font-semibold text-[var(--foreground)]">
+                  {formatTHB(perPersonBudget ?? trip.totalBudget)}
+                  <span className="font-medium text-[var(--color-muted)]">
+                    {perPersonBudget != null ? " /คน" : " รวม"}
+                  </span>
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Creator chip left, reactions right, under a hairline rule — the
+            reference's footer. mt-auto (>=1025px only) is what keeps it flush
+            with the bottom of the card. */}
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--color-border)]/35 pt-2.5 min-[1025px]:mt-auto">
+          {creatorLabel ? (
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-[var(--color-sel-bg)] py-1 pl-1 pr-2.5">
+              {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={creator.avatarUrl} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  onError={() => setFailedAvatarUrl(avatarUrl)}
+                  className="h-5 w-5 shrink-0 rounded-full object-cover"
+                />
               ) : (
                 <span
                   className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
                   style={{ backgroundColor: "var(--color-primary)" }}
                 >
-                  {creator.name.charAt(0).toUpperCase()}
+                  {creatorLabel.replace(/^@/, "").charAt(0).toUpperCase()}
                 </span>
               )}
-              <p className="truncate text-[10px] font-medium text-[var(--color-muted)] min-[1025px]:text-[11px]">{creator.name}</p>
-            </>
+              <span className="truncate text-[11px] font-semibold text-[var(--color-deep-green)] min-[1025px]:text-xs">
+                {creatorLabel}
+              </span>
+            </span>
           ) : (
             <span />
           )}
-        </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {remixCount != null && remixCount > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--color-muted)] min-[1025px]:text-[11px]">
-              <Repeat2 size={13} />
-              {remixCount}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-2.5">
+            {remixCount != null && remixCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--foreground)] min-[1025px]:text-xs">
+                <Shuffle size={14} className="text-[var(--color-accent-violet)]" />
+                {remixCount.toLocaleString()}
+              </span>
+            )}
 
-          {/* Independent from the bookmark on the cover — this is POST/DELETE
-              /trips/:id/like. Unlike the bookmark it stays on your own trips:
-              liking your own trip is just a reaction. likeCount is public and
-              always accurate. */}
-          <button
-            type="button"
-            onClick={handleToggleLiked}
-            aria-pressed={liked}
-            aria-label="ถูกใจทริปนี้"
-            disabled={liking}
-            className="inline-flex items-center gap-0.5 text-[10px] font-semibold transition-colors disabled:opacity-60 min-[1025px]:text-[11px]"
-            style={{ color: liked ? "var(--color-primary)" : "var(--color-muted)" }}
-          >
-            <Heart size={13} className={liked ? "fill-[var(--color-primary)]" : ""} />
-            {likeCount.toLocaleString()}
-          </button>
+            {/* Independent from the bookmark on the cover — this is POST/DELETE
+                /trips/:id/like. Unlike the bookmark it stays on your own trips:
+                liking your own trip is just a reaction. likeCount is public and
+                always accurate, which is why it — not the never-implemented
+                saveCount — fills the reference's second footer stat. */}
+            <button
+              type="button"
+              onClick={handleToggleLiked}
+              aria-pressed={liked}
+              aria-label="ถูกใจทริปนี้"
+              disabled={liking}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--foreground)] transition-opacity disabled:opacity-60 min-[1025px]:text-xs"
+            >
+              <Heart
+                size={14}
+                className={liked ? "fill-[var(--color-accent-violet)] text-[var(--color-accent-violet)]" : "text-[var(--color-accent-violet)]"}
+              />
+              {likeCount.toLocaleString()}
+            </button>
+          </div>
         </div>
       </div>
     </article>

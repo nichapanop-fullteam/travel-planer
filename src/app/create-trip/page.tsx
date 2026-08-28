@@ -465,8 +465,8 @@ function CreateTripForm() {
   }
 
   return (
-    <div className="min-h-screen px-4 py-6 sm:px-8 sm:py-10" style={{ backgroundColor: "var(--color-page-cream)" }}>
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-[32px] bg-white shadow-xl">
+    <div className="min-h-screen px-0 py-0 sm:px-6 sm:py-8 lg:px-8 lg:py-10" style={{ backgroundColor: "var(--color-page-cream)" }}>
+      <div className="mx-auto max-w-6xl overflow-hidden bg-white sm:rounded-[28px] sm:shadow-xl lg:rounded-[32px]">
         <Hero
           destination={destination}
           onDestinationFieldClick={() => setDestDialogOpen(true)}
@@ -520,7 +520,7 @@ function CreateTripForm() {
 
         <div className="relative">
           {status === "error" && (
-            <div className="mx-6 mt-6 rounded-2xl border px-4 py-3 text-sm sm:mx-8" style={{ backgroundColor: "var(--color-danger-bg)", borderColor: "var(--color-danger-border)", color: "var(--color-danger)" }}>
+            <div className="mx-4 mt-5 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:mt-6 lg:mx-8" style={{ backgroundColor: "var(--color-danger-bg)", borderColor: "var(--color-danger-border)", color: "var(--color-danger)" }}>
               {errorMessage ? (
                 <>
                   <strong>สร้างแพลนไม่สำเร็จ</strong> — {errorMessage}
@@ -551,12 +551,12 @@ function CreateTripForm() {
           ) : (
             <>
               {mode === "self" && (
-                <div className="mx-6 mt-6 rounded-2xl border px-4 py-3 text-sm sm:mx-8" style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}>
+                <div className="mx-4 mt-5 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:mt-6 lg:mx-8" style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}>
                   โหมด <strong>สร้างด้วยตัวเอง</strong> — คุณจะเลือกสถานที่เองในหน้าแพลนทริป ตัวเลือกด้านล่างใช้เป็นตัวช่วยกรองเท่านั้น
                 </div>
               )}
 
-          <div className="flex flex-col gap-1 px-6 py-2 sm:px-8">
+          <div className="flex flex-col gap-1 px-4 py-2 sm:px-6 lg:px-8">
             <FormRow
               label="สไตล์การเที่ยว"
               hint="เลือกได้หลายอย่าง"
@@ -894,7 +894,7 @@ function CreateTripForm() {
               once something's selected on step 2 — this generic footer
               would otherwise duplicate that CTA. */}
           {!(step === 2 && selectedRecommendations.length > 0) && (
-            <div className="flex flex-col-reverse items-center gap-4 border-t border-[var(--color-border)]/40 px-6 py-5 sm:flex-row sm:justify-between sm:px-8">
+            <div className="flex flex-col-reverse items-center gap-4 border-t border-[var(--color-border)]/40 px-4 py-5 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
               {mode === "ai" ? (
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -909,7 +909,7 @@ function CreateTripForm() {
               ) : (
                 <span />
               )}
-              <div className="flex items-center gap-8">
+              <div className="flex w-full items-center justify-between gap-4 sm:w-auto sm:justify-end sm:gap-8">
                 <button
                   type="button"
                   onClick={() => (step === 2 ? setStep(1) : submit(true))}
@@ -922,7 +922,7 @@ function CreateTripForm() {
                   type="button"
                   onClick={() => submit(false)}
                   disabled={status === "loading"}
-                  className="group inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="group inline-flex flex-1 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
                   style={{ backgroundColor: "var(--color-accent-orange)" }}
                 >
                   {step === 2 ? "สร้างแพลน" : mode === "self" ? "เริ่มจัดทริปเอง" : "สร้างแพลน"}
@@ -993,7 +993,7 @@ function Hero({
       : "");
 
   return (
-    <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-5 overflow-hidden px-6 pb-8 pt-16 text-center sm:min-h-[300px] sm:pt-20">
+    <div className="relative flex min-h-[230px] flex-col items-center justify-center gap-4 overflow-hidden px-4 pb-6 pt-14 text-center sm:min-h-[290px] sm:gap-5 sm:px-6 sm:pb-8 sm:pt-20 lg:min-h-[320px]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/images/hero-mountain.jpg"
@@ -1005,7 +1005,7 @@ function Hero({
       <button
         type="button"
         onClick={() => router.back()}
-        className="absolute left-6 top-6 flex items-center gap-1.5 text-sm font-medium text-white drop-shadow-sm sm:left-8 sm:top-8"
+        className="absolute left-4 top-4 flex items-center gap-1.5 text-sm font-medium text-white drop-shadow-sm sm:left-6 sm:top-6 lg:left-8 lg:top-8"
       >
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/25 backdrop-blur-sm">
           <ChevronLeft size={16} />
@@ -1013,7 +1013,7 @@ function Hero({
         ย้อนกลับ
       </button>
 
-      <h1 className="relative text-2xl font-extrabold text-white drop-shadow-sm sm:text-3xl">
+      <h1 className="relative text-2xl font-extrabold text-white drop-shadow-sm sm:text-3xl lg:text-4xl">
         สร้างทริปของคุณ
       </h1>
 
@@ -1114,12 +1114,12 @@ function FormRow({
 }) {
   return (
     <div
-      className={`flex flex-col gap-3 py-6 sm:flex-row sm:gap-8 ${centerLabel ? "sm:items-center" : "sm:items-start"} ${
+      className={`flex flex-col gap-3 py-5 sm:py-6 lg:flex-row lg:gap-8 ${centerLabel ? "lg:items-center" : "lg:items-start"} ${
         dimmed ? "opacity-45 grayscale-[0.35] pointer-events-none" : ""
       }`}
     >
-      <div className="w-full shrink-0 sm:w-[200px]">
-        <p className="text-lg font-bold">{label}</p>
+      <div className="w-full shrink-0 lg:w-[190px] xl:w-[220px]">
+        <p className="text-base font-bold sm:text-lg">{label}</p>
         {hint && <p className="mt-0.5 text-xs text-[var(--color-muted)]">{hint}</p>}
       </div>
       <div className="min-w-0 flex-1">{children}</div>

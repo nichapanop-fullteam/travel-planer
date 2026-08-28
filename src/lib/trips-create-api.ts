@@ -17,7 +17,7 @@ import type {
   TransportMode,
   TravelStyle,
 } from "@/lib/generate-plan-api";
-import type { Activity, GeneratedTrip, TravelType, TripCreationMode, TripDraft } from "@/types";
+import type { Activity, ActivityCategory, GeneratedTrip, TravelSegment, TravelType, TripCreationMode, TripDraft } from "@/types";
 
 // POST /trips/create — the real backend endpoint behind the "บันทึก" button
 // on generated-plan/[id]/page.tsx. Replaces the old mock PATCH /api/trips/[id]
@@ -25,8 +25,10 @@ import type { Activity, GeneratedTrip, TravelType, TripCreationMode, TripDraft }
 // backend session. Ownership is derived from the access token.
 
 export interface CreateTripActivity {
+  id?: string;
   placeId?: string;
   title: string;
+  category?: ActivityCategory;
   time?: string;
   endTime?: string;
   estimatedDurationMin?: number;
@@ -88,7 +90,9 @@ export interface CreateTripResponse {
   createdAt: string;
   updatedAt: string;
   days?: Array<{
+    id: string;
     dayNumber: number;
+    travelSegments?: TravelSegment[];
     activities: Array<{ id: string }>;
   }>;
   [key: string]: unknown;
@@ -108,7 +112,62 @@ async function dataUrlToActivityFile(
   });
 }
 
-async function uploadActivityImages(trip: GeneratedTrip, created: CreateTripResponse): Promise<void> {
+// Sends one activity's "เพิ่มรูป" photos to the trip-media API, now that the
+// item has a real server id to attach them to.
+//
+// They can't ride along with the item itself: activity.images are raw base64
+// data URLs and a couple of them overrun the request body limit (413) — see
+// buildActivity, which deliberately drops them. So they always follow as a
+// separate multipart upload.
+//
+// Only `data:` entries are uploaded, and each one is replaced in the returned
+// array by its hosted URL. That swap is what makes "still a data: URL" a
+// reliable stand-in for "not on the server yet" — without it, editing an
+// activity would re-upload every photo it has, every time, and pile up
+// duplicate media rows. It also gets the base64 out of localStorage, where a
+// single photo can run to megabytes against a ~5MB origin quota.
+//
+// Returns null when there was nothing to upload, so callers can skip a state
+// update entirely. A photo whose upload response carries no URL keeps its data
+// URL: worth a possible re-upload later to avoid dropping the picture.
+export async function uploadActivityImagesForItem(
+  tripId: string,
+  itemId: string,
+  activity: Activity
+): Promise<string[] | null> {
+  const images = activity.images ?? [];
+  if (!images.some((src) => src.startsWith("data:"))) return null;
+
+  const next: string[] = [];
+  let uploadIndex = 0;
+
+  for (const src of images) {
+    if (!src.startsWith("data:")) {
+      next.push(src);
+      continue;
+    }
+    const file = await dataUrlToActivityFile(src, activity.title, uploadIndex);
+    uploadIndex += 1;
+    const media = await uploadTripMedia(tripId, file, { activityId: itemId, altText: activity.title });
+    next.push(media.urls?.large || src);
+  }
+
+  return next;
+}
+
+// First-sync path: a local-only trip going up via POST /trips/create, whose
+// items get their ids back all at once. Matches local activities to server
+// ones by position within the day, same as reconcileTripWithServer does.
+//
+// Records each activity's swapped image array into `uploadedImages` so the
+// caller can write them back. Skipping that would leave the local copy holding
+// data URLs for photos that are already stored, and the next edit of that
+// activity would upload them a second time.
+async function uploadActivityImages(
+  trip: GeneratedTrip,
+  created: CreateTripResponse,
+  uploadedImages?: Map<string, string[]>
+): Promise<void> {
   if (!created.days) return;
 
   for (const localDay of trip.days) {
@@ -119,13 +178,8 @@ async function uploadActivityImages(trip: GeneratedTrip, created: CreateTripResp
       const serverActivity = serverDay.activities[activityIndex];
       if (!serverActivity || !localActivity.images?.length) continue;
 
-      for (const [imageIndex, dataUrl] of localActivity.images.entries()) {
-        const file = await dataUrlToActivityFile(dataUrl, localActivity.title, imageIndex);
-        await uploadTripMedia(created.id, file, {
-          activityId: serverActivity.id,
-          altText: localActivity.title,
-        });
-      }
+      const next = await uploadActivityImagesForItem(created.id, serverActivity.id, localActivity);
+      if (next) uploadedImages?.set(serverActivity.id, next);
     }
   }
 }
@@ -251,8 +305,10 @@ export function buildActivity(activity: Activity, orderIndex: number): CreateTri
   const placeId = activity.location?.googlePlaceId;
   const travel = activity.travelFromPrevious;
   return {
+    id: activity.id,
     placeId,
     title: activity.title,
+    category: activity.category,
     time: activity.time || undefined,
     cost: activity.cost,
     costCurrency: "THB",
@@ -310,7 +366,15 @@ export function buildCreateTripRequest(
   };
 }
 
-export async function createTripOnServer(trip: GeneratedTrip): Promise<CreateTripResponse> {
+export async function createTripOnServer(
+  trip: GeneratedTrip,
+  // Filled in with serverActivityId -> images, data URLs swapped for hosted
+  // ones, for every activity whose photos were uploaded here. An out-param
+  // rather than a callback because the caller has to apply these *after*
+  // reconcileTripWithServer rebuilds the trip — a callback firing mid-upload
+  // would just be clobbered by that rebuild.
+  uploadedImages?: Map<string, string[]>
+): Promise<CreateTripResponse> {
   const draft = getTripDrafts().find((d) => d.id === trip.draftId);
   const body = buildCreateTripRequest(trip, draft);
 
@@ -331,7 +395,7 @@ export async function createTripOnServer(trip: GeneratedTrip): Promise<CreateTri
   }
 
   const created = (await response.json()) as CreateTripResponse;
-  await uploadActivityImages(trip, created);
+  await uploadActivityImages(trip, created, uploadedImages);
   return created;
 }
 
@@ -341,17 +405,17 @@ export async function createTripOnServer(trip: GeneratedTrip): Promise<CreateTri
 // GeneratedTrip) instead of PATCHing the now-existing trip. Matched by
 // dayNumber/position since that's what CreateTripResponse gives back.
 //
-// Note: the response only echoes each day's activities[].id, not a day id of
-// its own — so backendDayIds is left unset here (PATCH /days/:dayId has
-// nothing real to target yet for a trip synced this way). It's populated
-// correctly for trips loaded straight from GET /trips/:id instead, see
-// buildGeneratedTripFromBackendTrip in generated-trips.ts.
+// The current response is the full TripResponseDto, including real day and
+// activity ids. Keep the positional fallback for older deployments whose
+// response omitted a day id, but prefer the server ids whenever present.
 export function reconcileTripWithServer(trip: GeneratedTrip, created: CreateTripResponse): GeneratedTrip {
   const days = trip.days.map((day) => {
     const serverDay = created.days?.find((d) => d.dayNumber === day.dayNumber);
     if (!serverDay) return day;
     return {
       ...day,
+      id: serverDay.id || day.id,
+      travelSegments: serverDay.travelSegments ?? day.travelSegments,
       activities: day.activities.map((activity, i) => {
         const serverId = serverDay.activities[i]?.id;
         return serverId ? { ...activity, id: serverId } : activity;
@@ -364,6 +428,7 @@ export function reconcileTripWithServer(trip: GeneratedTrip, created: CreateTrip
     id: created.id,
     days,
     backendSynced: true,
+    backendDayIds: created.days?.map((day) => day.id).filter(Boolean),
     backendItemIds: days.flatMap((d) => d.activities.map((a) => a.id)),
   };
 }

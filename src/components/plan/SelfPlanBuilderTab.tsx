@@ -29,7 +29,16 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelFromPrevious, TravelType, TripAccommodation } from "@/types";
+import type {
+  Activity,
+  ActivityCategory,
+  Day,
+  GeneratedTrip,
+  TravelFromPrevious,
+  TravelSegment,
+  TravelType,
+  TripAccommodation,
+} from "@/types";
 import {
   fetchExternalPlaceSuggestionSections,
   searchExternalPlaces,
@@ -2395,12 +2404,14 @@ function LabeledInput({
 export function TravelConnectorRow({
   fromTitle,
   toActivity,
+  travelSegment,
   canEdit,
   onSave,
   onDelete,
 }: {
   fromTitle: string;
   toActivity: Activity;
+  travelSegment?: TravelSegment;
   canEdit: boolean;
   onSave: (travel: TravelFromPrevious) => void;
   onDelete?: () => Promise<void>;
@@ -2409,7 +2420,24 @@ export function TravelConnectorRow({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const travel = toActivity.travelFromPrevious;
+  const manualTravel = toActivity.travelFromPrevious;
+  const estimatedTravel: TravelFromPrevious | undefined = travelSegment?.routeStatus === "CALCULATED"
+    ? {
+        type:
+          travelSegment.travelMode === "WALK"
+            ? "walk"
+            : travelSegment.travelMode === "BICYCLE"
+              ? "bicycle"
+              : travelSegment.travelMode === "DRIVE"
+                ? "rental_car"
+                : "other",
+        customType: travelSegment.travelMode === "TRANSIT" ? "ขนส่งสาธารณะ" : undefined,
+        durationMin: travelSegment.durationMinutes ?? undefined,
+        distanceKm: travelSegment.distanceKilometers ?? undefined,
+      }
+    : undefined;
+  const travel = manualTravel ?? estimatedTravel;
+  const isEstimate = !manualTravel && Boolean(estimatedTravel);
   const TypeIcon = travel ? travelTypeIcon[travel.type] : null;
   const travelLabel = travel
     ? travel.type === "other" && travel.customType
@@ -2420,7 +2448,7 @@ export function TravelConnectorRow({
   // Read-only: nothing to add, so hide the placeholder prompt entirely; an
   // already-attached leg still shows (travelers should be able to see how
   // they get between stops) but as plain text, not a clickable edit target.
-  if (!canEdit && !travel) return null;
+  if (!canEdit && !travel && !travelSegment) return null;
 
   const content =
     travel && TypeIcon && travelLabel ? (
@@ -2431,7 +2459,17 @@ export function TravelConnectorRow({
         {travel.distanceKm !== undefined && <> · {travel.distanceKm} กม.</>}
         {travel.costAmount !== undefined && travel.costAmount > 0 && <> · {formatTHB(travel.costAmount)}</>}
         {travel.notes && <span className="min-w-0 truncate text-[var(--color-muted)]">· {travel.notes}</span>}
+        {isEstimate && <span className="text-[var(--color-muted)]">· คำนวณเบื้องต้น</span>}
       </>
+    ) : travelSegment ? (
+      travelSegment.routeStatus === "FAILED" ? (
+        <>
+          <Car size={11} className="shrink-0" />
+          <span>ยังคำนวณเส้นทางไม่ได้</span>
+        </>
+      ) : (
+        <></>
+      )
     ) : (
       <>
         <Plus size={11} className="shrink-0" />
@@ -2466,7 +2504,7 @@ export function TravelConnectorRow({
             style={{ backgroundColor: "var(--color-brand-green)" }}
           />
         </div>
-        {canEdit ? travel && onDelete ? (
+        {canEdit ? (travel || travelSegment) && onDelete ? (
           <div
             className="my-auto flex min-h-8 min-w-0 flex-1 items-center rounded-full border border-dashed pl-3 pr-1"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}

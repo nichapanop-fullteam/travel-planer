@@ -57,6 +57,20 @@ function getDaySpanMinutes(day: Day): number {
 // guess only for days that have nothing but free-text travelNotes, since
 // there's still no routing provider wired up (see MapPanel).
 export function getDayRouteEstimate(day: Day): { distanceKm: number; minutes: number } {
+  const calculatedSegments = (day.travelSegments ?? []).filter(
+    (segment) => segment.routeStatus === "CALCULATED"
+  );
+  if (calculatedSegments.length > 0) {
+    return {
+      distanceKm: round1(
+        calculatedSegments.reduce((sum, segment) => sum + (segment.distanceKilometers ?? 0), 0)
+      ),
+      minutes: Math.round(
+        calculatedSegments.reduce((sum, segment) => sum + (segment.durationMinutes ?? 0), 0)
+      ),
+    };
+  }
+
   let travelledKm = 0;
   let legs = 0;
   for (const activity of day.activities) {

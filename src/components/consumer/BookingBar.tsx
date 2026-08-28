@@ -33,12 +33,14 @@ export function BookingBar({
   return (
     <div
       className={`relative flex w-full max-w-5xl flex-col items-stretch shadow-lg backdrop-blur-md sm:flex-row sm:items-center ${
-        compact ? "gap-1.5 rounded-[20px] bg-white/20 p-1.5" : "gap-2 rounded-[28px] bg-white/20 p-2"
+        compact
+          ? "gap-1.5 rounded-[20px] bg-white/20 p-1.5"
+          : "gap-2 rounded-[24px] bg-white/20 p-1.5 lg:rounded-[28px] lg:p-2"
       }`}
     >
       <div
         className={`flex flex-1 flex-col overflow-hidden bg-white sm:flex-row sm:items-stretch ${
-          compact ? "rounded-2xl" : "rounded-[22px]"
+          compact ? "rounded-2xl" : "rounded-[20px] lg:rounded-[22px]"
         }`}
       >
         {fields.map((field, i) => (
@@ -74,7 +76,9 @@ function BookingField({
   return (
     <>
       <label
-        className={`flex flex-1 items-center text-left ${compact ? "gap-2 px-3.5 py-2.5" : "gap-3 px-6 py-4"}`}
+        className={`flex flex-1 items-center text-left ${
+          compact ? "gap-2 px-3.5 py-2.5" : "gap-2.5 px-4 py-3 lg:gap-3 lg:px-6 lg:py-4"
+        }`}
         style={{
           backgroundColor: field.hasError ? "var(--color-danger-bg)" : undefined,
           cursor: field.onFieldClick ? "pointer" : undefined,
@@ -83,7 +87,7 @@ function BookingField({
       >
         <span
           className={`flex shrink-0 items-center justify-center rounded-full bg-[var(--color-sel-bg)] ${
-            compact ? "h-7 w-7" : "h-10 w-10"
+            compact ? "h-7 w-7" : "h-9 w-9 lg:h-10 lg:w-10"
           }`}
         >
           <Icon
@@ -106,7 +110,7 @@ function BookingField({
             readOnly={field.readOnly}
             onChange={(e) => field.onChange?.(e.target.value)}
             className={`w-full truncate bg-transparent font-semibold text-[var(--foreground)] placeholder:font-medium placeholder:text-[var(--color-muted)] focus:outline-none ${
-              compact ? "text-xs" : "text-base"
+              compact ? "text-xs" : "text-sm lg:text-base"
             } ${field.readOnly ? "cursor-pointer" : ""}`}
           />
         </span>
@@ -114,7 +118,7 @@ function BookingField({
       {!isLast && (
         <div
           className={`hidden shrink-0 self-stretch bg-[var(--color-border)]/30 sm:block ${
-            compact ? "mx-1.5 my-2 w-px" : "mx-3 my-3 w-px"
+            compact ? "mx-1.5 my-2 w-px" : "mx-2 my-2.5 w-px lg:mx-3 lg:my-3"
           }`}
         />
       )}

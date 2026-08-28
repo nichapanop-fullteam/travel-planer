@@ -13,6 +13,20 @@
   --color-accent-orange: #F37130;
   --color-neutral-gray: #a3a0a0;
 
+  /* Violet accent from the pluno feed-card reference (RealTripCard's bookmark,
+     location pin and footer stats). Scoped to the feed card on purpose — the
+     rest of the app is still on --color-primary green, so this lives as its own
+     token rather than being hardcoded, and swapping the value here is the one
+     change needed if the card should go back to green. Exact hex still to be
+     confirmed against the Figma variable. */
+  --color-accent-violet: #7c3aed;
+
+  /* Lime highlight from the pluno home reference — the active section chip's
+     label on its near-black pill, and the "ดูทั้งหมด" pill. Same scoping note
+     as the violet above: new to this design, so it lives as a token rather
+     than a hex sprinkled through the page. */
+  --color-accent-lime: #c9f16a;
+
   --color-surface: #edf4f0;
   --color-border: #a3a0a0;
   --color-muted: #7c8782;

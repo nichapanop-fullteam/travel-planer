@@ -3,7 +3,13 @@ import { BACKEND_URL } from "@/lib/backend-url";
 import type { Intensity } from "@/lib/generate-plan-api";
 import type { CreateTripActivity } from "@/lib/trips-create-api";
 import type { TripVisibility } from "@/lib/trips-api";
-import type { TravelType } from "@/types";
+import type {
+  Activity,
+  ActivityCategory,
+  TravelSegment,
+  TravelSegmentMode,
+  TravelType,
+} from "@/types";
 
 // Partial-update endpoints for a trip that already has a real row on the
 // backend (see GeneratedTrip.backendSynced in types/index.ts) — used by
@@ -51,8 +57,9 @@ export async function updateTripOnServer(tripId: string, patch: UpdateTripReques
 }
 
 export interface UpdateTripDayRequest {
-  dayNumber?: number;
-  date?: string;
+  date?: string | null;
+  fatigueLevel?: "low" | "medium" | "high" | null;
+  daySummary?: string | null;
 }
 
 // PATCH /days/:dayId
@@ -100,6 +107,10 @@ export async function createTripDayOnServer(
 // costAmount/paidBy/splitLabel (per the budget tab's "เพิ่มค่าใช้จ่าย" ->
 // "เลือกจากแผนการเดินทาง" flow), are the confirmed accepted fields.
 export interface UpdateTripItemRequest {
+  orderIndex?: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  estimatedDurationMin?: number | null;
   travelTypeFromPrev?: TravelType | null;
   travelCustomTypeFromPrev?: string | null;
   travelTimeFromPrevMin?: number | null;
@@ -107,24 +118,53 @@ export interface UpdateTripItemRequest {
   travelCostFromPrevAmount?: number | null;
   travelCostFromPrevCurrency?: string | null;
   travelNotesFromPrev?: string | null;
+  category?: ActivityCategory | null;
   costAmount?: number;
-  paidBy?: string;
-  splitLabel?: string;
+  costCurrency?: string;
+  bookingStatus?: "not_required" | "available" | "booked" | "sold_out" | "unknown";
+  bookingLeadUrl?: string | null;
+  isAiSuggested?: boolean;
+  notes?: string | null;
+  paidBy?: string | null;
+  splitLabel?: string | null;
+  placeId?: string | null;
+  customName?: string | null;
 }
 
 // PATCH /items/:itemId
-export async function updateTripItemOnServer(itemId: string, patch: UpdateTripItemRequest): Promise<void> {
+export async function updateTripItemOnServer(
+  itemId: string,
+  patch: UpdateTripItemRequest,
+  calculateTravelSegments = true
+): Promise<void> {
   const response = await authenticatedFetch(`${BACKEND_URL}/items/${itemId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Calculate-Travel-Segments": String(calculateTravelSegments),
+    },
     body: JSON.stringify(patch),
   });
   await throwOnError(response, "แก้ไขข้อมูลสถานที่");
 }
 
 export interface CreateTripItemResponse {
-  id: string;
-  [key: string]: unknown;
+  place: Activity;
+  travelSegment: TravelSegment | null;
+}
+
+export function buildCreateTripItemRequest(item: CreateTripActivity) {
+  const serverItem = { ...item };
+  delete serverItem.id;
+  const { title, time, cost, category, placeId, ...rest } = serverItem;
+  return {
+    ...rest,
+    placeId,
+    customName: placeId ? undefined : title,
+    category: placeId ? undefined : category,
+    startTime: time,
+    costAmount: cost,
+  };
 }
 
 // POST /days/:dayId/items — "เพิ่มสถานที่/กิจกรรม". Starts from
@@ -135,15 +175,65 @@ export interface CreateTripItemResponse {
 // exist"), so they're dropped here rather than sent and 400ing.
 export async function createTripItemOnServer(
   dayId: string,
-  item: CreateTripActivity
+  item: CreateTripActivity,
+  idempotencyKey?: string,
+  calculateTravelSegments = true
 ): Promise<CreateTripItemResponse> {
-  const { title: _title, time: _time, cost: _cost, ...allowed } = item;
+  // POST /trips/create and POST /days/:dayId/items use different names for
+  // the same UI fields. The bulk endpoint accepts title/time/cost while the
+  // granular endpoint expects customName/startTime/costAmount. A linked place
+  // supplies its own title/category, whereas a hand-typed stop needs both.
+  const allowed = buildCreateTripItemRequest(item);
   const response = await authenticatedFetch(`${BACKEND_URL}/days/${dayId}/items`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      "X-Calculate-Travel-Segments": String(calculateTravelSegments),
+    },
     body: JSON.stringify(allowed),
   });
   await throwOnError(response, "เพิ่มสถานที่");
+  const body = (await response.json()) as Activity | CreateTripItemResponse;
+  // Keep compatibility with the currently deployed API while rolling onto
+  // the Travel Segment response shape documented for the next backend build.
+  return "place" in body
+    ? body
+    : { place: body, travelSegment: null };
+}
+
+// DELETE /items/:itemId — 204 with no response body.
+export async function deleteTripItemOnServer(
+  itemId: string,
+  calculateTravelSegments = true
+): Promise<void> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/items/${itemId}`, {
+    method: "DELETE",
+    headers: { "X-Calculate-Travel-Segments": String(calculateTravelSegments) },
+  });
+  await throwOnError(response, "ลบสถานที่");
+}
+
+// GET /days/:dayId/travel-segments — useful after delete/reorder/insert,
+// where more than one neighbouring leg may have been reconciled.
+export async function getDayTravelSegments(dayId: string): Promise<TravelSegment[]> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/days/${dayId}/travel-segments`);
+  await throwOnError(response, "โหลดเส้นทางระหว่างสถานที่");
+  return response.json();
+}
+
+// PATCH /travel-segments/:id/travel-mode. DRIVE is the only mode enabled by
+// the backend today, but the union mirrors the additive API contract.
+export async function updateTravelSegmentMode(
+  segmentId: string,
+  travelMode: TravelSegmentMode
+): Promise<TravelSegment> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/travel-segments/${segmentId}/travel-mode`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ travelMode }),
+  });
+  await throwOnError(response, "เปลี่ยนโหมดการเดินทาง");
   return response.json();
 }
 
@@ -152,10 +242,17 @@ export async function createTripItemOnServer(
 // the set doesn't match the day's items exactly (see ReorderItemsRequestDto /
 // itinerary-manager.service.ts on the backend). Called from the drag-to-
 // reorder activity list in generated-plan/[id]/page.tsx.
-export async function reorderTripItemsOnServer(dayId: string, itemIds: string[]): Promise<void> {
+export async function reorderTripItemsOnServer(
+  dayId: string,
+  itemIds: string[],
+  calculateTravelSegments = true
+): Promise<void> {
   const response = await authenticatedFetch(`${BACKEND_URL}/days/${dayId}/items/order`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Calculate-Travel-Segments": String(calculateTravelSegments),
+    },
     body: JSON.stringify({ itemIds }),
   });
   await throwOnError(response, "เรียงลำดับกิจกรรม");

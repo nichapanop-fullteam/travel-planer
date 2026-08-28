@@ -58,6 +58,8 @@ export interface TravelFromPrevious {
 
 export interface Activity {
   id: string;
+  order?: number; // backend itinerary order, zero-based
+  name?: string; // alias of title on POST /days/:dayId/items responses
   time: string; // "09:00"
   title: string;
   category: ActivityCategory;
@@ -66,8 +68,33 @@ export interface Activity {
   cost: number; // THB, per group
   travelNote?: string; // e.g. "เดิน ~8 นาที" — free-text fallback, kept for backward compat
   travelFromPrevious?: TravelFromPrevious; // structured version of travelNote — the leg from the previous stop
+  // A provider estimate can be dismissed without deleting the backend's
+  // structural segment (segments must continue to match adjacent stops).
+  // Kept client-side so the row returns to "+ เพิ่มการเดินทาง" for this plan.
+  dismissedTravelSegmentId?: string;
   icon?: string; // key into ACTIVITY_ICON_OVERRIDE (generated-plan) — overrides the category default icon
   images?: string[]; // user-uploaded photos for this stop, as data URLs
+}
+
+export type TravelSegmentMode = "DRIVE" | "WALK" | "BICYCLE" | "TRANSIT";
+export type TravelSegmentStatus = "CALCULATED" | "FAILED";
+
+// Provider-computed route between two adjacent itinerary items. This is kept
+// separate from Activity.travelFromPrevious, which is traveler-entered data
+// and must never be overwritten by automatic recalculation.
+export interface TravelSegment {
+  id: string;
+  dayId: string;
+  fromPlaceId: string; // Activity.id, not places.id / Google Place id
+  toPlaceId: string; // Activity.id, not places.id / Google Place id
+  order: number;
+  travelMode: TravelSegmentMode;
+  routeStatus: TravelSegmentStatus;
+  durationSeconds: number | null;
+  durationMinutes: number | null;
+  distanceMeters: number | null;
+  distanceKilometers: number | null;
+  calculatedAt: string | null;
 }
 
 export interface Day {
@@ -75,6 +102,7 @@ export interface Day {
   dayNumber: number;
   date: string; // ISO date, e.g. "2026-08-10"
   activities: Activity[];
+  travelSegments?: TravelSegment[];
 }
 
 export interface Customer {
@@ -224,6 +252,10 @@ export interface GeneratedTrip {
   styles: string[];
   status: GeneratedTripStatus;
   days: Day[];
+  // Client-side preference for automatic, preliminary travel estimates.
+  // Deliberately defaults to off: itinerary mutations only ask the backend
+  // to reconcile Google Routes segments after the traveller opts in.
+  autoTravelCalculationEnabled?: boolean;
   accommodation?: TripAccommodation;
   // Budget management (สรุปงบ tab) — expenses is the ledger shown/edited
   // there; undefined until the tab is first opened, at which point it's
