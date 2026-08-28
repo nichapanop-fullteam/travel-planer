@@ -15,6 +15,7 @@ import {
   Flag,
   LoaderCircle,
   MapPin,
+  MapPinOff,
   Pencil,
   Plane,
   Plus,
@@ -33,10 +34,10 @@ import {
   fetchExternalPlaceSuggestionSections,
   searchExternalPlaces,
   type ExternalPlaceCategory,
+  type ExternalSearchPlace,
   type ExternalPlaceSuggestionSections,
 } from "@/lib/external-places-api";
 import { CATEGORY_LABEL_TH, enrichPlace, EXTERNAL_TO_ACTIVITY_CATEGORY, type EnrichedPlace } from "@/lib/place-mock-metadata";
-import { DEFAULT_RECOMMENDATION_CENTER } from "@/lib/place-recommendations";
 import { formatTHB, resolveNightlyRate } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
@@ -104,9 +105,15 @@ export function PlaceDiscoveryPanel({
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onAddDay: () => void;
 }) {
+  // null, not a stand-in city. This used to fall back to
+  // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
+  // missing silently filled every recommendation list with Luang Prabang's
+  // places — a Bangkok trip listing วัดเชียงทอง and ภูสี with nothing on
+  // screen admitting it. A wrong answer that looks right is worse than none,
+  // so the lists now render NoDestinationCoordsNotice instead.
   const center = trip.destinationPlace
     ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
-    : DEFAULT_RECOMMENDATION_CENTER;
+    : null;
 
   // Which day each confirmed place's activity landed on — so "ล้างที่เลือก"
   // can undo the actual itinerary insertion, not just the staging-list entry.
@@ -226,6 +233,7 @@ export function PlaceDiscoveryPanel({
       {drawerOpen && (
         <CheckInPlacesDrawer
           destinationName={trip.destination}
+          hasCoords={center !== null}
           places={mixedPlaces}
           addedIds={addedIds}
           stagedPlaces={stagedPlaces}
@@ -273,6 +281,7 @@ const DRAWER_FILTERS: { key: string; label: string; icon?: typeof MapPin; catego
 // dialog, so a place picked here funnels through the same "which day" flow.
 function CheckInPlacesDrawer({
   destinationName,
+  hasCoords,
   places,
   addedIds,
   stagedPlaces,
@@ -283,6 +292,9 @@ function CheckInPlacesDrawer({
   onClose,
 }: {
   destinationName: string;
+  // Passed through rather than derived: the drawer only sees the resolved
+  // list, and [] from a missing centre must not read as "nothing nearby".
+  hasCoords: boolean;
   places: EnrichedPlace[] | null;
   addedIds: Set<string>;
   stagedPlaces: EnrichedPlace[];
@@ -355,8 +367,11 @@ function CheckInPlacesDrawer({
         </div>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5">
-          {filtered === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
-          {filtered !== null && filtered.length === 0 && (
+          {!hasCoords && <NoDestinationCoordsNotice destinationName={destinationName} what="สถานที่" />}
+          {hasCoords && filtered === null && (
+            <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
+          )}
+          {hasCoords && filtered !== null && filtered.length === 0 && (
             <p className="py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
           )}
           {filtered?.map((place) => {
@@ -481,10 +496,15 @@ function sectionKeyFor(categories: string[]): keyof ExternalPlaceSuggestionSecti
 // combined" — used for the single merged "แนะนำสถานที่ห้ามพลาด" carousel
 // (attractions + restaurants/cafes + hotels together), instead of picking
 // just one bucket like every other caller of sectionKeyFor.
-function usePlaceSuggestions(center: { lat: number; lng: number }, categories: string[]) {
+// Returns null while a request is in flight, and [] once there is nothing to
+// show — including when `center` is null, where it never requests at all.
+// Callers must branch on `center === null` themselves before treating [] as
+// "no places nearby": the two mean very different things to a reader.
+function usePlaceSuggestions(center: { lat: number; lng: number } | null, categories: string[]) {
   const [sections, setSections] = useState<ExternalPlaceSuggestionSections | null>(null);
 
   useEffect(() => {
+    if (!center) return;
     let cancelled = false;
     fetchSectionsForCenter(center).then((result) => {
       if (!cancelled) setSections(result);
@@ -493,16 +513,54 @@ function usePlaceSuggestions(center: { lat: number; lng: number }, categories: s
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center.lat, center.lng]);
+  }, [center?.lat, center?.lng]);
 
   return useMemo(() => {
+    if (!center) return [];
     if (!sections) return null;
     const rows = categories.includes("mixed")
       ? [...sections.attractions, ...sections.restaurants, ...sections.accommodations]
       : sections[sectionKeyFor(categories)];
-    return rows.map((p) => enrichPlace(p, center));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, categories]);
+    return rows.map((p) => enrichAgainst(p, center));
+  }, [center, sections, categories]);
+}
+
+// enrichPlace needs a centre for its distanceKm. Nothing in this file renders
+// that field (the distanceKm reads here are travel legs, a different thing),
+// so with no destination coordinates we measure the place against itself for a
+// harmless 0 rather than invent a centre and publish a fabricated distance.
+// enrichPlace itself is shared with SelfPlacesStep, hence the local wrapper
+// instead of widening its signature.
+function enrichAgainst(place: ExternalSearchPlace, center: { lat: number; lng: number } | null): EnrichedPlace {
+  return enrichPlace(place, center ?? { lat: place.lat, lng: place.lng });
+}
+
+// Shown wherever a centre-derived list would otherwise be silently filled with
+// some other city's places. The real gap is GET /trips/:id not returning
+// destinationPlace (no lat/lng); a backend request is open for it. Meanwhile
+// this at least tells the traveler what is missing and what they can do.
+function NoDestinationCoordsNotice({
+  destinationName,
+  what,
+  className = "",
+}: {
+  destinationName?: string;
+  what: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center gap-1.5 rounded-2xl border border-dashed px-4 py-8 text-center ${className}`}
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <MapPinOff size={18} style={{ color: "var(--color-muted)" }} />
+      <p className="text-sm font-semibold">ยังไม่รู้พิกัดของปลายทาง</p>
+      <p className="max-w-[26rem] text-xs leading-relaxed text-[var(--color-muted)]">
+        ทริปนี้ยังไม่มีพิกัดของ{destinationName ? ` “${destinationName}”` : "ปลายทาง"} จึงยังหา{what}ใกล้เคียงมาแนะนำไม่ได้
+        — กด “แก้ไขทริป” แล้วเลือกปลายทางจากรายการค้นหาอีกครั้ง
+      </p>
+    </div>
+  );
 }
 
 function AddPlacesAccordion({
@@ -529,7 +587,7 @@ function AddPlacesAccordion({
   searchPlaceholder: string;
   recommendedLabel: string;
   categories: string[];
-  center: { lat: number; lng: number };
+  center: { lat: number; lng: number } | null;
   destinationName: string;
   addLabel: string;
   addedIds: Set<string>;
@@ -574,7 +632,7 @@ function AddPlacesAccordion({
     if (!trimmed) return;
     debounceRef.current = window.setTimeout(() => {
       searchExternalPlaces(trimmed, SEARCH_RESULT_LIMIT).then((results) => {
-        setDropdownResults(results.map((p) => enrichPlace(p, center)));
+        setDropdownResults(results.map((p) => enrichAgainst(p, center)));
         setDropdownOpen(true);
       });
     }, SEARCH_DEBOUNCE_MS);
@@ -643,8 +701,11 @@ function AddPlacesAccordion({
         )}
       </div>
 
-      {visible === null && <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
-      {visible !== null && visible.length === 0 && (
+      {center === null && <NoDestinationCoordsNotice destinationName={destinationName} what="สถานที่" />}
+      {center !== null && visible === null && (
+        <p className="py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
+      )}
+      {center !== null && visible !== null && visible.length === 0 && (
         <p className="py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
       )}
 
@@ -1379,9 +1440,15 @@ export function RecommendPlacesFlow({
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onAddManually: () => void;
 }) {
+  // null, not a stand-in city. This used to fall back to
+  // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
+  // missing silently filled every recommendation list with Luang Prabang's
+  // places — a Bangkok trip listing วัดเชียงทอง and ภูสี with nothing on
+  // screen admitting it. A wrong answer that looks right is worse than none,
+  // so the lists now render NoDestinationCoordsNotice instead.
   const center = trip.destinationPlace
     ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
-    : DEFAULT_RECOMMENDATION_CENTER;
+    : null;
   const places = usePlaceSuggestions(center, ["mixed"]);
 
   const [filterKey, setFilterKey] = useState("all");
@@ -1517,10 +1584,17 @@ export function RecommendPlacesFlow({
           </div>
 
           <div className="grid flex-1 auto-rows-min grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
-            {filtered === null && (
+            {center === null && (
+              <NoDestinationCoordsNotice
+                destinationName={trip.destination}
+                what="สถานที่"
+                className="col-span-full"
+              />
+            )}
+            {center !== null && filtered === null && (
               <p className="col-span-full py-8 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
             )}
-            {filtered !== null && filtered.length === 0 && (
+            {center !== null && filtered !== null && filtered.length === 0 && (
               <p className="col-span-full py-8 text-center text-sm text-[var(--color-muted)]">ไม่พบสถานที่</p>
             )}
             {filtered?.map((place) => (
@@ -1814,9 +1888,9 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
 // so the overview can lead with it instead: you settle where you're staying,
 // then build the days around it.
 //
-// `center` is derived here rather than passed in, so the caller doesn't have
-// to know about DEFAULT_RECOMMENDATION_CENTER; it's the same derivation
-// PlaceDiscoveryPanel does for its own carousels.
+// `center` is derived here rather than passed in, so the caller needn't know
+// how a Destination turns into coordinates; it's the same derivation
+// PlaceDiscoveryPanel does for its own carousels, null included.
 export function AccommodationSection({
   trip,
   canEdit,
@@ -1826,9 +1900,15 @@ export function AccommodationSection({
   canEdit: boolean;
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
 }) {
+  // null, not a stand-in city. This used to fall back to
+  // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
+  // missing silently filled every recommendation list with Luang Prabang's
+  // places — a Bangkok trip listing วัดเชียงทอง and ภูสี with nothing on
+  // screen admitting it. A wrong answer that looks right is worse than none,
+  // so the lists now render NoDestinationCoordsNotice instead.
   const center = trip.destinationPlace
     ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
-    : DEFAULT_RECOMMENDATION_CENTER;
+    : null;
 
   return (
     <AccommodationAccordion trip={trip} canEdit={canEdit} center={center} onSaveAccommodation={onSaveAccommodation} />
@@ -1864,7 +1944,7 @@ function AccommodationAccordion({
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
-  center: { lat: number; lng: number };
+  center: { lat: number; lng: number } | null;
   // Backs the "จองแล้ว"/"ยังไม่จอง" setup form below — same callback the
   // recommended-places carousel above already uses to set trip.accommodation.
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
@@ -1968,7 +2048,7 @@ function AccommodationSetupForm({
   onSave,
 }: {
   accommodation?: TripAccommodation;
-  center: { lat: number; lng: number };
+  center: { lat: number; lng: number } | null;
   onSave: (accommodation: TripAccommodation) => void;
 }) {
   // Defaults to showing the "จองแล้ว" form open even before anything's been
@@ -2144,8 +2224,11 @@ function AccommodationSetupForm({
               <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
               ที่พักแนะนำ
             </p>
-            {hotelSuggestions === null && <p className="py-4 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>}
-            {hotelSuggestions !== null && hotelSuggestions.length === 0 && (
+            {center === null && <NoDestinationCoordsNotice what="ที่พัก" />}
+            {center !== null && hotelSuggestions === null && (
+              <p className="py-4 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
+            )}
+            {center !== null && hotelSuggestions !== null && hotelSuggestions.length === 0 && (
               <p className="py-4 text-center text-sm text-[var(--color-muted)]">ไม่พบที่พักแนะนำ</p>
             )}
             <div className="flex gap-3 overflow-x-auto pb-1">
