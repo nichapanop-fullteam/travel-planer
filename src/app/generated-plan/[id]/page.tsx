@@ -1384,7 +1384,7 @@ function TripAttributionBar({
               <button
                 type="button"
                 onClick={onRemixClick}
-                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
+                className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-1.5 text-xs font-bold text-white"
                 style={{ backgroundColor: "var(--color-brand-green)" }}
               >
                 <Repeat2 size={13} />
@@ -1395,7 +1395,7 @@ function TripAttributionBar({
               <button
                 type="button"
                 onClick={onEditTrip}
-                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-1.5 text-xs font-semibold text-white"
                 style={{ backgroundColor: "var(--color-accent-orange)" }}
               >
                 <Pencil size={13} />
@@ -1437,37 +1437,44 @@ function VisibilityControl({
     { value: "public", label: "เผยแพร่", icon: Globe2 },
   ];
 
-  // Pill only. The explanatory line moved out to VisibilityHint so this is a
-  // single-row element that can sit on one centred row with แชร์/แก้ไขทริป —
-  // while the caption was inside, the control was a two-row column and
-  // buttons beside it lined up with the gap between pill and text.
+  // Borrows its geometry wholesale from แชร์ / แก้ไขทริป next to it:
+  // rounded-full, border, px-3.5 py-1.5, text-xs font-semibold, size-13 icon.
+  // The previous version wrapped both options in a bordered `p-1` container,
+  // which stood 38px tall beside 30px buttons and read as a different kind of
+  // component — a box holding pills rather than a pill. Each option now
+  // matches one of the two reference buttons: the selected one is filled like
+  // แก้ไขทริป, the unselected one is outlined like แชร์.
+  //
+  // gap-1 inside against the row's gap-2 outside: with the container gone,
+  // equal gaps would leave four identically spaced pills and no cue that
+  // these two are one choice. The tighter gap keeps them reading as a pair.
+  //
+  // The explanatory line lives in VisibilityHint, a sibling, so this stays a
+  // single-row element — inside, it made the control a two-row column and
+  // anything placed beside it aligned to the gap between pill and text.
   return (
-    <div
-      className="inline-flex items-center rounded-full border p-1"
-      style={{ borderColor: "var(--color-border)" }}
-      role="radiogroup"
-      aria-label="สถานะการแชร์ทริปนี้"
-    >
-        {options.map(({ value, label, icon: Icon }) => {
-          const active = visibility === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={saving || active}
-              onClick={() => onChange(value)}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: active ? "var(--color-brand-green)" : "transparent",
-                color: active ? "#fff" : "var(--color-muted)",
-              }}
-            >
-              {saving && active ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} />}
-              {label}
-            </button>
-          );
+    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label="สถานะการแชร์ทริปนี้">
+      {options.map(({ value, label, icon: Icon }) => {
+        const active = visibility === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={saving || active}
+            onClick={() => onChange(value)}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: active ? "var(--color-brand-green)" : "transparent",
+              borderColor: active ? "var(--color-brand-green)" : "var(--color-border)",
+              color: active ? "#fff" : "var(--color-muted)",
+            }}
+          >
+            {saving && active ? <LoaderCircle size={13} className="animate-spin" /> : <Icon size={13} />}
+            {label}
+          </button>
+        );
       })}
     </div>
   );
