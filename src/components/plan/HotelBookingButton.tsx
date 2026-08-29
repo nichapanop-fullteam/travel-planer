@@ -24,9 +24,14 @@ export function HotelBookingButton({ name, className }: { name: string; classNam
           className ??
           "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold"
         }
-        style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+        // The app's secondary button, same as แชร์ on the trip header: white
+        // with a warm border, next to a filled-orange primary. It used to be
+        // the green selection-chip palette (--color-sel-*), which is the
+        // language for "this option is picked" — not for an action, and the
+        // only green thing on an otherwise warm card.
+        style={{ borderColor: "var(--color-border-tag)", backgroundColor: "#fff", color: "var(--foreground)" }}
       >
-        <ExternalLink size={10} />
+        <ExternalLink size={11} />
         จองที่พัก
       </button>
       {open && <HotelBookingDialog name={name} onClose={() => setOpen(false)} />}

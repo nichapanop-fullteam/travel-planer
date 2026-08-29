@@ -7,10 +7,9 @@ import { useAppShell } from "@/components/layout/AppShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuth } from "@/providers/AuthProvider";
 
-/** Flat travel illustration behind the hero scrim. Optional on purpose: the
- *  gradient underneath is a finished background on its own, so a missing (or
- *  not-yet-added) asset degrades to a plain dark-green hero rather than a
- *  broken image. */
+/** Flat travel illustration behind the hero scrim. Still guarded by onError:
+ *  the deep-green ground underneath is a usable background on its own, so a
+ *  missing asset degrades to a plain dark hero rather than a broken image. */
 const HERO_ILLUSTRATION = "/images/hero-main.png";
 
 const SEARCH_ID = "home-search";
@@ -72,8 +71,8 @@ export function HomeHero({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-b-[28px] bg-[var(--color-deep-green)]">
-      {/* {!illustrationFailed && (
+    <div className="relative overflow-hidden bg-[var(--color-deep-green)]">
+      {!illustrationFailed && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={HERO_ILLUSTRATION}
@@ -81,7 +80,7 @@ export function HomeHero({
           onError={() => setIllustrationFailed(true)}
           className="absolute inset-0 h-full w-full object-cover"
         />
-      )} */}
+      )}
       {/* Weak at the top so the frosted bar above doesn't turn grey behind its
           own blur, heavy through the middle and bottom — that band is what the
           white heading and the search field's ring sit on, and the illustration
@@ -108,7 +107,7 @@ export function HomeHero({
           {/* Phones get the search field as the hero's only content — the
               heading was a full line of large type restating what the page
               already is, above a fold that has to reach the feed. */}
-          <h1 className="hidden text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] sm:block sm:text-[32px] min-[1025px]:text-[38px]">
+          <h1 className="hidden text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] sm:block min-[640px]:text-[32px] min-[1025px]:text-[38px]">
             จุดหมายที่คุณจะไป
           </h1>
 
@@ -128,7 +127,7 @@ export function HomeHero({
             <form onSubmit={handleSubmit} role="search" className="py-4 sm:mt-7 sm:py-0">
               {/* The pale ring is what lifts the field off the scrim — without
                   it the white pill reads as sitting flat on the photo. */}
-              <div className="flex items-center gap-2 rounded-full bg-white p-1.5 ring-4 ring-white/25 transition focus-within:ring-white/45">
+              <div className="flex items-center gap-2 rounded-full bg-white p-1.5 ring-4 ring-white/25 transition focus-within:ring-white/70">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)]">
                   <Search size={17} strokeWidth={2.5} />
                 </span>
@@ -137,7 +136,12 @@ export function HomeHero({
                   onChange={(e) => onQueryChange(e.target.value)}
                   placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
                   aria-label="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว"
-                  className="min-w-0 flex-1 bg-transparent text-center text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)] sm:text-base"
+                  // Left-aligned, not centred like the reference's placeholder:
+                  // with an empty value a centred field puts the caret in the
+                  // middle of the placeholder text on focus, and typing then
+                  // grows the query outwards from the centre. The placeholder
+                  // looked right at rest and wrong the moment anyone used it.
+                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)] sm:text-base"
                 />
                 <button
                   type="submit"

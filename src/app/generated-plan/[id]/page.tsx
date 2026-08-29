@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Activity as PulseIcon,
   Anchor,
@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleDollarSign,
   Clock,
   CloudSun,
   Coffee,
@@ -35,6 +36,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pencil,
+  Phone,
   Plus,
   RefreshCcw,
   Repeat2,
@@ -61,8 +63,13 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TravelSegment, TripAccommodation } from "@/types";
 import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
 import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
-import { categoryColorVar, categoryIcon } from "@/lib/category-styles";
-import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
+import { categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
+import {
+  fetchResolvedPlaceFullDetails,
+  searchExternalPlaces,
+  type ExternalSearchPlace,
+  type PlaceFullDetails,
+} from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
 import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
@@ -231,12 +238,11 @@ function summarizeTravelNote(travel: TravelFromPrevious): string {
   return parts.join(" · ");
 }
 
-export default function GeneratedPlanPage() {
+export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boolean } = {}) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [trip, setTrip] = useState<GeneratedTrip | null | undefined>(undefined);
-  const [tab, setTab] = useState<TabKey>("overview");
+  const [tab, setTab] = useState<TabKey>(() => (readOnly ? "plan" : "overview"));
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -256,17 +262,9 @@ export default function GeneratedPlanPage() {
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const segmentBackfillRequestedRef = useRef(new Set<string>());
-  const { backendUser } = useAuth();
+  const { backendUser, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
   const remix = useRemixTrip();
-  // Every trip opens read-only (no add/delete/edit affordances) so it
-  // doesn't look editable by accident — see canEdit below. The one
-  // exception: arriving straight from "สร้างแพลน" on create-trip (?edit=1)
-  // starts unlocked, since the traveler just created this trip and is about
-  // to build it out. There's no visible "แก้ไขแพลน"/"เสร็จสิ้น" button
-  // anymore (removed per product decision), but the underlying lock state
-  // stays — a trip only ever unlocks via that one entry point.
-  const [editUnlocked, setEditUnlocked] = useState(() => searchParams.get("edit") === "1");
 
   // Backend-wins once a trip has a real server row: a local-only draft
   // (never saved — see `backendSynced`) has nothing to reconcile against, so
@@ -398,16 +396,6 @@ export default function GeneratedPlanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, trip?.remixedFrom?.sourceTripId, trip?.remixedFrom?.sourceTitle]);
 
-  // Strip ?edit=1 once its one-time effect (unlocking editUnlocked's initial
-  // state above) has been read — otherwise reloading/bookmarking this URL
-  // would keep forcing edit mode back open.
-  useEffect(() => {
-    if (searchParams.get("edit") === "1") {
-      router.replace(`/generated-plan/${params.id}`, { scroll: false });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Returning from the forced /login redirect (see handleRemixClick below) —
   // only consumes the stored intent once we actually know backendUser, so a
   // render where the session is still restoring never discards it.
@@ -465,6 +453,22 @@ export default function GeneratedPlanPage() {
     // reconciliation calls during local state updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoTravelCalculationEnabled, canBackfillSegments, trip]);
+
+  // Owner-only page. Browsing someone else's trip is /view-trip's job now, so
+  // a non-owner who lands here — an old link, or the remix-source banner
+  // before it was repointed — is sent there instead of being shown a
+  // stripped-down copy of this screen. That read-only variant is what this
+  // change removes.
+  //
+  // Gated on authLoading because backendUser is null while auth resolves, and
+  // redirecting on that would bounce the real owner on every load. A trip with
+  // no ownerId is local-only and always this browser's own (same rule as
+  // isOwner below), so it never redirects.
+  useEffect(() => {
+    if (readOnly || authLoading || !trip?.ownerId) return;
+    if (backendUser?.id === trip.ownerId) return;
+    router.replace(`/view-trip/${trip.id}`);
+  }, [readOnly, authLoading, backendUser, trip, router]);
 
   if (trip === undefined) return null;
 
@@ -622,17 +626,11 @@ export default function GeneratedPlanPage() {
     setVisibilitySaving(false);
   }
 
-  // "แก้ไขทริป" — visible to the owner regardless of the current lock state
-  // (see canEdit) since it's the only entry point left into "generate plan"
-  // mode now that the standalone "แก้ไขแพลน" toggle is gone. The first click
-  // only unlocks editing for the whole page; the metadata dialog opens on a
-  // second click, once already in edit mode.
+  // "แก้ไขทริป" — opens the trip-metadata dialog. It used to take two clicks:
+  // the first unlocked the page, the second opened this. With the lock gone
+  // the first click does what the label says.
   function handleEditTripClick() {
-    if (editUnlocked) {
-      setEditDialogOpen(true);
-    } else {
-      setEditUnlocked(true);
-    }
+    setEditDialogOpen(true);
   }
 
   function handleRegenerate() {
@@ -993,22 +991,24 @@ export default function GeneratedPlanPage() {
   }
 
   const isConfirmed = trip.status === "confirmed";
-  // Read-only by default regardless of draft/confirmed status. Viewing a
-  // trip from /main never carries ?edit=1, so it always lands here
-  // read-only; only arriving straight from create-trip, or clicking
-  // "แก้ไขทริป" (see handleEditTripClick), unlocks it — and it stays unlocked
-  // for the rest of the session now that every edit autosaves on its own,
-  // with no more standalone "บันทึก" button to lock back down after.
-  // isOwner-gated defensively so a non-owner can never end up with edit
-  // affordances even via a stray ?edit=1 on a shared link.
-  const canEdit = isOwner && editUnlocked;
+  // This page is the owner's working surface, so an owner who reaches it can
+  // always edit. The old ?edit=1 lock is gone: browsing a trip is /view-trip's
+  // job now, and the lock had become actively wrong here — the effect that
+  // stripped ?edit=1 from the URL meant one refresh dropped an owner back into
+  // read-only on their own trip, and the remix/sync/regenerate redirects never
+  // carried the flag at all.
+  //
+  // Kept as a name rather than inlined `isOwner`: non-owners are redirected
+  // away (see the guard above), so this is true for everything that renders,
+  // and it stays the single place to re-gate from if that ever changes.
+  const canEdit = isOwner && !readOnly;
 
   // Share links are an owner-only feature (all four management endpoints
   // answer 404 for anyone else), and they need a real backend row — a
   // local-only trip has nothing for POST /trips/:id/share to attach to, same
   // reason onChangeVisibility is gated on backendSynced below. When this is
   // false the "แชร์" button isn't rendered at all rather than failing on tap.
-  const canShare = isOwner && Boolean(trip.backendSynced);
+  const canShare = !readOnly && isOwner && Boolean(trip.backendSynced);
   const handleShareClick = () => setShareDialogOpen(true);
 
   return (
@@ -1074,7 +1074,11 @@ export default function GeneratedPlanPage() {
           onShareClick={canShare ? handleShareClick : undefined}
           canRemix={canRemix}
           onRemixClick={handleRemixClick}
-          onEditTrip={handleEditTripClick}
+          onEditTrip={
+            readOnly
+              ? () => router.push(`/generated-plan/${trip.id}`)
+              : handleEditTripClick
+          }
         />
 
         <div className={`${SHELL} py-8`}>
@@ -1120,7 +1124,9 @@ export default function GeneratedPlanPage() {
             />
           )}
           {tab === "weather" && <WeatherTab />}
-          {tab === "budget" && <BudgetManagementPanel trip={trip} onPatch={applyPatch} />}
+          {tab === "budget" && (
+            <BudgetManagementPanel trip={trip} onPatch={applyPatch} readOnly={readOnly} />
+          )}
           {tab === "chat" && <ChatTab />}
         </div>
       </div>
@@ -1263,7 +1269,7 @@ function Hero({
           tap target. The read-only detail view (canEdit === false, i.e.
           opened from a trip card rather than "แก้ไขแพลน") gets the swipeable
           gallery instead. */}
-      {canEdit || images.length <= 1 ? (
+      {images.length <= 1 ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={images[0] ?? "/images/hero-mountain.jpg"}
@@ -1288,62 +1294,79 @@ function Hero({
           the photo, so the image reads through it softly rather than as a hard
           cut. Light rather than dark: the wordmark and the icons carry the
           brand colors, which need a pale ground to stay legible. */}
-      <div className="relative z-20 rounded-b-[28px] border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
-        {/* `relative` + an absolutely centered wordmark rather than a third
-            flex child: the left and right icon groups aren't the same width
-            (and the right one changes with the avatar), so justify-between
-            left the wordmark visibly off-center. */}
-        <div className="relative flex items-center justify-between gap-3 p-2 sm:p-2.5">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="ย้อนกลับ"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
-              style={{ color: "var(--color-brand-green)" }}
-            >
-              <ChevronLeft size={18} strokeWidth={2.5} />
-            </button>
-            <button
-              type="button"
-              onClick={onMenuClick}
-              aria-label="เมนู"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
-              style={{ color: "var(--color-brand-green)" }}
-            >
-              <Menu size={18} strokeWidth={2.5} />
-            </button>
-          </div>
+      {/* Square-cornered, on the feed width grid, with 32px controls — the
+          same treatment as /main's FrostedTopNav, which was itself lifted out
+          of this bar. The background string was already identical; these were
+          the three things that had drifted since. The 28px radius that used
+          to be here belonged to the hero's three-layer motif (photo, bar,
+          white sheet); it goes so the two app bars read as one component. */}
+      <div className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+        {/* --container-feed and the feed padding ramp, copied from
+            FrostedTopNav rather than this route's own SHELL, so the controls
+            land where /main's do. Note this is a wider grid than the bands
+            below (SHELL caps at --container-max), so the back button sits
+            outside the itinerary's left edge on a wide screen. */}
+        <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 sm:px-6 lg:px-10 xl:px-14">
+          {/* min-h-8 for the same reason FrostedTopNav needs it: the wordmark
+              is absolutely positioned, so a row whose corners went empty would
+              have no in-flow content to take its height from.
 
-          {/* No white pill behind it any more — the panel is already pale
-              enough to read the dark wordmark against, and the pill made the
-              brand mark look like a button sitting between two real ones. */}
-          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base text-[var(--foreground)] sm:text-xl" />
-
-          <div className="flex items-center gap-1 sm:gap-2">
-            {/* Bare icon, no white disc: on the frosted panel the disc read as
-                a third button matching the two on the left, which put the
-                wordmark's visual weight in the wrong place. */}
-            <button
-              type="button"
-              onClick={() => setSaved((s) => !s)}
-              aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
-              aria-pressed={saved}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
-            >
-              <Bookmark
-                size={18}
-                strokeWidth={2.25}
-                fill={saved ? "var(--color-brand-green)" : "none"}
+              `relative` + an absolutely centered wordmark rather than a third
+              flex child: the left and right icon groups aren't the same width
+              (and the right one changes with the avatar), so justify-between
+              left the wordmark visibly off-center. */}
+          <div className="relative flex min-h-8 items-center justify-between gap-3 py-1.5 sm:py-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="ย้อนกลับ"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
                 style={{ color: "var(--color-brand-green)" }}
+              >
+                <ChevronLeft size={17} strokeWidth={2.5} />
+              </button>
+              <button
+                type="button"
+                onClick={onMenuClick}
+                aria-label="เมนู"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+                style={{ color: "var(--color-brand-green)" }}
+              >
+                <Menu size={17} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* No white pill behind it any more — the panel is already pale
+                enough to read the dark wordmark against, and the pill made the
+                brand mark look like a button sitting between two real ones. */}
+            <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base text-[var(--foreground)] sm:text-xl" />
+
+            <div className="flex items-center gap-1 sm:gap-2">
+              {/* Bare icon, no white disc: on the frosted panel the disc read as
+                  a third button matching the two on the left, which put the
+                  wordmark's visual weight in the wrong place. */}
+              <button
+                type="button"
+                onClick={() => setSaved((s) => !s)}
+                aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
+                aria-pressed={saved}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
+              >
+                <Bookmark
+                  size={17}
+                  strokeWidth={2.25}
+                  fill={saved ? "var(--color-brand-green)" : "none"}
+                  style={{ color: "var(--color-brand-green)" }}
+                />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={userAvatarUrl || "/images/profile-avatar.jpg"}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
               />
-            </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={userAvatarUrl || "/images/profile-avatar.jpg"}
-              alt=""
-              className="h-9 w-9 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
-            />
+            </div>
           </div>
         </div>
       </div>
@@ -1553,7 +1576,7 @@ function TripAttributionBar({
   onChangeVisibility?: (next: "private" | "public") => void;
   canRemix: boolean;
   onRemixClick: () => void;
-  onEditTrip: () => void;
+  onEditTrip?: () => void;
 }) {
   const showRealExperienceBadge = !isOwner && (trip.planMode === "self" || trip.planMode === "manual");
   const hasCounts = trip.saveCount != null || trip.remixCount != null;
@@ -1563,7 +1586,7 @@ function TripAttributionBar({
   // with no creator, badge or counts still got an empty bar. It also has to
   // weigh the trip actions now that they live here.
   const hasLeft = Boolean(trip.creator) || showRealExperienceBadge || hasCounts;
-  const hasRight = Boolean(onShareClick) || (!isOwner && canRemix) || isOwner;
+  const hasRight = Boolean(onShareClick) || (!isOwner && canRemix) || Boolean(onEditTrip);
   if (!hasLeft && !hasRight) return null;
 
   return (
@@ -1640,7 +1663,7 @@ function TripAttributionBar({
                 นำไปปรับเป็นทริปของฉัน
               </button>
             )}
-            {isOwner && (
+            {isOwner && onEditTrip && (
               <button
                 type="button"
                 onClick={onEditTrip}
@@ -1758,7 +1781,7 @@ function RemixSourceBanner({ remixedFrom }: { remixedFrom: NonNullable<Generated
         )}
       </p>
       <Link
-        href={`/generated-plan/${remixedFrom.sourceTripId}`}
+        href={`/view-trip/${remixedFrom.sourceTripId}`}
         className="shrink-0 text-xs font-semibold underline"
         style={{ color: "var(--color-brand-green)" }}
       >
@@ -2035,7 +2058,7 @@ function OverviewTab({
           attribution bar's row with the visibility control, one band above. */}
       <h2 className="text-xl font-bold">สรุปภาพรวมแพลน</h2>
 
-      {showConfirmBanner && !isConfirmed && !bannerDismissed && (
+      {canEdit && showConfirmBanner && !isConfirmed && !bannerDismissed && (
         <ConfirmBanner
           regenerating={regenerating}
           onDismiss={onDismissBanner}
@@ -2124,7 +2147,7 @@ function ItineraryAccordion({
     <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
       <div className="flex w-full items-center justify-between gap-3 px-4 py-2.5">
         <button type="button" onClick={() => setExpanded((v) => !v)} className="text-left">
-          <h3 className="text-sm font-bold sm:text-base">{canEdit ? "ตารางแพลน" : "ตารางแพลนทั้งหมด"}</h3>
+          <h3 className="text-sm font-bold sm:text-base">ตารางแพลน</h3>
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {canEdit && (
@@ -2242,7 +2265,6 @@ function ItineraryAccordion({
                         activities={day.activities}
                         travelSegments={day.travelSegments}
                         showAutomaticTravel={autoTravelCalculationEnabled}
-                        canEdit={canEdit}
                         onEdit={(a) => onEditActivity(day.id, a)}
                         onDelete={(a) => onDeleteActivity(day.id, a.id)}
                         onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
@@ -2261,34 +2283,76 @@ function ItineraryAccordion({
       )}
 
       {expanded && !canEdit && (
-        <div className="grid grid-cols-1 gap-4 px-4 pb-4 md:grid-cols-3">
-          {trip.days.map((day) => (
-            <div key={day.id} className="flex flex-col overflow-hidden rounded-2xl bg-white">
+        <div className="flex flex-col gap-4 px-4 pb-5 pt-3">
+          {trip.days.length === 0 ? (
+            <p className="py-5 text-center text-sm text-[var(--color-muted)]">
+              ทริปนี้ยังไม่มีวันเดินทาง
+            </p>
+          ) : (
+            trip.days.map((day) => (
               <div
-                className="flex items-center justify-between px-4 py-3"
-                style={{ backgroundColor: "var(--color-sel-bg)" }}
+                key={day.id}
+                className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
+                style={{ borderColor: "#E6D9B8" }}
               >
-                <h4 className="text-sm font-bold">วันที่ {day.dayNumber}</h4>
-                <span className="text-xs font-semibold" style={{ color: "var(--color-brand-green)" }}>
-                  {formatTHB(getDayTotalCost(day))}
-                </span>
+                <div
+                  className={
+                    day.activities.length > 0
+                      ? "flex items-center justify-between gap-3 border-b pb-2.5"
+                      : "flex items-center justify-between gap-3"
+                  }
+                  style={day.activities.length > 0 ? { borderColor: "#E6D9B8" } : undefined}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <h4 className="text-sm font-bold text-[var(--color-brand-green)]">
+                      วันที่ {day.dayNumber}
+                    </h4>
+                    <span className="text-xs font-semibold text-[var(--color-muted)]">
+                      {dayDateLabel(day)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-[var(--color-muted)]">
+                    {day.activities.length} สถานที่
+                  </span>
+                </div>
+
+                {day.activities.length === 0 ? (
+                  <p className="py-2 text-sm text-[var(--color-muted)]">วันนี้ยังไม่มีสถานที่</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {day.activities.map((activity, index) => {
+                      const next = day.activities[index + 1];
+                      return (
+                        <div key={activity.id} className="flex flex-col gap-2">
+                          <ItineraryRow
+                            activity={activity}
+                            index={index + 1}
+                            canEdit={false}
+                            onEdit={() => undefined}
+                            onDelete={() => undefined}
+                          />
+                          {next && (
+                            <TravelConnectorRow
+                              fromTitle={activity.title}
+                              toActivity={next}
+                              travelSegment={
+                                autoTravelCalculationEnabled
+                                  ? visibleTravelSegment(day.travelSegments, activity, next)
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="flex flex-col gap-1 p-3">
-                {day.activities.map((a, i) => (
-                  <ItineraryRow
-                    key={a.id}
-                    activity={a}
-                    index={i + 1}
-                    canEdit={canEdit}
-                    onEdit={() => onEditActivity(day.id, a)}
-                    onDelete={() => onDeleteActivity(day.id, a.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       )}
+
     </div>
   );
 }
@@ -2314,7 +2378,6 @@ function SortableItineraryList({
   activities,
   travelSegments,
   showAutomaticTravel,
-  canEdit,
   onEdit,
   onDelete,
   onSaveTravel,
@@ -2324,7 +2387,6 @@ function SortableItineraryList({
   activities: Activity[];
   travelSegments?: TravelSegment[];
   showAutomaticTravel: boolean;
-  canEdit: boolean;
   onEdit: (activity: Activity) => void;
   onDelete: (activity: Activity) => void;
   onSaveTravel: (activityId: string, travel: TravelFromPrevious) => void;
@@ -2340,36 +2402,6 @@ function SortableItineraryList({
     const newIndex = activities.findIndex((a) => a.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     onReorder(arrayMove(activities, oldIndex, newIndex));
-  }
-
-  if (!canEdit) {
-    return (
-      <>
-        {activities.map((a, i) => {
-          const next = activities[i + 1];
-          return (
-            <div key={a.id}>
-              <ItineraryRow activity={a} index={i + 1} canEdit={canEdit} onEdit={() => onEdit(a)} onDelete={() => onDelete(a)} />
-              {next && (
-                <TravelConnectorRow
-                  fromTitle={a.title}
-                  toActivity={next}
-                  travelSegment={showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next) : undefined}
-                  canEdit={canEdit}
-                  onSave={(travel) => onSaveTravel(next.id, travel)}
-                  onDelete={() =>
-                    onDeleteTravel(
-                      next.id,
-                      showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next)?.id : undefined
-                    )
-                  }
-                />
-              )}
-            </div>
-          );
-        })}
-      </>
-    );
   }
 
   return (
@@ -2447,7 +2479,6 @@ function SortableItineraryEntry({
           fromTitle={activity.title}
           toActivity={next}
           travelSegment={travelSegment}
-          canEdit
           onSave={onSaveTravel}
           onDelete={onDeleteTravel}
         />
@@ -2618,7 +2649,7 @@ function PlanTab({
   }
 
   const day = trip.days[Math.min(dayIndex, trip.days.length - 1)];
-  const showAutomaticTravel = !canEdit || autoTravelCalculationEnabled;
+  const showAutomaticTravel = autoTravelCalculationEnabled;
 
   return (
     <div className="flex flex-col gap-6">
@@ -2701,16 +2732,18 @@ function PlanTab({
                             ? visibleTravelSegment(day.travelSegments, a, next)
                             : undefined
                         }
-                        canEdit={canEdit}
-                        onSave={(travel) => onUpdateActivityTravel(day.id, next.id, travel)}
-                        onDelete={() =>
-                          onDeleteActivityTravel(
-                            day.id,
-                            next.id,
-                            showAutomaticTravel
-                              ? visibleTravelSegment(day.travelSegments, a, next)?.id
-                              : undefined
-                          )
+                        onSave={canEdit ? (travel) => onUpdateActivityTravel(day.id, next.id, travel) : undefined}
+                        onDelete={
+                          canEdit
+                            ? () =>
+                                onDeleteActivityTravel(
+                                  day.id,
+                                  next.id,
+                                  showAutomaticTravel
+                                    ? visibleTravelSegment(day.travelSegments, a, next)?.id
+                                    : undefined
+                                )
+                            : undefined
                         }
                       />
                     )}
@@ -2737,6 +2770,10 @@ function PlanTab({
 
 // Itinerary row for the "ลำดับแพลน" list — always shows its thumbnail and
 // travel-note line inline, no expand/collapse interaction.
+// The "แพลนทริป" tab's stop card, per the supplied reference: photo and number
+// badge lead the row, the title carries a ย่อ/ดูละเอียด toggle, the meta line
+// is a bold time plus bordered pills, and the details that follow end in a
+// นำทาง call to action.
 function PlanActivityRow({
   activity,
   index,
@@ -2751,112 +2788,160 @@ function PlanActivityRow({
   onDelete: () => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const Icon = (activity.icon && ACTIVITY_ICON_OVERRIDE[activity.icon]) || categoryIcon[activity.category];
-  const color = categoryColorVar[activity.category];
+  // Open by default — the reference shows the expanded state, and a stop whose
+  // notes are hidden until a second tap reads as having none.
+  const [expanded, setExpanded] = useState(true);
   // Photos added via AddActivityDialog's "เพิ่มรูป" (activity.images) take
   // priority over the place's single stock photo — fall back to that, then
   // a generic placeholder, only when nothing was uploaded for this stop.
   const galleryImages = activity.images && activity.images.length > 0 ? activity.images : undefined;
   const imageUrl = galleryImages?.[0] ?? activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
   const isHighlight = activity.category === "sightseeing";
+  // travelNote ("เดิน ~8 นาที") and notes are both free-text description of
+  // this stop, so they read as one paragraph rather than two stacked lines —
+  // and one paragraph is also what line-clamp can actually clamp, which it
+  // cannot do across sibling elements.
+  const detailText = [activity.travelNote, activity.notes].filter(Boolean).join(" · ");
+  // Nothing to collapse when there is no description and no hotel button, so
+  // the toggle would promise a drawer that opens onto the นำทาง link alone.
+  const hasDetails = Boolean(detailText) || activity.category === "hotel";
 
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-white p-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-2">
+    <div className="rounded-2xl border bg-white p-2.5 sm:p-3" style={{ borderColor: "var(--color-border-tag)" }}>
+      <div className="flex items-start gap-2.5 sm:gap-3">
+        {/* Photo leads the row now (it used to trail it) and carries the stop
+            number, which was a separate green disc in the text column before —
+            two things competing to mark the same stop. */}
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          aria-label={`ดูรูปของ ${activity.title}`}
+          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl sm:h-16 sm:w-16"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
           <span
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
+            className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white sm:h-5 sm:w-5 sm:text-[10px]"
+            style={{ backgroundColor: "var(--foreground)" }}
           >
             {index}
           </span>
-          <Icon size={15} style={{ color }} className="mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-1.5">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <p className="min-w-0 break-words text-sm font-semibold">{activity.title}</p>
-                {isHighlight && (
-                  <span
-                    className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
-                    style={{ backgroundColor: "var(--color-accent-orange)" }}
-                  >
-                    สถานที่ห้ามพลาด
-                  </span>
-                )}
-              </div>
-              {canEdit && (
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={onEdit}
-                    className="rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)]"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onDelete}
-                    className="rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-semibold">
-              {activity.time && (
-                <span className="shrink-0" style={{ color: "var(--color-accent-orange)" }}>
-                  {activity.time}
-                </span>
-              )}
-              {/* travelNote and cost are independent facts (how to get here vs.
-                  what it costs) — shown together instead of either/or, which
-                  used to silently drop the cost whenever a travel note was set.
-                  Time is optional (see AddActivityDialog) — only lead with "· "
-                  when something actually precedes this piece. */}
-              {activity.travelNote && (
-                <span className="font-semibold text-[var(--color-muted)]">
-                  {activity.time && "· "}
-                  {activity.travelNote}
-                </span>
-              )}
-              {activity.cost > 0 && (
-                <span className="shrink-0 font-semibold text-[var(--color-muted)]">
-                  {(activity.time || activity.travelNote) && "· "}
-                  {formatTHB(activity.cost)}
+          {galleryImages && galleryImages.length > 1 ? (
+            <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              +{galleryImages.length - 1}
+            </span>
+          ) : (
+            <span className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 sm:h-5 sm:w-5">
+              <Maximize2 size={10} />
+            </span>
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className="min-w-0 break-words text-sm font-bold sm:text-[15px]">{activity.title}</p>
+              {isHighlight && (
+                <span
+                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white sm:px-2 sm:text-[10px]"
+                  style={{ backgroundColor: "var(--color-accent-orange)" }}
+                >
+                  สถานที่ห้ามพลาด
                 </span>
               )}
             </div>
-            {activity.notes && (
-              <p className="mt-1 break-words text-xs font-normal text-[var(--color-muted)]">{activity.notes}</p>
-            )}
-            {activity.category === "hotel" && (
-              <HotelBookingButton
-                name={activity.location?.name ?? activity.title}
-                className="mt-1.5 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold"
-              />
+            {hasDetails && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                aria-expanded={expanded}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold sm:px-3 sm:py-1.5 sm:text-xs"
+                style={{ backgroundColor: "#FAF8F5", color: "var(--foreground)" }}
+              >
+                {expanded ? "ย่อละเอียด" : "ดูละเอียด"}
+                {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
             )}
           </div>
+
+          {/* Only fixed-width facts stay pills. travelNote used to be one too,
+              but it is free text: a long one blew straight through the card
+              because the pill was shrink-0, so it now joins the detail text
+              below where it can wrap. Cost is always short, so it keeps its. */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {activity.time && (
+              <span className="shrink-0 text-xs font-bold sm:text-sm" style={{ color: "var(--color-accent-orange)" }}>
+                {formatTimeDisplay(activity.time)}
+              </span>
+            )}
+            {activity.cost > 0 && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold text-[var(--color-muted)] sm:px-2.5 sm:py-1 sm:text-xs"
+                style={{ borderColor: "var(--color-border-tag)" }}
+              >
+                <CircleDollarSign size={12} />
+                {formatTHB(activity.cost)}
+              </span>
+            )}
+          </div>
+
+          {/* Always rendered, clamped to two lines while collapsed rather than
+              hidden — a stop whose description only appears after a second tap
+              reads as having none. min-w-0 + break-words is what actually keeps
+              a long unbroken string inside the card; line-clamp alone doesn't
+              stop horizontal overflow. */}
+          {detailText && (
+            <p
+              className={`mt-1.5 min-w-0 break-words text-xs leading-relaxed text-[var(--color-muted)] sm:text-sm ${
+                expanded ? "" : "line-clamp-2"
+              }`}
+            >
+              {detailText}
+            </p>
+          )}
+
+          {expanded && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+                <ResolvedNavigationLink
+                  activity={activity}
+                  className="inline-flex items-center gap-1 rounded-full border border-transparent px-2 py-1 text-[10px] font-bold leading-4 text-white sm:px-2.5 sm:text-[11px]"
+                >
+                  <Navigation size={11} />
+                  นำทาง
+                </ResolvedNavigationLink>
+                {activity.category === "hotel" && (
+                  <HotelBookingButton
+                    name={activity.location?.name ?? activity.title}
+                    className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold leading-4 sm:px-2.5 sm:text-[11px]"
+                  />
+                )}
+                {/* Not in the reference, which shows นำทาง alone. Kept because
+                    dropping them would leave this tab with no way to change a
+                    stop at all — say the word and they go. */}
+                {canEdit && (
+                  <span className="ml-auto flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={onEdit}
+                      aria-label={`แก้ไข ${activity.title}`}
+                      className="rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-sel-bg)] hover:text-[var(--color-brand-green)] sm:p-1.5"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onDelete}
+                      aria-label={`ลบ ${activity.title}`}
+                      className="rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)] sm:p-1.5"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </span>
+                )}
+            </div>
+          )}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setLightboxOpen(true)}
-        className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-        {galleryImages && galleryImages.length > 1 ? (
-          <span className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
-            +{galleryImages.length - 1}
-          </span>
-        ) : (
-          <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90">
-            <Maximize2 size={10} />
-          </span>
-        )}
-      </button>
 
       {lightboxOpen && (
         <ImageLightbox
@@ -2866,6 +2951,72 @@ function PlanActivityRow({
         />
       )}
     </div>
+  );
+}
+
+// Resolves legacy/generated activities to the places-table UUID only after
+// the user asks to navigate, then replaces the fallback Maps search tab with
+// Google's canonical place URI. Opening the fallback tab synchronously keeps
+// the action inside the click gesture so browser popup blockers do not eat it.
+function ResolvedNavigationLink({
+  activity,
+  className,
+  children,
+}: {
+  activity: Activity;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [resolving, setResolving] = useState(false);
+  const placeName = activity.location?.name || activity.title;
+  // A coordinate-only fallback makes Google Maps show a raw pin (and its
+  // plus code) instead of the business profile. Searching by name is a useful
+  // destination even if the canonical URI lookup below fails.
+  const fallbackUrl = getGoogleMapsUrl({ name: placeName });
+
+  async function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (resolving) {
+      event.preventDefault();
+      return;
+    }
+
+    const navigationWindow = window.open(fallbackUrl, "_blank");
+    if (!navigationWindow) return;
+
+    event.preventDefault();
+    navigationWindow.opener = null;
+    setResolving(true);
+
+    try {
+      const details = await fetchResolvedPlaceFullDetails(
+        activity.location?.googlePlaceId,
+        placeName
+      );
+      // Assigning href is permitted on a cross-origin WindowProxy; calling
+      // location.replace() after the fallback tab reaches maps.google.com is
+      // not, which left users stuck on the raw-coordinate page.
+      if (details.googleMapsUri) navigationWindow.location.href = details.googleMapsUri;
+    } catch {
+      // The fallback search page is already open; leave it in place when the
+      // detail lookup is unavailable rather than turning navigation into an
+      // error state.
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  return (
+    <a
+      href={fallbackUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={handleClick}
+      aria-busy={resolving}
+      className={className}
+      style={{ backgroundColor: "var(--color-accent-orange)" }}
+    >
+      {resolving ? <LoaderCircle size={11} className="animate-spin" /> : children}
+    </a>
   );
 }
 
@@ -2964,6 +3115,7 @@ const MAP_PIN_POSITIONS = [
 function TripMapPanel({ day }: { day: Day }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = day.activities.find((a) => a.id === selectedId);
+  const selectedIndex = selected ? day.activities.findIndex((a) => a.id === selected.id) : -1;
 
   return (
     // overflow-hidden lives on the background wrapper below, not this outer
@@ -2987,9 +3139,9 @@ function TripMapPanel({ day }: { day: Day }) {
         const isSelected = selectedId === a.id;
         const xPercent = parseFloat(pos.x);
         const openBelow = parseFloat(pos.y) < 45;
-        // Near an edge, anchor to that side of the pin instead of centering —
-        // the 256px popup on a pin at 82% would otherwise hang off the map
-        // panel (and viewport) on the right.
+        // Near an edge, anchor to that side of the pin instead of centering.
+        // On phones PlacePopup becomes a centered dialog, so these anchors
+        // only apply from the sm breakpoint upward.
         const horizontalAlign = xPercent > 65 ? "right" : xPercent < 25 ? "left" : "center";
         return (
         <div
@@ -2998,12 +3150,16 @@ function TripMapPanel({ day }: { day: Day }) {
           style={{ left: pos.x, top: pos.y }}
         >
           {selected && isSelected && (
-            <PlacePopup
-              activity={selected}
-              onClose={() => setSelectedId(null)}
-              openBelow={openBelow}
-              horizontalAlign={horizontalAlign}
-            />
+            <div className="hidden sm:block">
+              <PlacePopup
+                key={selected.id}
+                activity={selected}
+                index={i + 1}
+                onClose={() => setSelectedId(null)}
+                openBelow={openBelow}
+                horizontalAlign={horizontalAlign}
+              />
+            </div>
           )}
           <button
             type="button"
@@ -3016,6 +3172,23 @@ function TripMapPanel({ day }: { day: Day }) {
         </div>
         );
       })}
+
+      {selected && selectedIndex >= 0 && (
+        <div className="sm:hidden">
+          <button
+            type="button"
+            aria-label="ปิดข้อมูลสถานที่"
+            onClick={() => setSelectedId(null)}
+            className="fixed inset-0 z-10 bg-black/25"
+          />
+          <PlacePopup
+            key={selected.id}
+            activity={selected}
+            index={selectedIndex + 1}
+            onClose={() => setSelectedId(null)}
+          />
+        </div>
+      )}
 
       <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
         <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
@@ -3032,66 +3205,347 @@ function TripMapPanel({ day }: { day: Day }) {
   );
 }
 
+const PLACE_DETAIL_TABS = [
+  { key: "about", label: "เกี่ยวกับ" },
+  { key: "booking", label: "จอง" },
+  { key: "reviews", label: "รีวิว" },
+  { key: "photos", label: "รูปภาพ" },
+  { key: "mentions", label: "การกล่าวถึง" },
+] as const;
+type PlaceDetailTab = (typeof PLACE_DETAIL_TABS)[number]["key"];
+
+const PRICE_LEVEL_LABEL: Record<string, string> = {
+  PRICE_LEVEL_FREE: "ฟรี",
+  PRICE_LEVEL_INEXPENSIVE: "ราคาประหยัด",
+  PRICE_LEVEL_MODERATE: "ราคาปานกลาง",
+  PRICE_LEVEL_EXPENSIVE: "ราคาสูง",
+  PRICE_LEVEL_VERY_EXPENSIVE: "ราคาสูงมาก",
+};
+
 function PlacePopup({
   activity,
+  index,
   onClose,
   openBelow,
   horizontalAlign = "center",
 }: {
   activity: Activity;
+  index: number;
   onClose: () => void;
   openBelow?: boolean;
   horizontalAlign?: "left" | "center" | "right";
 }) {
-  const name = activity.location?.name ?? activity.title;
-  const rating = activity.location?.rating ?? 4.7;
-  const imageUrl = activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
+  const placeId = activity.location?.googlePlaceId;
+  const [details, setDetails] = useState<PlaceFullDetails | null>(null);
+  const [detailsStatus, setDetailsStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [activeTab, setActiveTab] = useState<PlaceDetailTab>("about");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const fallbackName = activity.location?.name || activity.title;
+
+    fetchResolvedPlaceFullDetails(placeId, fallbackName, controller.signal)
+      .then((payload) => {
+        if (cancelled) return;
+        setDetails(payload);
+        setDetailsStatus("loaded");
+      })
+      .catch((error: unknown) => {
+        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) return;
+        setDetailsStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [activity.location?.name, activity.title, loadAttempt, placeId]);
+
+  const name = details?.name || activity.location?.name || activity.title;
+  const rating = details?.rating ?? activity.location?.rating;
+  const description = details?.editorialSummary || activity.notes || activity.travelNote;
+  const CategoryIcon = categoryIcon[activity.category];
+  const categoryName = details?.primaryTypeDisplayName || categoryLabel[activity.category];
+  const openingHours =
+    details?.currentOpeningHours?.weekdayDescriptions.length
+      ? details.currentOpeningHours.weekdayDescriptions
+      : details?.regularOpeningHours?.weekdayDescriptions ?? [];
+  const openNow = details?.currentOpeningHours?.openNow ?? details?.regularOpeningHours?.openNow;
+  const phone = details?.internationalPhoneNumber || details?.nationalPhoneNumber;
+  const telPhone = details?.internationalPhoneNumber || details?.nationalPhoneNumber;
+  const photos = details?.photos.length
+    ? details.photos
+    : activity.images?.length
+      ? activity.images
+      : activity.location?.imageUrl
+        ? [activity.location.imageUrl]
+        : [];
+  const mapsUrl = details?.googleMapsUri || getGoogleMapsUrl(activity.location ?? { name: activity.title });
 
   const horizontalClass =
-    horizontalAlign === "right" ? "right-0" : horizontalAlign === "left" ? "left-0" : "left-1/2 -translate-x-1/2";
+    horizontalAlign === "right"
+      ? "sm:right-0 sm:left-auto"
+      : horizontalAlign === "left"
+        ? "sm:left-0 sm:right-auto"
+        : "sm:left-1/2 sm:right-auto sm:-translate-x-1/2";
+  const verticalClass = openBelow
+    ? "sm:top-full sm:bottom-auto sm:mt-2"
+    : "sm:top-auto sm:bottom-full sm:mb-2";
 
   return (
     <div
-      className={`absolute z-20 w-56 overflow-hidden rounded-2xl bg-white shadow-xl sm:w-64 ${horizontalClass} ${
-        openBelow ? "top-full mt-2" : "bottom-full mb-2"
-      }`}
+      role="dialog"
+      aria-label={`ข้อมูลสถานที่ ${name}`}
+      className={`fixed inset-x-4 top-1/2 z-20 max-h-[calc(100dvh-2rem)] -translate-y-1/2 overflow-y-auto rounded-3xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:max-h-none sm:w-[min(34rem,calc(100vw-2rem))] sm:translate-y-0 ${horizontalClass} ${verticalClass}`}
+      style={{ borderColor: "var(--color-border-tag)" }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="relative h-28 w-full">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-md"
-        >
-          <Bookmark size={13} style={{ color: "var(--color-brand-green)" }} />
-        </button>
-      </div>
-      <div className="flex flex-col gap-2 p-3">
-        <p className="truncate text-sm font-bold">{name}</p>
-        <p className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-          <Star size={12} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
-          {rating.toFixed(1)}
-          {activity.travelNote && <> · {activity.travelNote}</>}
-          {activity.cost > 0 && <> · {formatTHB(activity.cost)}</>}
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="flex-1 rounded-full border border-[var(--color-border)]/40 py-2 text-xs font-semibold"
-          >
-            รายละเอียดสถานที่
-          </button>
-          <a
-            href={getGoogleMapsUrl(activity.location ?? { name: activity.title })}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-1 items-center justify-center gap-1 rounded-full py-2 text-xs font-semibold text-white"
+      <div className="relative overflow-hidden px-4 pb-5 pt-4 sm:px-5 sm:pt-5" style={{ backgroundColor: "var(--color-sel-bg)" }}>
+        <span className="absolute -right-7 -top-8 h-24 w-24 rounded-full bg-white/40" aria-hidden="true" />
+        <span className="absolute -bottom-9 right-16 h-16 w-16 rounded-full bg-[var(--color-accent-mint)]/10" aria-hidden="true" />
+
+        <div className="relative flex items-start gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-extrabold text-white shadow-sm"
             style={{ backgroundColor: "var(--color-brand-green)" }}
           >
-            <Navigation size={12} />
-            นำทาง
+            {index}
+          </span>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-brand-green)] sm:text-[11px]">
+              จุดหมายในแผนของคุณ
+            </p>
+            <h4 className="mt-0.5 min-w-0 break-words text-base font-extrabold leading-6 sm:text-lg">{name}</h4>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิดข้อมูลสถานที่"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] shadow-sm transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
+            style={{ borderColor: "var(--color-sel-border)" }}
+          >
+            <X size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+      </div>
+
+      <div className="-mt-3 px-3 sm:px-4">
+        <div className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto rounded-full border bg-white p-1.5 shadow-md" style={{ borderColor: "var(--color-border-tag)" }}>
+          {PLACE_DETAIL_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              aria-pressed={activeTab === tab.key}
+              className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold transition sm:px-3.5 sm:text-xs"
+              style={
+                activeTab === tab.key
+                  ? { backgroundColor: "var(--color-brand-green)", color: "white" }
+                  : { color: "var(--color-muted)" }
+              }
+            >
+              {tab.label}
+              {tab.key === "reviews" && details?.reviews.length ? ` (${details.reviews.length})` : ""}
+              {tab.key === "photos" && photos.length ? ` (${photos.length})` : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
+        {detailsStatus === "loading" && (
+          <div className="mb-3 flex items-center gap-2 rounded-2xl bg-[var(--color-sel-bg)] px-3 py-2 text-xs font-semibold text-[var(--color-brand-green)]">
+            <LoaderCircle size={14} className="animate-spin" />
+            กำลังโหลดข้อมูลสถานที่ล่าสุด…
+          </div>
+        )}
+
+        {detailsStatus === "error" && (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)]">
+            <span>โหลดข้อมูลเต็มไม่สำเร็จ กำลังแสดงข้อมูลจากแผนแทน</span>
+            <button
+              type="button"
+              onClick={() => {
+                setDetailsStatus("loading");
+                setLoadAttempt((attempt) => attempt + 1);
+              }}
+              className="shrink-0 rounded-full border border-[var(--color-danger-border)] bg-white px-2.5 py-1 font-bold"
+            >
+              ลองใหม่
+            </button>
+          </div>
+        )}
+
+        {activeTab === "about" && (
+          <div>
+            <div className="flex items-start gap-3">
+              {description ? (
+                <p className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--foreground)] sm:text-sm sm:leading-6">
+                  {description}
+                </p>
+              ) : (
+                <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)] sm:text-sm">ยังไม่มีคำอธิบายสำหรับสถานที่นี้</p>
+              )}
+              {photos[0] && (
+                <div className="h-16 w-20 shrink-0 overflow-hidden rounded-2xl bg-[var(--color-sel-bg)] sm:h-20 sm:w-24">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photos[0]} alt={name} className="h-full w-full object-cover" />
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold sm:text-xs"
+                style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+              >
+                <CategoryIcon size={12} />
+                {categoryName}
+              </span>
+              {rating != null && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#FDF0E7] px-2.5 py-1 text-[10px] font-bold text-[var(--color-accent-orange)] sm:text-xs">
+                  <Star size={14} fill="currentColor" />
+                  {rating.toFixed(1)}
+                  {details?.userRatingCount != null && (
+                    <span className="font-medium text-[var(--color-muted)]">
+                      ({details.userRatingCount.toLocaleString("th-TH")})
+                    </span>
+                  )}
+                </span>
+              )}
+              {details?.priceLevel && PRICE_LEVEL_LABEL[details.priceLevel] && (
+                <span className="rounded-full border px-2.5 py-1 text-[10px] font-semibold text-[var(--color-muted)] sm:text-xs" style={{ borderColor: "var(--color-border-tag)" }}>
+                  {PRICE_LEVEL_LABEL[details.priceLevel]}
+                </span>
+              )}
+              {activity.cost > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold text-[var(--color-muted)] sm:text-xs" style={{ borderColor: "var(--color-border-tag)" }}>
+                  <CircleDollarSign size={12} />
+                  {formatTHB(activity.cost)}
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 grid gap-2 text-xs text-[var(--color-muted)] sm:text-sm">
+              {openNow != null && (
+                <p className="flex items-start gap-2">
+                  <Clock size={14} className="mt-0.5 shrink-0" />
+                  <span className={openNow ? "font-bold text-[var(--color-brand-green)]" : "font-bold text-[var(--color-danger)]"}>
+                    {openNow ? "เปิดอยู่ตอนนี้" : "ปิดอยู่ตอนนี้"}
+                  </span>
+                </p>
+              )}
+              {details?.address && (
+                <p className="flex items-start gap-2">
+                  <MapPin size={14} className="mt-0.5 shrink-0" />
+                  <span>{details.address}</span>
+                </p>
+              )}
+              {phone && telPhone && (
+                <a href={`tel:${telPhone}`} className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
+                  <Phone size={14} className="mt-0.5 shrink-0" />
+                  <span>{phone}</span>
+                </a>
+              )}
+              {details?.websiteUri && (
+                <a href={details.websiteUri} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
+                  <Globe2 size={14} className="mt-0.5 shrink-0" />
+                  <span className="truncate">เว็บไซต์ของสถานที่</span>
+                </a>
+              )}
+            </div>
+
+            {openingHours.length > 0 && (
+              <details className="mt-3 rounded-2xl bg-[var(--color-page-cream)] px-3 py-2 text-xs">
+                <summary className="cursor-pointer font-bold text-[var(--color-brand-green)]">ดูเวลาเปิด–ปิดทั้งหมด</summary>
+                <div className="mt-2 grid gap-1 text-[var(--color-muted)]">
+                  {openingHours.map((line) => <p key={line}>{line}</p>)}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {activeTab === "booking" && (
+          <div className="rounded-2xl bg-[var(--color-page-cream)] p-3 text-xs sm:text-sm">
+            <p className="font-bold text-[var(--color-brand-green)]">ข้อมูลการจอง</p>
+            <p className="mt-1 text-[var(--color-muted)]">ตรวจสอบราคา เวลาให้บริการ หรือช่องทางจองจากเว็บไซต์ของสถานที่</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {details?.websiteUri && (
+                <a href={details.websiteUri} target="_blank" rel="noopener noreferrer" className="rounded-full bg-[var(--color-brand-green)] px-3 py-1.5 text-xs font-bold text-white">
+                  ไปที่เว็บไซต์
+                </a>
+              )}
+              {activity.category === "hotel" && <HotelBookingButton name={name} className="rounded-full border px-3 py-1.5 text-xs font-bold" />}
+              {!details?.websiteUri && activity.category !== "hotel" && (
+                <span className="text-[var(--color-muted)]">ยังไม่มีข้อมูลการจองสำหรับสถานที่นี้</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "reviews" && (
+          <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
+            {details?.reviews.length ? details.reviews.map((review, reviewIndex) => (
+              <article key={`${review.authorName}-${review.publishTime ?? reviewIndex}`} className="rounded-2xl border p-3" style={{ borderColor: "var(--color-border-tag)" }}>
+                <div className="flex items-center gap-2">
+                  {review.authorPhotoUri ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={review.authorPhotoUri} alt="" className="h-8 w-8 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-sel-bg)] text-xs font-bold text-[var(--color-brand-green)]">{review.authorName.slice(0, 1)}</span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold">{review.authorName}</p>
+                    <p className="flex items-center gap-1 text-[10px] text-[var(--color-muted)]">
+                      <Star size={10} fill="currentColor" className="text-[var(--color-accent-orange)]" />
+                      {review.rating.toFixed(1)}
+                      {review.relativePublishTimeDescription && <> · {review.relativePublishTimeDescription}</>}
+                    </p>
+                  </div>
+                </div>
+                {review.text && <p className="mt-2 text-xs leading-5 text-[var(--color-muted)]">{review.text}</p>}
+              </article>
+            )) : (
+              <p className="rounded-2xl bg-[var(--color-page-cream)] p-4 text-center text-xs text-[var(--color-muted)]">ยังไม่มีรีวิวที่แสดงได้</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === "photos" && (
+          photos.length ? (
+            <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+              {photos.map((src, photoIndex) => (
+                <div key={`${src}-${photoIndex}`} className="aspect-square overflow-hidden rounded-2xl bg-[var(--color-sel-bg)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`${name} รูปที่ ${photoIndex + 1}`} className="h-full w-full object-cover" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-2xl bg-[var(--color-page-cream)] p-4 text-center text-xs text-[var(--color-muted)]">ยังไม่มีรูปภาพของสถานที่นี้</p>
+          )
+        )}
+
+        {activeTab === "mentions" && (
+          <div className="rounded-2xl bg-[var(--color-page-cream)] p-3 text-xs leading-5 text-[var(--color-muted)] sm:text-sm">
+            {activity.notes || activity.travelNote || "ยังไม่มีการกล่าวถึงเพิ่มเติมในแผนนี้"}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center gap-2 border-t pt-3" style={{ borderColor: "var(--color-border-tag)" }}>
+          <span className="hidden text-[11px] text-[var(--color-muted)] sm:inline">ดูตำแหน่งและเส้นทาง</span>
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            <Navigation size={13} />
+            เปิดใน Google Maps
           </a>
         </div>
       </div>

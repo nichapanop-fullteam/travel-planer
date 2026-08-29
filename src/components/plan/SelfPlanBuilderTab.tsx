@@ -2405,15 +2405,13 @@ export function TravelConnectorRow({
   fromTitle,
   toActivity,
   travelSegment,
-  canEdit,
   onSave,
   onDelete,
 }: {
   fromTitle: string;
   toActivity: Activity;
   travelSegment?: TravelSegment;
-  canEdit: boolean;
-  onSave: (travel: TravelFromPrevious) => void;
+  onSave?: (travel: TravelFromPrevious) => void;
   onDelete?: () => Promise<void>;
 }) {
   const [showDialog, setShowDialog] = useState(false);
@@ -2448,7 +2446,6 @@ export function TravelConnectorRow({
   // Read-only: nothing to add, so hide the placeholder prompt entirely; an
   // already-attached leg still shows (travelers should be able to see how
   // they get between stops) but as plain text, not a clickable edit target.
-  if (!canEdit && !travel && !travelSegment) return null;
 
   const content =
     travel && TypeIcon && travelLabel ? (
@@ -2491,6 +2488,11 @@ export function TravelConnectorRow({
     }
   }
 
+  // Read-only plan cards must not leave an orphaned green connector between
+  // places when there is no travel data to display. In edit mode `onSave` is
+  // present, so the connector remains visible as the “เพิ่มการเดินทาง” action.
+  if (!onSave && !travel && !travelSegment) return null;
+
   return (
     <>
       <div className="flex min-h-11 items-stretch gap-1.5 py-1">
@@ -2504,7 +2506,7 @@ export function TravelConnectorRow({
             style={{ backgroundColor: "var(--color-brand-green)" }}
           />
         </div>
-        {canEdit ? (travel || travelSegment) && onDelete ? (
+        {(travel || travelSegment) && onDelete ? (
           <div
             className="my-auto flex min-h-8 min-w-0 flex-1 items-center rounded-full border border-dashed pl-3 pr-1"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
@@ -2526,7 +2528,7 @@ export function TravelConnectorRow({
               <Trash2 size={13} />
             </button>
           </div>
-        ) : (
+        ) : onSave ? (
           <button
             type="button"
             onClick={() => setShowDialog(true)}
@@ -2536,17 +2538,17 @@ export function TravelConnectorRow({
           >
             {content}
           </button>
-        ) : (
+        ) : travel || travelSegment ? (
           <div
-            className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-[10px] font-semibold"
+            className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
           >
             {content}
           </div>
-        )}
+        ) : null}
       </div>
 
-      {showDialog && (
+      {showDialog && onSave && (
         <TravelLegDialog
           fromTitle={fromTitle}
           destinationTitle={toActivity.title}

@@ -28,7 +28,6 @@ import type { ExpenseCategory, GeneratedTrip } from "@/types";
 import { ACTIVITY_TO_EXPENSE_CATEGORY } from "@/lib/expense-styles";
 import { formatExpenseDate } from "@/lib/trip-expenses";
 import { formatTHB } from "@/lib/trip-utils";
-import { getTripDrafts } from "@/lib/trip-drafts";
 import { updateTripItemOnServer, updateTripOnServer } from "@/lib/trips-update-api";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
 import {
@@ -99,7 +98,14 @@ const CATEGORY_TO_BUCKET: Record<BackendExpenseCategory, BudgetBucket> = {
 // Sidebar.tsx, since there's no multi-user backend to back them yet.
 const DEMO_DISABLED_TITLE = "ยังไม่เปิดใช้งานในเดโมนี้";
 
-export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: (patch: Partial<GeneratedTrip>) => void }) {
+export function BudgetManagementPanel({
+  trip,
+  readOnly = false,
+}: {
+  trip: GeneratedTrip;
+  onPatch: (patch: Partial<GeneratedTrip>) => void;
+  readOnly?: boolean;
+}) {
   const { backendUser, isLoading: authLoading } = useAuth();
   const [budget, setBudget] = useState<TripBudget | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -109,13 +115,6 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
   // once "เพิ่มค่าใช้จ่าย" actually succeeds (see the onSaved handler below).
   const [expenseDraft, setExpenseDraft] = useState<DraftExpenseItem[]>(() => [emptyDraftItem()]);
   const [goalOpen, setGoalOpen] = useState(false);
-  // "ค่าใช้จ่ายต่อคน" toggle — divides every amount below by the traveler
-  // count. GeneratedTrip carries no traveler count of its own (see
-  // types/index.ts), so this falls back to the TripDraft this trip was
-  // generated from (adults+children); a trip with no matching draft (e.g.
-  // loaded straight from a shared link) just shows 1-person amounts, same as
-  // the toggle being off.
-  const [perPerson, setPerPerson] = useState(false);
 
   const canUseBudget = Boolean(backendUser) && Boolean(trip.backendSynced);
 
@@ -213,10 +212,6 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
     return { bucket, label: BUCKET_LABEL[bucket], color: BUCKET_COLOR[bucket], amount, percentage: total > 0 ? Math.round((amount / total) * 100) : 0 };
   });
 
-  const travelerCount = getTravelerCount(trip);
-  const per = (amount: number) => (perPerson ? Math.round(amount / travelerCount) : amount);
-  const perSuffix = perPerson ? " / ต่อคน" : "";
-
   const unassignedTotal = items.filter((i) => i.dayNumber == null).reduce((sum, i) => sum + i.amount, 0);
   const itemsByDayNumber = new Map<number, TripBudgetLineItem[]>();
   for (const item of items) {
@@ -240,73 +235,74 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-xl font-extrabold sm:text-2xl">สรุปงบ</h2>
-          <button
-            type="button"
-            onClick={() => setPerPerson((v) => !v)}
-            className="rounded-full border px-4 py-1.5 text-xs font-semibold sm:text-sm"
-            style={
-              perPerson
-                ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }
-                : { borderColor: "var(--color-border)" }
-            }
+          <h2 className="text-xl font-bold">สรุปงบ</h2>
+          {/* Every figure in this panel is per person — amounts are entered
+              and stored per person, so there is no whole-trip mode to switch
+              to. The badge states that instead of offering a toggle. */}
+          <span
+            className="rounded-full border px-3 py-1 text-xs font-semibold"
+            style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}
           >
             ค่าใช้จ่ายต่อคน
-          </button>
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             title={DEMO_DISABLED_TITLE}
-            className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-sm font-semibold opacity-70"
+            className="flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold opacity-70"
             style={{ borderColor: "var(--color-border)" }}
           >
-            <Share2 size={14} /> แชร์
+            <Share2 size={12} /> แชร์
           </button>
-          <span className="h-6 w-px" style={{ backgroundColor: "var(--color-border)" }} />
-          <button
-            type="button"
-            onClick={() => setGoalOpen(true)}
-            className="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
-            style={{ backgroundColor: "var(--color-accent-orange)" }}
-          >
-            <Pencil size={14} /> แก้ไขงบ
-          </button>
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
-          >
-            <Plus size={14} /> เพิ่มค่าใช้จ่าย
-          </button>
+          {!readOnly && (
+            <>
+              <span className="h-5 w-px" style={{ backgroundColor: "var(--color-border)" }} />
+              <button
+                type="button"
+                onClick={() => setGoalOpen(true)}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-accent-orange)" }}
+              >
+                <Pencil size={12} /> แก้ไขงบ
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-brand-green)" }}
+              >
+                <Plus size={12} /> เพิ่มค่าใช้จ่าย
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-[20px] p-4 sm:p-5" style={{ backgroundColor: "#f7f6f0" }}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="flex min-h-[112px] flex-col items-center justify-center rounded-2xl p-4 text-center text-white sm:p-5" style={{ backgroundColor: "#306b50" }}>
-            <p className="text-xs font-semibold text-white/80 sm:text-sm">รวมงบที่ใช้ไป{perSuffix}</p>
-            <p className="mt-1.5 text-2xl font-extrabold sm:text-3xl">{formatTHB(per(total))}</p>
+      <div className="flex flex-col gap-2.5 rounded-2xl p-3 sm:p-4" style={{ backgroundColor: "#f7f6f0" }}>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div className="flex min-h-[80px] flex-col items-center justify-center rounded-2xl p-3 text-center text-white sm:p-3.5" style={{ backgroundColor: "#306b50" }}>
+            <p className="text-[11px] font-semibold text-white/80">รวมงบที่ใช้ไป / ต่อคน</p>
+            <p className="mt-1 text-lg font-extrabold sm:text-xl">{formatTHB(total)}</p>
           </div>
 
-          <div className="flex min-h-[112px] flex-col items-center justify-center rounded-2xl bg-white p-4 text-center sm:p-5">
-            <p className="text-xs font-semibold text-[var(--color-muted)] sm:text-sm">งบที่ตั้งเอาไว้{perSuffix}</p>
-            <p className="mt-1.5 text-2xl font-extrabold sm:text-3xl" style={goal === undefined ? { color: "var(--color-muted)" } : undefined}>
-              {goal !== undefined ? formatTHB(per(goal)) : "ยังไม่ได้ตั้งงบ"}
+          <div className="flex min-h-[80px] flex-col items-center justify-center rounded-2xl bg-white p-3 text-center sm:p-3.5">
+            <p className="text-[11px] font-semibold text-[var(--color-muted)]">งบที่ตั้งเอาไว้ / ต่อคน</p>
+            <p className="mt-1 text-lg font-extrabold sm:text-xl" style={goal === undefined ? { color: "var(--color-muted)" } : undefined}>
+              {goal !== undefined ? formatTHB(goal) : "ยังไม่ได้ตั้งงบ"}
             </p>
           </div>
 
-          <div className="flex min-h-[112px] flex-col justify-center rounded-2xl bg-white p-4 sm:p-5">
+          <div className="flex min-h-[80px] flex-col justify-center rounded-2xl bg-white p-3 sm:p-3.5">
             {remaining !== undefined ? (
               <>
-                <p className="text-xs font-semibold sm:text-sm" style={remaining < 0 ? { color: "var(--color-danger)" } : undefined}>
-                  {remaining >= 0 ? `เหลือ ${formatTHB(per(remaining))} จะเท่างบ` : `เกินงบไป ${formatTHB(per(-remaining))}`}
+                <p className="text-xs font-semibold" style={remaining < 0 ? { color: "var(--color-danger)" } : undefined}>
+                  {remaining >= 0 ? `เหลือ ${formatTHB(remaining)} จะเท่างบ` : `เกินงบไป ${formatTHB(-remaining)}`}
                 </p>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "var(--color-border)" }}>
+                <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: "var(--color-border)" }}>
                   <div
                     className="h-full rounded-full transition-all"
                     style={{ width: `${spentPercent}%`, backgroundColor: remaining >= 0 ? "var(--color-accent-mint)" : "var(--color-danger)" }}
@@ -314,32 +310,32 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
                 </div>
               </>
             ) : (
-              <p className="text-sm text-[var(--color-muted)]">ยังไม่ได้ตั้งงบ</p>
+              <p className="text-xs text-[var(--color-muted)]">ยังไม่ได้ตั้งงบ</p>
             )}
           </div>
         </div>
 
         {breakdown.length > 0 && (
-          <div className="rounded-2xl border bg-white p-4 sm:p-5" style={{ borderColor: "#e5dfd0" }}>
+          <div className="rounded-2xl border bg-white p-3.5 sm:p-4" style={{ borderColor: "#e5dfd0" }}>
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-bold sm:text-base">สัดส่วนค่าใช้จ่าย{perSuffix}</h3>
+              <h3 className="text-sm font-bold sm:text-base">สัดส่วนค่าใช้จ่าย / ต่อคน</h3>
               <span className="text-xs text-[var(--color-muted)]">{items.length} รายการ</span>
             </div>
 
-            <div className="mt-3 flex h-2.5 w-full gap-1 overflow-hidden rounded-full">
+            <div className="mt-2.5 flex h-2 w-full gap-1 overflow-hidden rounded-full">
               {breakdown.map((b) => (
                 <div key={b.bucket} style={{ width: `${b.percentage}%`, backgroundColor: b.color }} />
               ))}
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3 lg:grid-cols-5">
               {breakdown.map((b) => (
                 <div key={b.bucket}>
                   <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-muted)]">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
                     {b.label}
                   </p>
-                  <p className="mt-1 text-sm font-extrabold">{formatTHB(per(b.amount))}</p>
+                  <p className="mt-1 text-sm font-extrabold">{formatTHB(b.amount)}</p>
                 </div>
               ))}
             </div>
@@ -352,20 +348,18 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
           <DayAccordionRow
             key={day.id}
             label={`วันที่ ${day.dayNumber}`}
-            amount={per(amountByDayId.get(day.id) ?? 0)}
+            amount={amountByDayId.get(day.id) ?? 0}
             items={itemsByDayNumber.get(day.dayNumber) ?? []}
-            amountDivisor={perPerson ? travelerCount : 1}
             defaultOpen={day.dayNumber === 1}
-            onDeleteItem={deleteLineItem}
+            onDeleteItem={readOnly ? undefined : deleteLineItem}
           />
         ))}
         {unassignedTotal > 0 && (
           <DayAccordionRow
             label="ไม่ระบุวันที่"
-            amount={per(unassignedTotal)}
+            amount={unassignedTotal}
             items={unassignedItems}
-            amountDivisor={perPerson ? travelerCount : 1}
-            onDeleteItem={deleteLineItem}
+            onDeleteItem={readOnly ? undefined : deleteLineItem}
           />
         )}
       </div>
@@ -398,20 +392,9 @@ export function BudgetManagementPanel({ trip }: { trip: GeneratedTrip; onPatch: 
   );
 }
 
-// GeneratedTrip carries no traveler count of its own (see types/index.ts) —
-// this falls back to the TripDraft the trip was generated from
-// (adults+children). A trip with no matching draft (e.g. loaded straight
-// from a shared link) counts as 1 traveler, same as the "ต่อคน" toggle/inputs
-// being a no-op. Shared by the summary's "ค่าใช้จ่ายต่อคน" toggle and
-// AddExpenseDialog's per-person amount field.
-function getTravelerCount(trip: GeneratedTrip): number {
-  const draft = getTripDrafts().find((d) => d.id === trip.draftId);
-  return draft ? Math.max(draft.adults + draft.children, 1) : 1;
-}
-
 function EmptyStateCard({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-3xl border p-10 text-center" style={{ borderColor: "var(--color-border)" }}>
+    <div className="flex flex-col items-center gap-3 rounded-2xl border p-8 text-center" style={{ borderColor: "var(--color-border)" }}>
       <TriangleAlert size={28} className="text-[var(--color-muted)]" />
       <h2 className="text-lg font-bold">{title}</h2>
       <p className="max-w-sm text-sm text-[var(--color-muted)]">{description}</p>
@@ -439,16 +422,14 @@ function DayAccordionRow({
   label,
   amount,
   items,
-  amountDivisor,
   defaultOpen,
   onDeleteItem,
 }: {
   label: string;
   amount: number;
   items: TripBudgetLineItem[];
-  amountDivisor: number;
   defaultOpen?: boolean;
-  onDeleteItem: (item: TripBudgetLineItem) => void;
+  onDeleteItem?: (item: TripBudgetLineItem) => void;
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   // Empty set == "ทั้งหมด" (show everything) — checking any individual
@@ -469,25 +450,25 @@ function DayAccordionRow({
   }
 
   return (
-    <div className="rounded-[20px] border" style={{ borderColor: "#e5dfd0", backgroundColor: "#f7f6f0" }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex min-h-[70px] w-full items-center justify-between gap-3 px-5 py-4 text-left">
-        <span className="text-base font-bold">{label}</span>
-        <span className="flex items-center gap-2.5">
-          <span className="text-base font-extrabold">{formatTHB(amount)}</span>
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-md" style={{ color: "#306b50" }}>
-            {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+    <div className="rounded-2xl border" style={{ borderColor: "#e5dfd0", backgroundColor: "#f7f6f0" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left">
+        <span className="text-sm font-bold sm:text-base">{label}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-sm font-extrabold sm:text-base">{formatTHB(amount)}</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white" style={{ color: "#306b50" }}>
+            {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </span>
       </button>
       {open && (
-        <div className="mx-4 mb-4 overflow-visible rounded-2xl bg-white">
-          <div className="flex min-h-[68px] items-center justify-between gap-2 border-b px-5" style={{ borderColor: "#e5dfd0" }}>
-            <h4 className="text-base font-bold">รายการค่าใช้จ่าย</h4>
+        <div className="mx-3 mb-3 overflow-visible rounded-2xl bg-white">
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5" style={{ borderColor: "#e5dfd0" }}>
+            <h4 className="text-sm font-bold">รายการค่าใช้จ่าย</h4>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setFilterOpen((v) => !v)}
-                className="flex items-center gap-1.5 rounded-full border bg-white px-4 py-2 text-xs font-semibold"
+                className="flex items-center gap-1.5 rounded-full border bg-white px-3 py-1 text-xs font-semibold"
                 style={{ borderColor: "#e5dfd0" }}
               >
                 <Filter size={11} className="text-[var(--color-muted)]" />
@@ -544,7 +525,7 @@ function DayAccordionRow({
 
           <div className="flex flex-col">
             {filteredItems.length === 0 ? (
-              <p className="py-6 text-center text-sm text-[var(--color-muted)]">
+              <p className="py-5 text-center text-sm text-[var(--color-muted)]">
                 {items.length === 0 ? "ยังไม่มีค่าใช้จ่ายวันนี้" : "ไม่มีค่าใช้จ่ายในหมวดนี้"}
               </p>
             ) : (
@@ -553,8 +534,11 @@ function DayAccordionRow({
                   key={item.id}
                   item={item}
                   showDivider={i > 0}
-                  amountDivisor={amountDivisor}
-                  onDelete={item.source === "expense" || item.source === "activity" ? () => onDeleteItem(item) : undefined}
+                  onDelete={
+                    onDeleteItem && (item.source === "expense" || item.source === "activity")
+                      ? () => onDeleteItem(item)
+                      : undefined
+                  }
                 />
               ))
             )}
@@ -568,12 +552,10 @@ function DayAccordionRow({
 function ExpenseRow({
   item,
   showDivider,
-  amountDivisor,
   onDelete,
 }: {
   item: TripBudgetLineItem;
   showDivider: boolean;
-  amountDivisor: number;
   onDelete?: () => void;
 }) {
   const bucket = CATEGORY_TO_BUCKET[item.category];
@@ -581,11 +563,11 @@ function ExpenseRow({
   const Icon = BUCKET_ICON[bucket];
 
   return (
-    <div className={`group relative flex min-h-[76px] items-center gap-4 px-5 py-3 ${showDivider ? "border-t" : ""}`} style={{ borderColor: "#e5dfd0" }}>
+    <div className={`group relative flex items-center gap-3 px-4 py-2.5 ${showDivider ? "border-t" : ""}`} style={{ borderColor: "#e5dfd0" }}>
       {/* "22" appended to the bucket's hex gives a light tint background
           without a second color table to keep in sync with BUCKET_COLOR. */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${color}18` }}>
-        {Icon ? <Icon size={18} style={{ color }} /> : <span className="text-sm font-bold" style={{ color }}>···</span>}
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${color}18` }}>
+        {Icon ? <Icon size={15} style={{ color }} /> : <span className="text-sm font-bold" style={{ color }}>···</span>}
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold">{item.title}</p>
@@ -594,13 +576,13 @@ function ExpenseRow({
           {item.paidBy && <span className="font-normal text-[var(--color-muted)]">· โดย {item.paidBy}</span>}
         </p>
       </div>
-      <span className="shrink-0 text-base font-extrabold transition-opacity group-hover:opacity-0">{formatTHB(Math.round(item.amount / amountDivisor))}</span>
+      <span className="shrink-0 text-sm font-extrabold transition-opacity group-hover:opacity-0">{formatTHB(item.amount)}</span>
       {onDelete && (
         <button
           type="button"
           onClick={onDelete}
           aria-label="ลบค่าใช้จ่าย"
-          className="absolute right-5 top-1/2 -translate-y-1/2 rounded-full p-2 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[#f7f6f0] focus:opacity-100 group-hover:opacity-100"
+          className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[#f7f6f0] focus:opacity-100 group-hover:opacity-100"
         >
           <Trash2 size={13} />
         </button>
@@ -630,10 +612,10 @@ function DialogShell({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div
-        className={`max-h-[95vh] w-full overflow-y-auto rounded-3xl bg-white shadow-2xl ${isWide ? "max-w-[1000px] p-6 sm:p-7" : "max-w-md p-6"}`}
+        className={`max-h-[95vh] w-full overflow-y-auto rounded-3xl bg-white shadow-2xl ${isWide ? "max-w-[1000px] p-5 sm:p-6" : "max-w-md p-6"}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`flex items-center justify-between ${isWide ? "mb-6 border-b pb-4" : "mb-4"}`} style={isWide ? { borderColor: "var(--color-border)" } : undefined}>
+        <div className={`flex items-center justify-between ${isWide ? "mb-4 border-b pb-3" : "mb-4"}`} style={isWide ? { borderColor: "var(--color-border)" } : undefined}>
           {onBack ? (
             <button type="button" onClick={onBack} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
               <ChevronLeft size={18} />
@@ -641,21 +623,21 @@ function DialogShell({
           ) : !isWide ? (
             <span className="w-8" />
           ) : null}
-          <h3 className={`${isWide ? "mr-auto text-2xl sm:text-[28px]" : "text-lg"} font-bold`}>{title}</h3>
+          <h3 className={`${isWide ? "mr-auto text-lg sm:text-xl" : "text-lg"} font-bold`}>{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className={`flex shrink-0 items-center justify-center rounded-full ${isWide ? "h-10 w-10" : "h-8 w-8"}`}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
             style={{ backgroundColor: "var(--color-surface)" }}
           >
-            <X size={isWide ? 22 : 16} />
+            <X size={16} />
           </button>
         </div>
 
         <div className="flex flex-col gap-4">{children}</div>
 
         {footer && (
-          <div className={`${isWide ? "mt-6 pt-5" : "mt-6 pt-4"} border-t`} style={{ borderColor: "var(--color-border)" }}>
+          <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--color-border)" }}>
             {footer}
           </div>
         )}
@@ -696,10 +678,9 @@ function emptyDraftItem(): DraftExpenseItem {
 
 // Reference design adds several expense rows in one go ("รายการที่ 1/2/...",
 // each independently removable) instead of one row per open. The amount
-// field is explicitly "ต่อคน" (per person) — multiplied by the trip's
-// traveler count (see getTravelerCount) into the actual total sent to the
-// backend, since costAmount/createExpense's `amount` are both whole-trip
-// totals, not per-person.
+// field is "ต่อคน" (per person) and is stored exactly as typed — every
+// figure in this panel is per-person, so nothing is scaled by the traveler
+// count on the way in or on the way out.
 function AddExpenseDialog({
   trip,
   items,
@@ -721,7 +702,6 @@ function AddExpenseDialog({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const travelerCount = getTravelerCount(trip);
   const validItems = items.filter((it) => (Number(it.amount) || 0) > 0);
 
   function updateItem(key: string, patch: Partial<DraftExpenseItem>) {
@@ -739,21 +719,21 @@ function AddExpenseDialog({
     try {
       await Promise.all(
         validItems.map((it) => {
-          const totalAmount = Math.round((Number(it.amount) || 0) * travelerCount);
+          const amount = Math.round(Number(it.amount) || 0);
           const splitLabel = it.paymentMode === "split" ? "หารเท่า" : "ไม่แบ่ง";
           if (it.selected?.linkedActivityId) {
             // Linking to an existing itinerary stop — this cost belongs to
             // that activity, so it goes through PATCH /items/:itemId, not a
             // standalone expense row (posting both would double-count it).
             return updateTripItemOnServer(it.selected.linkedActivityId, {
-              costAmount: totalAmount,
+              costAmount: amount,
               paidBy: "คุณ",
               splitLabel,
             });
           }
           return createExpense(trip.id, {
             title: it.selected?.title ?? "ค่าใช้จ่ายอื่นๆ",
-            amount: totalAmount,
+            amount,
             category: it.selected ? toBackendExpenseCategory(it.selected.category) : "other",
             date: it.date || undefined,
             paidBy: "คุณ",
@@ -778,11 +758,11 @@ function AddExpenseDialog({
         footer={
           <div className="flex flex-col gap-2">
             {saveError && <p className="text-center text-xs font-semibold text-[var(--color-danger)]">{saveError}</p>}
-            <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full flex-1 rounded-full border py-3.5 text-lg font-bold text-[var(--color-muted)]"
+                className="w-full flex-1 rounded-full border py-2.5 text-sm font-bold text-[var(--color-muted)]"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 ยกเลิก
@@ -791,7 +771,7 @@ function AddExpenseDialog({
                 type="button"
                 onClick={handleSave}
                 disabled={validItems.length === 0 || saving}
-                className="flex w-full flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-lg font-bold text-white disabled:cursor-not-allowed disabled:bg-[#dedede] disabled:text-[#aaa69f]"
+                className="flex w-full flex-1 items-center justify-center gap-2 rounded-full py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#dedede] disabled:text-[#aaa69f]"
                 style={validItems.length > 0 && !saving ? { backgroundColor: "var(--color-accent-orange)" } : undefined}
               >
                 {saving && <LoaderCircle size={14} className="animate-spin" />}
@@ -804,29 +784,29 @@ function AddExpenseDialog({
         {items.map((item, index) => {
           const selectedBucket = item.selected ? CATEGORY_TO_BUCKET[toBackendExpenseCategory(item.selected.category)] : null;
           return (
-            <div key={item.key} className="overflow-visible rounded-3xl border" style={{ borderColor: "var(--color-border)" }}>
-              <div className="flex items-center justify-between rounded-t-3xl px-4 py-3 sm:px-5" style={{ backgroundColor: "#f8f6f1" }}>
-                <h4 className="text-xl font-bold">รายการที่ {index + 1}</h4>
+            <div key={item.key} className="overflow-visible rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
+              <div className="flex items-center justify-between rounded-t-2xl px-4 py-2.5" style={{ backgroundColor: "#f8f6f1" }}>
+                <h4 className="text-sm font-bold sm:text-base">รายการที่ {index + 1}</h4>
                 <button
                   type="button"
                   onClick={() => removeItem(item.key)}
                   aria-label="ลบรายการนี้"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
                   style={{ backgroundColor: "var(--color-danger-bg)", color: "var(--color-danger)" }}
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={14} />
                 </button>
               </div>
 
-              <div className="flex flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
+              <div className="flex flex-col gap-3 px-4 py-3.5 sm:gap-3.5 sm:px-5 sm:py-4">
 
               <div>
-                <label className="mb-2 block text-base text-[var(--color-muted)]">จำนวนเงิน</label>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">จำนวนเงิน</label>
                 <div
-                  className="flex min-h-[52px] items-center gap-2 rounded-2xl border bg-white px-4 focus-within:border-[var(--color-primary)]"
+                  className="flex min-h-[42px] items-center gap-2 rounded-xl border bg-white px-3.5 focus-within:border-[var(--color-primary)]"
                   style={{ borderColor: "var(--color-border)" }}
                 >
-                  <span className="text-base">฿</span>
+                  <span className="text-sm">฿</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -835,18 +815,18 @@ function AddExpenseDialog({
                     onChange={(e) => updateItem(item.key, { amount: e.target.value })}
                     placeholder="0.00"
                     autoFocus={index === items.length - 1}
-                    className="w-full bg-transparent text-base focus:outline-none"
+                    className="w-full bg-transparent text-sm focus:outline-none"
                   />
-                  <span className="shrink-0 text-base text-[#9da9bd]">ต่อคน</span>
+                  <span className="shrink-0 text-sm text-[#9da9bd]">ต่อคน</span>
                 </div>
               </div>
 
               <div>
-                <label className="mb-2 block text-base text-[var(--color-muted)]">ประเภทค่าใช้จ่าย</label>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ประเภทค่าใช้จ่าย</label>
                 <button
                   type="button"
                   onClick={() => setPickingKey(item.key)}
-                  className="flex min-h-[52px] w-full items-center gap-3 rounded-2xl border bg-white px-4 text-left"
+                  className="flex min-h-[42px] w-full items-center gap-3 rounded-xl border bg-white px-3.5 text-left"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   {item.selected && selectedBucket ? (
@@ -880,11 +860,11 @@ function AddExpenseDialog({
               </div>
 
               <div className="relative">
-                <label className="mb-2 block text-base text-[var(--color-muted)]">รูปแบบการจ่าย</label>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">รูปแบบการจ่าย</label>
                 <button
                   type="button"
                   onClick={() => setPaymentDropdownKey((prev) => (prev === item.key ? null : item.key))}
-                  className="flex min-h-[52px] w-full items-center justify-between rounded-2xl border bg-white px-4 text-left"
+                  className="flex min-h-[42px] w-full items-center justify-between rounded-xl border bg-white px-3.5 text-left"
                   style={{ borderColor: "var(--color-border)" }}
                 >
                   <span className="text-sm font-semibold" style={item.paymentMode ? undefined : { color: "var(--color-muted)", fontWeight: 400 }}>
@@ -934,11 +914,11 @@ function AddExpenseDialog({
 
               {!item.selected?.linkedActivityId && (
                 <div className="relative">
-                  <label className="mb-2 block text-base text-[var(--color-muted)]">วันที่จ่าย</label>
+                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">วันที่จ่าย</label>
                   <button
                     type="button"
                     onClick={() => setDateDropdownKey((prev) => (prev === item.key ? null : item.key))}
-                    className="flex min-h-[52px] w-full items-center justify-between rounded-2xl border bg-white px-4 text-left"
+                    className="flex min-h-[42px] w-full items-center justify-between rounded-xl border bg-white px-3.5 text-left"
                     style={{ borderColor: "var(--color-border)" }}
                   >
                     <span className="text-sm font-semibold" style={item.date ? undefined : { color: "var(--color-muted)", fontWeight: 400 }}>
@@ -999,10 +979,10 @@ function AddExpenseDialog({
         <button
           type="button"
           onClick={() => onItemsChange((prev) => [...prev, emptyDraftItem()])}
-          className="self-start flex items-center justify-center gap-2 rounded-full border px-6 py-3 text-base font-bold"
+          className="self-start flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-xs font-bold"
           style={{ borderColor: "#ead1ab", color: "var(--color-accent-orange)", backgroundColor: "#fff8ed" }}
         >
-          <Plus size={14} /> เพิ่มค่าใช้จ่าย
+          <Plus size={12} /> เพิ่มค่าใช้จ่าย
         </button>
       </DialogShell>
 
@@ -1234,7 +1214,7 @@ function SetBudgetGoalDialog({
       }
     >
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">งบประมาณรวมทั้งทริป (บาท)</label>
+        <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">งบประมาณต่อคนทั้งทริป (บาท)</label>
         <input
           type="text"
           inputMode="decimal"

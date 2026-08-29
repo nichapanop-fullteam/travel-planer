@@ -49,8 +49,8 @@ export function RealTripCard({
   showStatus?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
-  /** Gives this card a portrait cover on the masonry layout (<=1024px) instead
-   *  of the reference's landscape one, to seed the column stagger — masonry
+  /** Pushes this card's cover further portrait (2/3 vs the 4/5 default) on
+   *  the masonry layout (<=1024px), to seed the column stagger — masonry
    *  compounds any height difference down the column, so it doesn't take much.
    *  Ignored from 1025px up, where the feed is a uniform grid and a mismatched
    *  card would look like a mistake. */
@@ -230,13 +230,16 @@ export function RealTripCard({
     // its footer 20px below its neighbour's. Both are scoped to >=1025px:
     // under the masonry layout there's no equal-height row to stretch to, and
     // stretching there would defeat the stagger this is all for.
-    <article className="group flex flex-col overflow-hidden rounded-[16px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)] transition-shadow hover:shadow-[0_6px_20px_rgba(16,24,40,0.12)] min-[1025px]:h-full">
+    <article className="group flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)] transition-shadow hover:shadow-[0_6px_20px_rgba(16,24,40,0.12)] min-[1025px]:h-full">
+      {/* Both links go to the read-only /view-trip/[id], not the
+          /generated-plan/[id] working surface — a card is a browse affordance,
+          so tapping one should open the trip to look at, never to edit. */}
       <Link
-        href={`/generated-plan/${trip.id}`}
-        className={`relative block overflow-hidden bg-[var(--color-surface)] ${
+        href={`/view-trip/${trip.id}`}
+        className={`relative block overflow-hidden rounded-[24px] bg-[var(--color-surface)] ${
           // Landscape cover, per the reference. `tall` keeps a portrait one on
           // masonry only, to seed the column stagger.
-          tall ? "aspect-[4/5] min-[1025px]:aspect-[5/4]" : "aspect-[5/4]"
+          tall ? "aspect-[2/3] min-[1025px]:aspect-[4/5]" : "aspect-[4/5]"
         }`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -252,8 +255,8 @@ export function RealTripCard({
           {showStatus ? (
             <StatusBadge status={trip.status} />
           ) : isRemix ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm min-[1025px]:text-xs">
-              <Shuffle size={12} />
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm min-[640px]:gap-1.5 min-[640px]:px-2.5 min-[640px]:py-1.5 min-[640px]:text-[11px]">
+              <Shuffle size={11} />
               รีมิกซ์
             </span>
           ) : (
@@ -294,9 +297,9 @@ export function RealTripCard({
         </div>
       </Link>
 
-      <div className="flex flex-1 flex-col p-3 min-[1025px]:p-3.5">
-        <Link href={`/generated-plan/${trip.id}`} className="block">
-          <h2 className="line-clamp-2 text-[15px] font-bold leading-snug text-[var(--foreground)] min-[1025px]:text-base">
+      <div className="flex flex-1 flex-col p-1.5">
+        <Link href={`/view-trip/${trip.id}`} className="block">
+          <h2 className="line-clamp-1 text-[13px] font-bold leading-snug text-[var(--foreground)] min-[640px]:text-[14px] min-[1025px]:text-[15px]">
             {trip.title || trip.destination}
           </h2>
         </Link>
@@ -308,9 +311,9 @@ export function RealTripCard({
             line never shows a stray bullet or an empty value. The price's
             pending case comes first so no number shows before its unit is
             known. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] font-medium text-[var(--color-muted)] min-[1025px]:text-xs">
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-medium text-[var(--color-muted)] min-[640px]:text-[11px] min-[1025px]:mt-1.5">
           <span className="inline-flex min-w-0 items-center gap-0.5 font-semibold text-[var(--color-accent-violet)]">
-            <MapPin size={12} className="shrink-0" />
+            <MapPin size={11} className="shrink-0" />
             <span className="truncate">{trip.destination}</span>
           </span>
 
@@ -341,26 +344,26 @@ export function RealTripCard({
         {/* Creator chip left, reactions right, under a hairline rule — the
             reference's footer. mt-auto (>=1025px only) is what keeps it flush
             with the bottom of the card. */}
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--color-border)]/35 pt-2.5 min-[1025px]:mt-auto">
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-2 min-[640px]:mt-3 min-[640px]:pt-2.5 min-[1025px]:mt-auto">
           {creatorLabel ? (
-            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-[var(--color-sel-bg)] py-1 pl-1 pr-2.5">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-[var(--color-sel-bg)] py-0.5 pl-0.5 pr-1.5 min-[640px]:pr-2">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
                   alt=""
                   onError={() => setFailedAvatarUrl(avatarUrl)}
-                  className="h-5 w-5 shrink-0 rounded-full object-cover"
+                  className="h-3.5 w-3.5 shrink-0 rounded-full object-cover min-[640px]:h-4 min-[640px]:w-4"
                 />
               ) : (
                 <span
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                  className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[7px] font-semibold text-white min-[640px]:h-4 min-[640px]:w-4 min-[640px]:text-[8px]"
                   style={{ backgroundColor: "var(--color-primary)" }}
                 >
                   {creatorLabel.replace(/^@/, "").charAt(0).toUpperCase()}
                 </span>
               )}
-              <span className="truncate text-[11px] font-semibold text-[var(--color-deep-green)] min-[1025px]:text-xs">
+              <span className="truncate text-[9px] font-semibold text-[var(--color-deep-green)] min-[640px]:text-[10px]">
                 {creatorLabel}
               </span>
             </span>
@@ -368,10 +371,10 @@ export function RealTripCard({
             <span />
           )}
 
-          <div className="flex shrink-0 items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2 min-[640px]:gap-2.5">
             {remixCount != null && remixCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--foreground)] min-[1025px]:text-xs">
-                <Shuffle size={14} className="text-[var(--color-accent-violet)]" />
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--foreground)] min-[640px]:gap-1 min-[640px]:text-[11px]">
+                <Shuffle size={13} className="text-[var(--color-accent-violet)]" />
                 {remixCount.toLocaleString()}
               </span>
             )}
@@ -387,10 +390,10 @@ export function RealTripCard({
               aria-pressed={liked}
               aria-label="ถูกใจทริปนี้"
               disabled={liking}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--foreground)] transition-opacity disabled:opacity-60 min-[1025px]:text-xs"
+              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--foreground)] transition-opacity disabled:opacity-60 min-[640px]:gap-1 min-[640px]:text-[11px]"
             >
               <Heart
-                size={14}
+                size={13}
                 className={liked ? "fill-[var(--color-accent-violet)] text-[var(--color-accent-violet)]" : "text-[var(--color-accent-violet)]"}
               />
               {likeCount.toLocaleString()}

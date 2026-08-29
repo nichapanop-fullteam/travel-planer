@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, SearchX } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { HomeHero } from "@/components/consumer/HomeHero";
 import { HomeQuickActions } from "@/components/consumer/HomeQuickActions";
 import { TopDestinationRow } from "@/components/consumer/TopDestinationRow";
-import { FeedSortSelect, type FeedSort } from "@/components/consumer/FeedSortSelect";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { deriveTopDestinations } from "@/lib/top-destinations";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
@@ -44,7 +43,6 @@ export default function MainPage() {
   const { backendUser, isLoading: authLoading } = useAuth();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
-  const [sort, setSort] = useState<FeedSort>("latest");
   const [destinationsExpanded, setDestinationsExpanded] = useState(false);
 
   // Both fetches below key off the user's *id*, not the backendUser object:
@@ -165,35 +163,74 @@ export default function MainPage() {
       );
     });
 
-    // Both keys are on every GET /trips row (see BackendTripListItem), so
-    // neither sort can silently fall back to arbitrary order. Sorting a copy —
-    // `filtered` is already a new array from .filter, but being explicit keeps
-    // this safe if the filter is ever dropped.
-    return [...filtered].sort((a, b) =>
-      sort === "popular"
-        ? b.likeCount - a.likeCount
-        : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    // Newest first, fixed — the sort control that used to offer "ยอดนิยม"
+    // (likeCount desc) alongside this is gone. `updatedAt` is on every GET
+    // /trips row (see BackendTripListItem), so this can't silently fall back to
+    // arbitrary order. Sorting a copy — `filtered` is already a new array from
+    // .filter, but being explicit keeps this safe if the filter is ever dropped.
+    return [...filtered].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
-  }, [trips, query, category, sort]);
+  }, [trips, query, category]);
 
   const hasActiveFilter = category !== "forYou" || query.trim().length > 0;
 
+  // The chips band pins directly under the hero, so its `top` is the hero's
+  // height — which is not one number: the hero is the bare app bar on a phone
+  // (heading hidden, search collapsed), grows when that search is opened, and
+  // is the full bar + heading + search from 640px up. Measuring it is what
+  // keeps the two stuck edges flush at every width and in both search states;
+  // a hardcoded offset would gap or overlap in most of them.
+  //
+  // Written straight to a CSS variable rather than through state: this fires on
+  // every resize and on the search open/close transition, and re-rendering the
+  // whole feed for a number only CSS consumes is waste.
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const stickyScopeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const hero = heroRef.current;
+    const scope = stickyScopeRef.current;
+    if (!hero || !scope) return;
+    const apply = () => scope.style.setProperty("--home-hero-h", `${hero.offsetHeight}px`);
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(hero);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <AppShell active="home" hideTopbar hideDesktopSidebar>
-      <HomeHero query={query} onQueryChange={setQuery} />
+      <div ref={stickyScopeRef}>
+        {/* Pinned for the whole page. On a phone this is just the app bar —
+            the heading is hidden and the search is collapsed there, so the
+            hero is the bar's own height. From 640px up the heading and the
+            search field come with it, which is what makes search reachable
+            without scrolling back to the top. */}
+        <div ref={heroRef} className="sticky top-0 z-30">
+          <HomeHero query={query} onQueryChange={setQuery} />
+        </div>
 
-      <div className="min-h-full bg-[#fbfdfc]">
-        <PageContainer width="feed" className="!py-6">
-          <HomeQuickActions />
+        <div className="min-h-full bg-[#fbfdfc]">
+          <PageContainer width="feed" className="!pb-0 !pt-0 min-[1025px]:!pt-6">
+            <HomeQuickActions />
+          </PageContainer>
 
           {/* The feed's tag filters, in the row the reference gives to
               ALL / Top Destination / Top Plan and wearing that row's design.
               aria-pressed rather than colour alone: the active chip is the only
-              explanation for why the grid below shrank. */}
-          {/* No top margin below 1025px — HomeQuickActions is hidden there, so
-              this row is the first thing under the hero and the container's own
-              padding is already the gap. */}
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1 min-[1025px]:mt-6">
+              explanation for why the grid below shrank.
+
+              Its own full-bleed band rather than a row inside PageContainer:
+              once it pins, the feed scrolls underneath it and a transparent
+              row would let cards show through. The band paints the page colour
+              and spans the width; the inner wrapper keeps the chips on the
+              feed's own left edge. */}
+          <div
+            className="sticky z-20 bg-[#fbfdfc]"
+            style={{ top: "var(--home-hero-h, 0px)" }}
+          >
+            <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 pb-3 pt-6 sm:px-6 lg:px-10 xl:px-14">
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
             {CATEGORY_FILTERS.map((filter) => {
               const isActive = category === filter.key;
               const count = categoryCounts?.[filter.key];
@@ -210,7 +247,7 @@ export default function MainPage() {
                   className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
                     isActive
                       ? "bg-[#111111] text-[var(--color-accent-lime)]"
-                      : `border border-[var(--color-border)]/40 bg-white hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] ${
+                      : `border border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] ${
                           isEmpty ? "text-[var(--color-muted)]/60" : "text-[var(--foreground)]"
                         }`
                   }`}
@@ -231,7 +268,10 @@ export default function MainPage() {
               );
             })}
           </div>
+            </div>
+          </div>
 
+          <PageContainer width="feed" className="!pb-6 !pt-0">
           <section className="mt-6">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-lg font-extrabold">Top Destination</h2>
@@ -263,13 +303,7 @@ export default function MainPage() {
           </section>
 
           <section className="mt-8">
-            {/* Sort sits on this heading rather than on the filter row above:
-                it describes this grid's order, and the filter row is now the
-                page-level control at the top. */}
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-extrabold">Top Plan From Creators</h2>
-              <FeedSortSelect sort={sort} onSortChange={setSort} />
-            </div>
+            <h2 className="mb-3 text-lg font-extrabold">Top Plan From Creators</h2>
 
             {visibleTrips === undefined ? (
               <div className={TRIP_GRID_CLASS}>
@@ -277,12 +311,12 @@ export default function MainPage() {
                   // Mirrors RealTripCard exactly — white card panel, cover,
                   // then the title and meta lines — so the grid keeps its
                   // shape and height when the real cards replace it.
-                  <div key={i} className="overflow-hidden rounded-[16px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)]">
-                    <div className="aspect-[5/4] w-full animate-pulse bg-[var(--color-surface)]" />
-                    <div className="p-3">
+                  <div key={i} className="overflow-hidden rounded-t-[24px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)]">
+                    <div className="aspect-[4/5] w-full animate-pulse rounded-[24px] bg-[var(--color-surface)]" />
+                    <div className="p-1.5">
                       <div className="h-3.5 w-4/5 animate-pulse rounded bg-[var(--color-surface)]" />
                       <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-[var(--color-surface)]" />
-                      <div className="mt-4 h-5 w-24 animate-pulse rounded-full bg-[var(--color-surface)]" />
+                      <div className="mt-4 h-4 w-20 animate-pulse rounded-full bg-[var(--color-surface)]" />
                     </div>
                   </div>
                 ))}
@@ -312,7 +346,8 @@ export default function MainPage() {
               </div>
             )}
           </section>
-        </PageContainer>
+          </PageContainer>
+        </div>
       </div>
     </AppShell>
   );

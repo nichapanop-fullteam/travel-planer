@@ -466,6 +466,8 @@ export function buildGeneratedTripFromBackendTrip(
     planMode: trip.planMode,
     saveCount: trip.saveCount,
     remixCount: trip.remixCount,
+    likeCount: trip.likeCount,
+    isLiked: trip.isLiked,
     remixedFrom: trip.sourceTripId
       ? existingRemixedFrom?.sourceTripId === trip.sourceTripId
         ? existingRemixedFrom

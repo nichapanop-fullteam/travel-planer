@@ -56,6 +56,66 @@ export interface ExternalSearchPlace {
   imageUrl?: string;
 }
 
+export interface PlaceOpeningHours {
+  openNow: boolean | null;
+  weekdayDescriptions: string[];
+  nextOpenTime: string | null;
+  nextCloseTime: string | null;
+}
+
+export interface PlaceAccessibilityOptions {
+  wheelchairAccessibleParking: boolean | null;
+  wheelchairAccessibleEntrance: boolean | null;
+  wheelchairAccessibleRestroom: boolean | null;
+  wheelchairAccessibleSeating: boolean | null;
+}
+
+export interface PlaceReview {
+  authorName: string;
+  authorUri: string | null;
+  authorPhotoUri: string | null;
+  rating: number;
+  text: string | null;
+  relativePublishTimeDescription: string | null;
+  publishTime: string | null;
+}
+
+export interface PlaceFullDetails {
+  externalRef: string;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  primaryType: string | null;
+  primaryTypeDisplayName: string | null;
+  rating: number | null;
+  userRatingCount: number | null;
+  priceLevel: string | null;
+  nationalPhoneNumber: string | null;
+  internationalPhoneNumber: string | null;
+  websiteUri: string | null;
+  googleMapsUri: string | null;
+  businessStatus: string | null;
+  editorialSummary: string | null;
+  regularOpeningHours: PlaceOpeningHours | null;
+  currentOpeningHours: PlaceOpeningHours | null;
+  accessibilityOptions: PlaceAccessibilityOptions | null;
+  photos: string[];
+  reviews: PlaceReview[];
+}
+
+// Loads the expensive, Google-backed place payload only when a detail surface
+// opens. `id` must be the external service's own places-table UUID returned by
+// search/suggest — never a Google Place ID / externalRef.
+export async function fetchPlaceFullDetails(id: string, signal?: AbortSignal): Promise<PlaceFullDetails> {
+  const response = await fetch(`/api/places/${encodeURIComponent(id)}`, { signal });
+
+  if (response.status === 404) throw new Error("PLACE_NOT_FOUND");
+  if (!response.ok) throw new Error("PLACE_DETAILS_UNAVAILABLE");
+
+  return response.json() as Promise<PlaceFullDetails>;
+}
+
 // Free-text POI search (attractions/restaurants/hotels/cafes/etc) for
 // itinerary building — e.g. "add a stop" flows that need a real `placeId`
 // for POST /days/:dayId/items. NOT for the destination field: it upserts
@@ -73,6 +133,31 @@ export async function searchExternalPlaces(query: string, limit?: number): Promi
   if (!response.ok) return [];
 
   return (await response.json()) as ExternalSearchPlace[];
+}
+
+const INTERNAL_PLACE_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Generated/legacy itinerary items may contain a Google externalRef (or no
+// place id) even though the full-details endpoint accepts only our internal
+// UUID. Resolve those rows through search at popup-open time, then load the
+// full payload. An exact name wins; the first search result is the fallback.
+export async function fetchResolvedPlaceFullDetails(
+  placeId: string | undefined,
+  placeName: string,
+  signal?: AbortSignal
+): Promise<PlaceFullDetails> {
+  let internalPlaceId = placeId && INTERNAL_PLACE_UUID_PATTERN.test(placeId) ? placeId : undefined;
+
+  if (!internalPlaceId) {
+    const matches = await searchExternalPlaces(placeName, 5);
+    const normalizedName = placeName.trim().toLocaleLowerCase();
+    const match = matches.find((place) => place.name.trim().toLocaleLowerCase() === normalizedName) ?? matches[0];
+    if (!match) throw new Error("PLACE_NOT_FOUND");
+    internalPlaceId = match.id;
+  }
+
+  return fetchPlaceFullDetails(internalPlaceId, signal);
 }
 
 // A suggestion from GET /places/autocomplete — cities/provinces/countries

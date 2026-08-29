@@ -22,6 +22,13 @@ import { Logo } from "@/components/common/Logo";
 //   places one tap away. That frees both corners, so the wordmark takes the
 //   left and the search field's toggle takes the right.
 //
+// The bar is square-cornered. It carried a rounded bottom when it was lifted
+// out of generated-plan, where a 28px radius is a three-layer motif (photo hero,
+// this bar, the white sheet below) that makes the bar read as a panel floating
+// on a tall cover photo. /main has no cover photo to float on, and on a phone
+// the hero is exactly this bar's height — so the radius only made an app bar
+// look like a card that had come loose from the screen edge.
+//
 // 1025 rather than a Tailwind breakpoint because iPad landscape is exactly
 // 1024: `lg` would treat the larger iPad orientation as a desktop. Same
 // boundary the bottom bar and the collapsed search use.
@@ -53,15 +60,15 @@ export function FrostedTopNav({
     <img
       src={avatarUrl || "/images/profile-avatar.jpg"}
       alt={onAvatarClick ? avatarLabel : ""}
-      className="h-9 w-9 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
+      className="h-8 w-8 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
     />
   );
 
   const iconButton =
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white";
+    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white";
 
   return (
-    <div className="relative z-20 rounded-b-[28px] border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+    <div className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
       {/* Same width cap and padding ramp as PageContainer's "feed" variant, so
           the bar's controls land on the feed's own left and right edges instead
           of crowding the screen corners. Sharing the grid rather than picking a
@@ -69,11 +76,11 @@ export function FrostedTopNav({
           --container-feed the cap centres this row exactly as it centres the
           cards below. */}
       <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 sm:px-6 lg:px-10 xl:px-14">
-        {/* min-h-9 rather than relying on the children: from 1025px up the
+        {/* min-h-8 rather than relying on the children: from 1025px up the
             wordmark is the only thing between the two icon buttons and it's
             absolutely positioned, so the row would have no in-flow content to
             take its height from once a corner is empty. */}
-        <div className="relative flex min-h-9 items-center justify-between gap-3 py-2.5 sm:py-3">
+        <div className="relative flex min-h-8 items-center justify-between gap-3 py-1.5 sm:py-2">
           <button
             type="button"
             onClick={onMenuClick}
@@ -81,7 +88,7 @@ export function FrostedTopNav({
             className={`hidden ${iconButton} min-[1025px]:flex`}
             style={{ color: "var(--color-brand-green)" }}
           >
-            <Menu size={18} strokeWidth={2.5} />
+            <Menu size={17} strokeWidth={2.5} />
           </button>
 
           {/* In flow (so justify-between puts it in the left corner) below
@@ -98,11 +105,11 @@ export function FrostedTopNav({
               className={`${iconButton} min-[1025px]:hidden`}
               style={{ color: "var(--color-brand-green)" }}
             >
-              {searchOpen ? <X size={18} strokeWidth={2.5} /> : <Search size={18} strokeWidth={2.5} />}
+              {searchOpen ? <X size={17} strokeWidth={2.5} /> : <Search size={17} strokeWidth={2.5} />}
             </button>
           )}
 
-          <span className="hidden shrink-0 min-[1025px]:block">
+          <span className="hidden shrink-0 items-center min-[1025px]:flex">
             {onAvatarClick ? (
               <button type="button" onClick={onAvatarClick} aria-label={avatarLabel} className="shrink-0 rounded-full">
                 {avatar}

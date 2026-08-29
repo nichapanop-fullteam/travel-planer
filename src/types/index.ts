@@ -303,6 +303,13 @@ export interface GeneratedTrip {
   planMode?: string;
   saveCount?: number;
   remixCount?: number;
+  // Public cumulative like counter from GET /trips/:id, and whether the
+  // signed-in user is one of those likes. Optional here (unlike BackendTrip,
+  // where likeCount is required) because a local-only draft that has never
+  // been synced has no server-side count to carry — UI hides the figure
+  // rather than showing a made-up 0 for those.
+  likeCount?: number;
+  isLiked?: boolean;
   // Set when this trip was created via POST /trips/:sourceTripId/remix — see
   // lib/trip-remix-api.ts. Only ever points at the immediate source (never a
   // chain), so attribution UI never has to render nested "remix of a remix".
