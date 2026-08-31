@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -242,7 +243,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [trip, setTrip] = useState<GeneratedTrip | null | undefined>(undefined);
-  const [tab, setTab] = useState<TabKey>(() => (readOnly ? "plan" : "overview"));
+  const [tab, setTab] = useState<TabKey>("overview");
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -281,7 +282,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     if (params.id === DEMO_LUANG_PRABANG_ID) {
       const loaded = getOrCreateDemoLuangPrabangTrip();
       setTrip(loaded);
-      if (loaded.status === "confirmed") setTab("plan");
+      if (!readOnly && loaded.status === "confirmed") setTab("plan");
       return;
     }
 
@@ -289,13 +290,13 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
     if (local && !local.backendSynced) {
       setTrip(local);
-      if (local.status === "confirmed") setTab("plan");
+      if (!readOnly && local.status === "confirmed") setTab("plan");
       return;
     }
 
     if (local) {
       setTrip(local);
-      if (local.status === "confirmed") setTab("plan");
+      if (!readOnly && local.status === "confirmed") setTab("plan");
     }
 
     let cancelled = false;
@@ -351,7 +352,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         }
         if (local) updateGeneratedTrip(loaded.id, loaded);
         setTrip(loaded);
-        if (loaded.status === "confirmed") setTab("plan");
+        if (!readOnly && loaded.status === "confirmed") setTab("plan");
       })
       .catch((err) => {
         console.warn("รีเฟรชข้อมูลทริปจาก backend ไม่สำเร็จ", err);
@@ -362,7 +363,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     return () => {
       cancelled = true;
     };
-  }, [params.id]);
+  }, [params.id, readOnly]);
 
   // GET/PATCH /trips/:id only ever carries the flat `sourceTripId` (see
   // BackendTrip in lib/trips-api.ts) — no source title or owner name. Those
@@ -1081,7 +1082,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           }
         />
 
-        <div className={`${SHELL} py-8`}>
+        <div className={`${SHELL} py-5 sm:py-8`}>
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
           {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
 
@@ -1204,8 +1205,6 @@ function Hero({
   userAvatarUrl?: string | null;
   tab: TabKey;
 }) {
-  const [saved, setSaved] = useState(false);
-
   const dateRangeLabel =
     trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : undefined;
   // GeneratedTripStatus has no "active" state of its own — a confirmed trip
@@ -1263,7 +1262,7 @@ function Hero({
   const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
 
   return (
-    <div className="relative flex min-h-[300px] flex-col overflow-hidden rounded-b-[28px] sm:min-h-[380px] lg:min-h-[440px]">
+    <div className="relative flex min-h-[340px] flex-col overflow-hidden rounded-b-[24px] sm:min-h-[380px] sm:rounded-b-[28px] lg:min-h-[440px]">
       {/* Editing keeps a single static cover — swiping through photos is a
           viewing affordance, and would fight with "จัดการรูปภาพ" for the same
           tap target. The read-only detail view (canEdit === false, i.e.
@@ -1288,7 +1287,7 @@ function Hero({
           Luang Prabang cover) and became unreadable. */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/55" />
 
-      {/* Top nav — back/menu on the left, PunGuide wordmark centered, save +
+      {/* Top nav — back/menu on the left, PunGuide wordmark centered, and
           the viewer's own avatar on the right. Sits on its own frosted panel
           (pale, translucent, rounded bottom corners) instead of directly on
           the photo, so the image reads through it softly rather than as a hard
@@ -1321,7 +1320,7 @@ function Hero({
                 type="button"
                 onClick={onBack}
                 aria-label="ย้อนกลับ"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white sm:h-8 sm:w-8"
                 style={{ color: "var(--color-brand-green)" }}
               >
                 <ChevronLeft size={17} strokeWidth={2.5} />
@@ -1330,7 +1329,7 @@ function Hero({
                 type="button"
                 onClick={onMenuClick}
                 aria-label="เมนู"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white sm:h-8 sm:w-8"
                 style={{ color: "var(--color-brand-green)" }}
               >
                 <Menu size={17} strokeWidth={2.5} />
@@ -1343,28 +1342,11 @@ function Hero({
             <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base text-[var(--foreground)] sm:text-xl" />
 
             <div className="flex items-center gap-1 sm:gap-2">
-              {/* Bare icon, no white disc: on the frosted panel the disc read as
-                  a third button matching the two on the left, which put the
-                  wordmark's visual weight in the wrong place. */}
-              <button
-                type="button"
-                onClick={() => setSaved((s) => !s)}
-                aria-label={saved ? "เอาออกจากรายการที่บันทึก" : "บันทึกทริปนี้"}
-                aria-pressed={saved}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70"
-              >
-                <Bookmark
-                  size={17}
-                  strokeWidth={2.25}
-                  fill={saved ? "var(--color-brand-green)" : "none"}
-                  style={{ color: "var(--color-brand-green)" }}
-                />
-              </button>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={userAvatarUrl || "/images/profile-avatar.jpg"}
                 alt=""
-                className="h-8 w-8 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
+                className="h-9 w-9 shrink-0 rounded-full border-2 border-white object-cover shadow-sm sm:h-8 sm:w-8"
               />
             </div>
           </div>
@@ -1395,7 +1377,7 @@ function Hero({
           (trip.styles doubles as the reference design's transport/theme tags).
           White text throughout, no shadow/halo. */}
       <div className={`relative z-10 mt-auto flex flex-col gap-2 pb-5 sm:pb-6 ${SHELL}`}>
-        <h1 className="text-2xl font-extrabold text-white sm:text-4xl">{trip.title || trip.destination}</h1>
+        <h1 className="line-clamp-2 text-2xl font-extrabold leading-tight text-white sm:text-4xl">{trip.title || trip.destination}</h1>
 
         {/* ภาพรวมทริป and แพลนทริป are the two tabs the itinerary itself
             lives on, so both lead with the counts/budget/distance summary —
@@ -1590,11 +1572,11 @@ function TripAttributionBar({
   if (!hasLeft && !hasRight) return null;
 
   return (
-    <div className={`${SHELL} pt-6`}>
+    <div className={`${SHELL} pt-4 sm:pt-6`}>
       {/* items-start, not items-center: the right side is a control row with
           the visibility caption under it, and centring against that pushed
           the creator block down out of line with the buttons. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           {trip.creator && (
             <div className="flex items-center gap-2">
@@ -1639,13 +1621,13 @@ function TripAttributionBar({
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex w-full flex-col items-stretch gap-1 sm:w-auto sm:items-end">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             {onShareClick && (
               <button
                 type="button"
                 onClick={onShareClick}
-                className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--color-surface)]"
+                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)] sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
                 style={{ borderColor: "var(--color-border)" }}
               >
                 <Share2 size={13} />
@@ -1656,7 +1638,7 @@ function TripAttributionBar({
               <button
                 type="button"
                 onClick={onRemixClick}
-                className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-1.5 text-xs font-bold text-white"
+                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-transparent px-4 py-2 text-sm font-bold text-white sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
                 style={{ backgroundColor: "var(--color-brand-green)" }}
               >
                 <Repeat2 size={13} />
@@ -1667,7 +1649,7 @@ function TripAttributionBar({
               <button
                 type="button"
                 onClick={onEditTrip}
-                className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-3.5 py-1.5 text-xs font-semibold text-white"
+                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-transparent px-4 py-2 text-sm font-semibold text-white sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
                 style={{ backgroundColor: "var(--color-accent-orange)" }}
               >
                 <Pencil size={13} />
@@ -1973,7 +1955,7 @@ function PlanTabs({
             tabIndex={isActive ? 0 : -1}
             onClick={() => setTab(t.key)}
             onKeyDown={(e) => handleKeyDown(e, i)}
-            className="flex-1 whitespace-nowrap rounded-full px-3 py-2.5 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:py-3 sm:text-sm"
+            className="min-w-[108px] flex-none whitespace-nowrap rounded-full px-3 py-2.5 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-w-0 sm:flex-1 sm:py-3 sm:text-sm"
             style={{
               backgroundColor: isActive ? "var(--color-brand-green)" : "transparent",
               color: isActive ? "#fff" : "var(--foreground)",
@@ -2200,7 +2182,7 @@ function ItineraryAccordion({
         // Fuller, one-column day list while actively building/editing — place
         // count + date per day, plus a jump straight to the Plan tab for the
         // per-day travel-connector view, which this compact card doesn't have.
-        <div className="flex flex-col gap-4 px-4 pb-5 pt-3">
+        <div className="flex flex-col gap-3 px-2.5 pb-4 pt-3 sm:gap-4 sm:px-4 sm:pb-5">
           {/* Leads the card, directly under the "ตารางแพลน" heading. It used to
               sit below the day list, where on a multi-day trip it was several
               screens down — past the point where someone who doesn't know what
@@ -2283,76 +2265,103 @@ function ItineraryAccordion({
       )}
 
       {expanded && !canEdit && (
-        <div className="flex flex-col gap-4 px-4 pb-5 pt-3">
+        <div className="flex flex-col gap-3 px-2.5 pb-4 pt-3 sm:gap-4 sm:px-4 sm:pb-5">
           {trip.days.length === 0 ? (
             <p className="py-5 text-center text-sm text-[var(--color-muted)]">
               ทริปนี้ยังไม่มีวันเดินทาง
             </p>
           ) : (
             trip.days.map((day) => (
-              <div
+              <ReadOnlyOverviewDay
                 key={day.id}
-                className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
-                style={{ borderColor: "#E6D9B8" }}
-              >
-                <div
-                  className={
-                    day.activities.length > 0
-                      ? "flex items-center justify-between gap-3 border-b pb-2.5"
-                      : "flex items-center justify-between gap-3"
-                  }
-                  style={day.activities.length > 0 ? { borderColor: "#E6D9B8" } : undefined}
-                >
-                  <div className="flex items-baseline gap-2">
-                    <h4 className="text-sm font-bold text-[var(--color-brand-green)]">
-                      วันที่ {day.dayNumber}
-                    </h4>
-                    <span className="text-xs font-semibold text-[var(--color-muted)]">
-                      {dayDateLabel(day)}
-                    </span>
-                  </div>
-                  <span className="text-xs text-[var(--color-muted)]">
-                    {day.activities.length} สถานที่
-                  </span>
-                </div>
-
-                {day.activities.length === 0 ? (
-                  <p className="py-2 text-sm text-[var(--color-muted)]">วันนี้ยังไม่มีสถานที่</p>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {day.activities.map((activity, index) => {
-                      const next = day.activities[index + 1];
-                      return (
-                        <div key={activity.id} className="flex flex-col gap-2">
-                          <ItineraryRow
-                            activity={activity}
-                            index={index + 1}
-                            canEdit={false}
-                            onEdit={() => undefined}
-                            onDelete={() => undefined}
-                          />
-                          {next && (
-                            <TravelConnectorRow
-                              fromTitle={activity.title}
-                              toActivity={next}
-                              travelSegment={
-                                autoTravelCalculationEnabled
-                                  ? visibleTravelSegment(day.travelSegments, activity, next)
-                                  : undefined
-                              }
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                day={day}
+                showAutomaticTravel={autoTravelCalculationEnabled}
+              />
             ))
           )}
         </div>
       )}
 
+    </div>
+  );
+}
+
+function ReadOnlyOverviewDay({
+  day,
+  showAutomaticTravel,
+}: {
+  day: Day;
+  showAutomaticTravel: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl border bg-white sm:rounded-2xl"
+      style={{ borderColor: "#E6D9B8" }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls={`overview-day-${day.id}`}
+        className="flex min-h-12 w-full items-center justify-between gap-3 p-3 text-left sm:p-4"
+      >
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm font-bold text-[var(--color-brand-green)]">
+            วันที่ {day.dayNumber}
+          </span>
+          <span className="text-xs font-semibold text-[var(--color-muted)]">
+            {dayDateLabel(day)}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-xs text-[var(--color-muted)]">
+            {day.activities.length} สถานที่
+          </span>
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </span>
+      </button>
+
+      {expanded && (
+        <div
+          id={`overview-day-${day.id}`}
+          className="border-t px-3 pb-3 pt-2.5 sm:px-4 sm:pb-4 sm:pt-3"
+          style={{ borderColor: "#E6D9B8" }}
+        >
+          {day.activities.length === 0 ? (
+            <p className="py-2 text-sm text-[var(--color-muted)]">วันนี้ยังไม่มีสถานที่</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {day.activities.map((activity, index) => {
+                const next = day.activities[index + 1];
+                return (
+                  <div key={activity.id} className="flex flex-col gap-2">
+                    <ItineraryRow
+                      activity={activity}
+                      index={index + 1}
+                      canEdit={false}
+                      onEdit={() => undefined}
+                      onDelete={() => undefined}
+                    />
+                    {next && (
+                      <TravelConnectorRow
+                        fromTitle={activity.title}
+                        toActivity={next}
+                        travelSegment={
+                          showAutomaticTravel
+                            ? visibleTravelSegment(day.travelSegments, activity, next)
+                            : undefined
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2618,7 +2627,7 @@ function PlanTab({
   // Its own แชร์/remix pair lived here too. Both are in the attribution bar
   // now, which renders above every tab, so keeping these would have shown the
   // same two buttons twice on this one.
-  const header = <h2 className="text-2xl font-bold">แพลนเที่ยวของคุณ</h2>;
+  const header = <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>;
 
   // A freshly-created backend trip can arrive with `days: []` (no itinerary
   // yet) — everything below assumes a current day exists, so bail out to an
@@ -2652,12 +2661,12 @@ function PlanTab({
   const showAutomaticTravel = autoTravelCalculationEnabled;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       {header}
 
-      <div className="flex flex-col gap-5 rounded-3xl p-5" style={{ backgroundColor: "#FAF8F5" }}>
+      <div className="flex flex-col gap-4 rounded-2xl p-2.5 sm:gap-5 sm:rounded-3xl sm:p-5" style={{ backgroundColor: "#FAF8F5" }}>
         <div
-          className="flex items-center gap-2 overflow-x-auto rounded-2xl border bg-white p-2"
+          className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
           style={{ borderColor: "var(--color-border)" }}
         >
           {trip.days.map((d, i) => (
@@ -2665,7 +2674,7 @@ function PlanTab({
               key={d.id}
               type="button"
               onClick={() => setDayIndex(i)}
-              className="flex-1 whitespace-nowrap rounded-xl px-5 py-2.5 text-sm font-bold"
+              className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
               style={
                 i === dayIndex
                   ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
@@ -2711,7 +2720,7 @@ function PlanTab({
                 )}
               </button>
             </div>
-            <div className="flex flex-col gap-3 px-4 pb-4 pt-4">
+            <div className="flex flex-col gap-3 px-2 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4">
               {day.activities.map((a, i) => {
                 const next = day.activities[i + 1];
                 return (
@@ -2855,10 +2864,10 @@ function PlanActivityRow({
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
                 aria-expanded={expanded}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold sm:px-3 sm:py-1.5 sm:text-xs"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center gap-1 rounded-full text-[11px] font-semibold sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 sm:text-xs"
                 style={{ backgroundColor: "#FAF8F5", color: "var(--foreground)" }}
               >
-                {expanded ? "ย่อละเอียด" : "ดูละเอียด"}
+                <span className="hidden sm:inline">{expanded ? "ย่อละเอียด" : "ดูละเอียด"}</span>
                 {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
             )}
@@ -3037,37 +3046,50 @@ function ImageLightbox({
   const [index, setIndex] = useState(initialIndex);
   const hasMultiple = images.length > 1;
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft" && hasMultiple) setIndex((current) => (current - 1 + images.length) % images.length);
+      if (event.key === "ArrowRight" && hasMultiple) setIndex((current) => (current + 1) % images.length);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hasMultiple, images.length, onClose]);
+
   function goTo(next: number) {
     setIndex((next + images.length) % images.length);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90">
-      <div className="flex items-center justify-between px-6 py-4">
-        <p className="text-base font-bold text-white">{title}</p>
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/90" role="dialog" aria-modal="true" aria-label={`รูปภาพของ ${title}`}>
+      <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+        <p className="min-w-0 truncate text-sm font-bold text-white sm:text-base">{title}</p>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
+          aria-label="ปิดรูปภาพ"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-white sm:h-9 sm:w-9"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center px-6 pb-4">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-3 sm:px-6 sm:pb-4">
         {hasMultiple && (
           <button
             type="button"
             onClick={() => goTo(index - 1)}
-            className="absolute left-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white sm:left-8"
+            aria-label="รูปก่อนหน้า"
+            className="absolute left-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm sm:left-8 sm:h-9 sm:w-9"
           >
             <ChevronLeft size={18} />
           </button>
         )}
 
-        <div className="relative max-h-full max-w-4xl overflow-hidden rounded-2xl">
+        <div className="relative flex max-h-full w-full max-w-4xl items-center justify-center overflow-hidden rounded-xl sm:rounded-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={images[index]} alt="" className="max-h-[70vh] w-full object-cover" />
+          <img src={images[index]} alt={`${title} รูปที่ ${index + 1}`} className="max-h-[calc(100dvh-11rem)] max-w-full object-contain sm:max-h-[70vh]" />
           <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
             {index + 1} / {images.length}
           </span>
@@ -3077,20 +3099,22 @@ function ImageLightbox({
           <button
             type="button"
             onClick={() => goTo(index + 1)}
-            className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white sm:right-8"
+            aria-label="รูปถัดไป"
+            className="absolute right-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm sm:right-8 sm:h-9 sm:w-9"
           >
             <ChevronRight size={18} />
           </button>
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-2 overflow-x-auto px-6 pb-6">
+      <div className="no-scrollbar flex shrink-0 items-center justify-start gap-2 overflow-x-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-center sm:px-6 sm:pb-6">
         {images.map((src, i) => (
           <button
             key={src + i}
             type="button"
             onClick={() => setIndex(i)}
-            className="h-16 w-24 shrink-0 overflow-hidden rounded-xl"
+            aria-label={`ดูรูปที่ ${i + 1}`}
+            className="h-12 w-16 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-24 sm:rounded-xl"
             style={i === index ? { outline: "2px solid #fff", outlineOffset: "2px" } : undefined}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -3122,7 +3146,7 @@ function TripMapPanel({ day }: { day: Day }) {
     // div — PlacePopup positions itself relative to a pin here, and clipping
     // the whole panel was cutting the popup off at the map's own edges
     // instead of letting it float over whatever's next to the map.
-    <div className="relative min-h-[320px] rounded-2xl border border-[var(--color-border)]/25">
+    <div className="relative min-h-[280px] rounded-2xl border border-[var(--color-border)]/25 sm:min-h-[320px]">
       <div className="absolute inset-0 overflow-hidden rounded-2xl">
         <FakeMapBackground />
       </div>
@@ -3179,7 +3203,7 @@ function TripMapPanel({ day }: { day: Day }) {
             type="button"
             aria-label="ปิดข้อมูลสถานที่"
             onClick={() => setSelectedId(null)}
-            className="fixed inset-0 z-10 bg-black/25"
+            className="fixed inset-0 z-10 bg-black/35 backdrop-blur-[1px]"
           />
           <PlacePopup
             key={selected.id}
@@ -3240,6 +3264,20 @@ function PlacePopup({
   const [detailsStatus, setDetailsStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<PlaceDetailTab>("about");
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // The phone layout behaves like an app bottom sheet. Preventing the page
+  // behind it from scrolling avoids the map moving while users browse details.
+  useEffect(() => {
+    const phoneViewport = window.matchMedia("(max-width: 639px)");
+    if (!phoneViewport.matches) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3297,14 +3335,17 @@ function PlacePopup({
   return (
     <div
       role="dialog"
+      aria-modal={openBelow === undefined}
       aria-label={`ข้อมูลสถานที่ ${name}`}
-      className={`fixed inset-x-4 top-1/2 z-20 max-h-[calc(100dvh-2rem)] -translate-y-1/2 overflow-y-auto rounded-3xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:max-h-none sm:w-[min(34rem,calc(100vw-2rem))] sm:translate-y-0 ${horizontalClass} ${verticalClass}`}
+      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${horizontalClass} ${verticalClass}`}
       style={{ borderColor: "var(--color-border-tag)" }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="relative overflow-hidden px-4 pb-5 pt-4 sm:px-5 sm:pt-5" style={{ backgroundColor: "var(--color-sel-bg)" }}>
+      <div className="relative shrink-0 overflow-hidden px-4 pb-4 pt-2 sm:px-5 sm:pb-5 sm:pt-5" style={{ backgroundColor: "var(--color-sel-bg)" }}>
         <span className="absolute -right-7 -top-8 h-24 w-24 rounded-full bg-white/40" aria-hidden="true" />
         <span className="absolute -bottom-9 right-16 h-16 w-16 rounded-full bg-[var(--color-accent-mint)]/10" aria-hidden="true" />
+
+        <div className="relative mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--color-brand-green)]/25 sm:hidden" aria-hidden="true" />
 
         <div className="relative flex items-start gap-3">
           <span
@@ -3323,7 +3364,7 @@ function PlacePopup({
             type="button"
             onClick={onClose}
             aria-label="ปิดข้อมูลสถานที่"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] shadow-sm transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] shadow-sm transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)] sm:h-9 sm:w-9"
             style={{ borderColor: "var(--color-sel-border)" }}
           >
             <X size={16} strokeWidth={2.5} />
@@ -3331,7 +3372,7 @@ function PlacePopup({
         </div>
       </div>
 
-      <div className="-mt-3 px-3 sm:px-4">
+      <div className="relative z-[1] -mt-3 shrink-0 px-3 sm:px-4">
         <div className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto rounded-full border bg-white p-1.5 shadow-md" style={{ borderColor: "var(--color-border-tag)" }}>
           {PLACE_DETAIL_TABS.map((tab) => (
             <button
@@ -3354,7 +3395,7 @@ function PlacePopup({
         </div>
       </div>
 
-      <div className="px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 sm:px-5">
         {detailsStatus === "loading" && (
           <div className="mb-3 flex items-center gap-2 rounded-2xl bg-[var(--color-sel-bg)] px-3 py-2 text-xs font-semibold text-[var(--color-brand-green)]">
             <LoaderCircle size={14} className="animate-spin" />
@@ -3363,7 +3404,7 @@ function PlacePopup({
         )}
 
         {detailsStatus === "error" && (
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)]">
+          <div className="mb-3 flex flex-col items-start gap-2 rounded-2xl bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)] sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <span>โหลดข้อมูลเต็มไม่สำเร็จ กำลังแสดงข้อมูลจากแผนแทน</span>
             <button
               type="button"
@@ -3380,7 +3421,7 @@ function PlacePopup({
 
         {activeTab === "about" && (
           <div>
-            <div className="flex items-start gap-3">
+            <div className="flex flex-col gap-3 min-[380px]:flex-row min-[380px]:items-start">
               {description ? (
                 <p className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--foreground)] sm:text-sm sm:leading-6">
                   {description}
@@ -3389,10 +3430,18 @@ function PlacePopup({
                 <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)] sm:text-sm">ยังไม่มีคำอธิบายสำหรับสถานที่นี้</p>
               )}
               {photos[0] && (
-                <div className="h-16 w-20 shrink-0 overflow-hidden rounded-2xl bg-[var(--color-sel-bg)] sm:h-20 sm:w-24">
+                <button
+                  type="button"
+                  onClick={() => setLightboxIndex(0)}
+                  aria-label={`ดูรูปของ ${name} แบบเต็มจอ`}
+                  className="group relative h-36 w-full shrink-0 overflow-hidden rounded-2xl bg-[var(--color-sel-bg)] min-[380px]:h-20 min-[380px]:w-24"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photos[0]} alt={name} className="h-full w-full object-cover" />
-                </div>
+                  <img src={photos[0]} alt={name} className="h-full w-full object-cover transition group-hover:scale-105" />
+                  <span className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 shadow-sm">
+                    <Maximize2 size={10} />
+                  </span>
+                </button>
               )}
             </div>
 
@@ -3487,7 +3536,7 @@ function PlacePopup({
         )}
 
         {activeTab === "reviews" && (
-          <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
+          <div className="grid gap-2 sm:max-h-64 sm:overflow-y-auto sm:pr-1">
             {details?.reviews.length ? details.reviews.map((review, reviewIndex) => (
               <article key={`${review.authorName}-${review.publishTime ?? reviewIndex}`} className="rounded-2xl border p-3" style={{ borderColor: "var(--color-border-tag)" }}>
                 <div className="flex items-center gap-2">
@@ -3516,12 +3565,21 @@ function PlacePopup({
 
         {activeTab === "photos" && (
           photos.length ? (
-            <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:max-h-64 sm:grid-cols-3 sm:overflow-y-auto sm:pr-1">
               {photos.map((src, photoIndex) => (
-                <div key={`${src}-${photoIndex}`} className="aspect-square overflow-hidden rounded-2xl bg-[var(--color-sel-bg)]">
+                <button
+                  key={`${src}-${photoIndex}`}
+                  type="button"
+                  onClick={() => setLightboxIndex(photoIndex)}
+                  aria-label={`ดูรูปของ ${name} รูปที่ ${photoIndex + 1} แบบเต็มจอ`}
+                  className="group relative aspect-square overflow-hidden rounded-2xl bg-[var(--color-sel-bg)]"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`${name} รูปที่ ${photoIndex + 1}`} className="h-full w-full object-cover" />
-                </div>
+                  <img src={src} alt={`${name} รูปที่ ${photoIndex + 1}`} className="h-full w-full object-cover transition group-hover:scale-105" />
+                  <span className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100">
+                    <Maximize2 size={11} />
+                  </span>
+                </button>
               ))}
             </div>
           ) : (
@@ -3535,20 +3593,35 @@ function PlacePopup({
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-2 border-t pt-3" style={{ borderColor: "var(--color-border-tag)" }}>
-          <span className="hidden text-[11px] text-[var(--color-muted)] sm:inline">ดูตำแหน่งและเส้นทาง</span>
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5"
-            style={{ backgroundColor: "var(--color-accent-orange)" }}
-          >
-            <Navigation size={13} />
-            เปิดใน Google Maps
-          </a>
-        </div>
       </div>
+
+      <div
+        className="flex shrink-0 items-center gap-2 border-t bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5"
+        style={{ borderColor: "var(--color-border-tag)" }}
+      >
+        <span className="hidden text-[11px] text-[var(--color-muted)] sm:inline">ดูตำแหน่งและเส้นทาง</span>
+        <a
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 sm:ml-auto sm:min-h-0 sm:w-auto"
+          style={{ backgroundColor: "var(--color-accent-orange)" }}
+        >
+          <Navigation size={13} />
+          เปิดใน Google Maps
+        </a>
+      </div>
+
+      {lightboxIndex !== null && photos.length > 0 &&
+        createPortal(
+          <ImageLightbox
+            title={name}
+            images={photos}
+            initialIndex={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+          />,
+          document.body
+        )}
     </div>
   );
 }

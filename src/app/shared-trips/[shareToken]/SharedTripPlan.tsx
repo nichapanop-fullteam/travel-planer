@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MapPin, Star } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin, Maximize2, Navigation, Star } from "lucide-react";
 import { categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
 import type { SharedTripActivity, SharedTripDay } from "@/lib/share-api";
 import type { ActivityCategory } from "@/types";
@@ -36,12 +36,14 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 sm:gap-6">
+      <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>
+      <div className="flex flex-col gap-4 rounded-2xl p-2.5 sm:gap-5 sm:rounded-3xl sm:p-5" style={{ backgroundColor: "#FAF8F5" }}>
       {/* Same pill-in-a-tray treatment as PlanTab's day switcher. */}
       {days.length > 1 && (
         <div
-          className="flex items-center gap-1 overflow-x-auto rounded-2xl p-1.5"
-          style={{ backgroundColor: "#FAF8F5" }}
+          className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
+          style={{ borderColor: "var(--color-border)" }}
         >
           {days.map((d, i) => (
             <button
@@ -49,7 +51,7 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
               type="button"
               onClick={() => setDayIndex(i)}
               aria-pressed={i === dayIndex}
-              className="flex-1 whitespace-nowrap rounded-xl px-5 py-2.5 text-sm font-bold transition-colors"
+              className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
               style={
                 i === dayIndex
                   ? { backgroundColor: "var(--color-brand-green)", color: "#fff" }
@@ -73,7 +75,7 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
           {day.date && <span className="text-xs font-semibold text-[var(--color-muted)]">{formatThaiDate(day.date)}</span>}
         </div>
 
-        <div className="flex flex-col gap-3 px-4 pb-4 pt-4">
+        <div className="flex flex-col gap-3 px-2 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4">
           {day.activities.length === 0 ? (
             <p className="py-6 text-center text-xs text-[var(--color-muted)]">ยังไม่มีกิจกรรมในวันนี้</p>
           ) : (
@@ -85,11 +87,13 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
 function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; index: number }) {
+  const [expanded, setExpanded] = useState(true);
   const category = asCategory(activity.category);
   const Icon = categoryIcon[category];
   const color = categoryColorVar[category];
@@ -108,21 +112,29 @@ function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; 
 
   const isHighlight = category === "sightseeing";
   const showPlaceName = activity.place?.name && activity.place.name !== activity.title;
+  const imageUrl = activity.place?.imageUrl ?? "/images/luang-prabang.jpg";
+  const hasDetails = Boolean(travelText || showPlaceName || activity.place?.rating != null);
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.place?.name || activity.title)}`;
 
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-white p-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-2">
-          <span
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
-          >
+    <div className="rounded-2xl border bg-white p-2.5 sm:p-3" style={{ borderColor: "var(--color-border-tag)" }}>
+      <div className="flex items-start gap-2.5 sm:gap-3">
+        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl sm:h-16 sm:w-16">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          <span className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--foreground)] text-[9px] font-bold text-white sm:h-5 sm:w-5 sm:text-[10px]">
             {index}
           </span>
-          <Icon size={15} style={{ color }} className="mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <p className="min-w-0 break-words text-sm font-semibold">{activity.title}</p>
+          <span className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 sm:h-5 sm:w-5">
+            <Maximize2 size={10} />
+          </span>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className="min-w-0 break-words text-sm font-bold sm:text-[15px]">{activity.title}</p>
               {isHighlight && (
                 <span
                   className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
@@ -131,9 +143,17 @@ function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; 
                   สถานที่ห้ามพลาด
                 </span>
               )}
+              </div>
             </div>
+            {hasDetails && (
+              <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 sm:text-xs" style={{ backgroundColor: "#FAF8F5" }}>
+                <span className="hidden sm:inline">{expanded ? "ย่อละเอียด" : "ดูละเอียด"}</span>
+                {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+            )}
+          </div>
 
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-semibold">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
               {/* The live payload sends time: "" for stops with no set time, so
                   this needs a truthiness check rather than a null check. */}
               {activity.time && (
@@ -141,16 +161,14 @@ function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; 
                   {activity.time}
                 </span>
               )}
-              <span className="font-semibold" style={{ color }}>
-                {activity.time && "· "}
+              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold sm:px-2.5 sm:py-1 sm:text-xs" style={{ color, borderColor: "var(--color-border-tag)" }}>
+                <Icon size={12} />
                 {categoryLabel[category]}
               </span>
-              {travelText && (
-                <span className="font-semibold text-[var(--color-muted)]">· {travelText}</span>
-              )}
             </div>
 
-            {(showPlaceName || activity.place?.rating != null) && (
+            {expanded && travelText && <p className="mt-1.5 break-words text-xs leading-relaxed text-[var(--color-muted)] sm:text-sm">{travelText}</p>}
+            {expanded && (showPlaceName || activity.place?.rating != null) && (
               <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[var(--color-muted)]">
                 {showPlaceName && (
                   <span className="inline-flex min-w-0 items-center gap-1">
@@ -166,19 +184,14 @@ function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; 
                 )}
               </div>
             )}
+            {expanded && (
+              <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-orange)] px-2.5 py-1 text-[11px] font-bold text-white">
+                <Navigation size={11} />
+                นำทาง
+              </a>
+            )}
           </div>
         </div>
-      </div>
-
-      {/* Not a lightbox button like PlanActivityRow's — there's no gallery
-          behind a share link (media sits behind ownership), so this is a
-          plain thumbnail and only appears when the place actually has one. */}
-      {activity.place?.imageUrl && (
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={activity.place.imageUrl} alt="" className="h-full w-full object-cover" />
-        </div>
-      )}
     </div>
   );
 }

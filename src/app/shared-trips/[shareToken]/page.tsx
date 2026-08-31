@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarDays, Link2, MapPin } from "lucide-react";
+import { CalendarDays, Link2 } from "lucide-react";
+import { Logo } from "@/components/common/Logo";
 import { getSharedTrip } from "@/lib/share-api";
 import { SharedTripPlan } from "@/app/shared-trips/[shareToken]/SharedTripPlan";
 
@@ -63,10 +64,35 @@ export default async function SharedTripPage({ params }: PageProps) {
   const statLabel = activityCount > 0 ? `${activityCount} จุดเช็คอิน` : durationLabel;
 
   const dateRange = formatDateRange(trip.schedule?.startDate, trip.schedule?.endDate);
+  const attractionCount = days.reduce(
+    (total, day) => total + day.activities.filter((activity) => activity.category === "sightseeing").length,
+    0,
+  );
+  const restaurantCount = days.reduce(
+    (total, day) => total + day.activities.filter((activity) => activity.category === "food").length,
+    0,
+  );
+  const stayCount = days.reduce(
+    (total, day) => total + day.activities.filter((activity) => activity.category === "hotel").length,
+    0,
+  );
+  const totalDistance = days.reduce(
+    (total, day) =>
+      total +
+      day.activities.reduce((sum, activity) => sum + (activity.travelFromPrevious?.distanceKm ?? 0), 0),
+    0,
+  );
+  const summaryStats = [
+    { label: "ที่เที่ยว", value: attractionCount },
+    { label: "ร้านอาหาร", value: restaurantCount },
+    { label: "ที่พัก", value: stayCount },
+    { label: "จุดเช็คอิน", value: activityCount },
+    { label: "Total Distance", value: `${Math.round(totalDistance * 10) / 10} km` },
+  ];
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="relative flex min-h-[440px] flex-col justify-between overflow-hidden sm:min-h-[560px]">
+      <div className="relative flex min-h-[340px] flex-col overflow-hidden rounded-b-[24px] sm:min-h-[380px] sm:rounded-b-[28px] lg:min-h-[440px]">
         {/* coverImage is genuinely absent on plenty of shared trips (the field
             only appears once PUT /trips/:id/cover has run), and a flat colour
             fill behind the hero's dark gradients read as a broken image rather
@@ -86,36 +112,34 @@ export default async function SharedTripPage({ params }: PageProps) {
             gradient alone left our title sitting on that baked-in text,
             illegible. The extra band keeps the heading readable over a busy
             photo and over a poster alike. */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/5 to-black/70" />
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
-          style={{
-            background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 40%, rgba(0,0,0,0) 100%)",
-            backdropFilter: "blur(2px)",
-            WebkitBackdropFilter: "blur(2px)",
-            maskImage: "linear-gradient(to top, black 60%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to top, black 60%, transparent 100%)",
-          }}
-        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/55" />
 
         {/* Marks the page as something someone handed you — the real trip page
             has no equivalent, and it sits where Hero puts its back/menu row. */}
-        <div className="relative z-20 flex justify-center px-6 pt-6">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
-            <Link2 size={13} />
-            แผนเที่ยวที่แชร์กับคุณ
-          </span>
+        <div className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+          <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 sm:px-6 lg:px-10 xl:px-14">
+            <div className="relative flex min-h-8 items-center justify-between gap-3 py-1.5 sm:py-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold shadow-sm text-[var(--color-brand-green)]">
+                <Link2 size={13} />
+                แชร์กับคุณ
+              </span>
+              <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base text-[var(--foreground)] sm:text-xl" />
+              {trip.owner?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={trip.owner.avatarUrl} alt="" className="h-9 w-9 rounded-full border-2 border-white object-cover shadow-sm sm:h-8 sm:w-8" />
+              ) : <span className="h-9 w-9 sm:h-8 sm:w-8" />}
+            </div>
+          </div>
         </div>
 
-        {/* Same centred title / byline / location / pills stack as Hero. */}
-        <div className="relative z-10 flex flex-col items-center gap-2.5 px-6 pb-8 text-center sm:pb-10">
-          <h1 className="text-3xl font-extrabold text-white drop-shadow-sm sm:text-6xl">{trip.title}</h1>
+        <div className="relative z-10 mx-auto mt-auto flex w-full max-w-[var(--container-max)] flex-col gap-2 px-4 pb-5 sm:px-6 sm:pb-6 lg:px-10">
+          <h1 className="line-clamp-2 text-2xl font-extrabold leading-tight text-white sm:text-4xl">{trip.title}</h1>
 
           {/* `owner` is absent entirely when the creator never set a display
               name — there's no username fallback by design, so the byline goes
               away rather than showing something like "@user_28f1". */}
           {(trip.owner || statLabel) && (
-            <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-white sm:text-base">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-white">
               {trip.owner && (
                 <>
                   {trip.owner.avatarUrl ? (
@@ -134,31 +158,22 @@ export default async function SharedTripPage({ params }: PageProps) {
             </div>
           )}
 
-          <p className="flex items-center gap-1.5 text-sm text-white/85">
-            <MapPin size={14} className="shrink-0" />
-            {trip.destination}
-          </p>
-
           {dateRange && (
-            <p className="flex items-center gap-1.5 text-xs text-white/60">
-              <CalendarDays size={12} className="shrink-0" />
-              {dateRange}
+            <p className="flex items-center gap-1.5 text-sm font-medium text-white">
+              <CalendarDays size={16} className="shrink-0" />
+              {dateRange}{durationLabel ? ` · ${durationLabel}` : ""}
             </p>
           )}
 
-          {trip.tags && trip.tags.length > 0 && (
-            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
-              {trip.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold shadow-md sm:text-sm"
-                  style={{ color: "var(--color-brand-green)" }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
+          <p className="text-xs font-medium text-white/90">{trip.destination}</p>
+          <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
+            {summaryStats.map((stat) => (
+              <div key={stat.label} className="flex flex-col items-center gap-0.5 rounded-2xl bg-black/35 px-2 py-2 text-center text-white backdrop-blur-sm">
+                <span className="text-sm font-extrabold sm:text-base">{stat.value}</span>
+                <span className="text-[10px] font-medium text-white/85">{stat.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -166,10 +181,8 @@ export default async function SharedTripPage({ params }: PageProps) {
           seam on generated-plan. No section tabs here: weather, budget and chat
           all depend on fields the share payload deliberately withholds, so a
           tab row would promise content that cannot exist. */}
-      <div className="h-8" style={{ backgroundColor: "#0F2419" }} />
-
-      <div className="relative -mt-5 rounded-t-[28px] bg-white">
-        <div className="mx-auto max-w-3xl px-6 py-8 sm:px-10">
+      <div className="relative bg-white">
+        <div className="mx-auto w-full max-w-[var(--container-max)] px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
           <SharedTripPlan days={days} />
 
           <footer
