@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import "./globals.css";
 
 // One typeface for the whole platform.
@@ -24,6 +26,37 @@ const notoSansThai = Noto_Sans_Thai({
 export const metadata: Metadata = {
   title: "PunGuide",
   description: "Social Travel Planning Platform",
+  applicationName: "PunGuide",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    // The rest of the set is declared in app/manifest.ts; these two are what
+    // browsers read from the document itself, iOS Safari included — it ignores
+    // the manifest's icons entirely when saving to the home screen.
+    icon: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  appleWebApp: {
+    // iOS's equivalent of the manifest's `display: "standalone"`.
+    capable: true,
+    title: "PunGuide",
+    // Lets the page paint under the status bar, which the app's own top nav
+    // already accounts for with its safe-area padding.
+    statusBarStyle: "black-translucent",
+  },
+  // iOS auto-links anything that looks like a phone number, restyling it
+  // mid-paragraph — unwanted in trip notes and addresses.
+  formatDetection: { telephone: false },
+};
+
+// Standalone display needs the viewport locked down the way a native shell is:
+// no pinch-zoom-induced layout shifts on the fixed tab bar, and `viewportFit`
+// so `env(safe-area-inset-*)` reports real values on notched devices.
+export const viewport: Viewport = {
+  themeColor: "#2a9e64",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -38,8 +71,12 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            {children}
+            <InstallPrompt />
+          </ToastProvider>
         </AuthProvider>
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2a9e64" />
+    <title>ออฟไลน์ · PunGuide</title>
+    <!--
+      The service worker's navigation fallback.
+
+      Plain HTML in public/ rather than an app route on purpose. A Next page —
+      even a fully static one — still hydrates, and hydration pulls the layout's
+      client chunks; offline, whichever chunk is not already in the cache throws
+      a ChunkLoadError and the router replaces the page with its own generic
+      error screen. Everything here is inline and self-contained, so the page
+      cannot fail for a reason the network caused.
+
+      Colours are copied from globals.css (--color-page-cream, --color-primary,
+      --foreground, --color-muted) rather than imported, for the same reason.
+    -->
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 1.5rem;
+        background: #f3ecdd;
+        color: #1e1e1e;
+        font-family: "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-align: center;
+        -webkit-font-smoothing: antialiased;
+      }
+      img { width: 64px; height: 64px; }
+      h1 { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 800; }
+      p { margin: 0; max-width: 24rem; font-size: 0.875rem; line-height: 1.6; color: #7c8782; }
+      button {
+        font: inherit;
+        font-weight: 500;
+        font-size: 0.875rem;
+        padding: 0.625rem 1.75rem;
+        border: 0;
+        border-radius: 9999px;
+        background: #2a9e64;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:hover { opacity: 0.9; }
+    </style>
+  </head>
+  <body>
+    <img src="/icons/icon.svg" alt="" />
+    <div>
+      <h1>ยังออฟไลน์อยู่</h1>
+      <p>
+        ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง
+        หน้าที่เคยเปิดไว้แล้วยังเข้าดูได้ตามปกติ
+      </p>
+    </div>
+    <button type="button" onclick="location.reload()">ลองอีกครั้ง</button>
+  </body>
+</html>
