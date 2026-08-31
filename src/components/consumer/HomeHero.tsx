@@ -40,24 +40,62 @@ export function HomeHero({
   // gradient, which is the intended ground colour anyway.
   const [illustrationFailed, setIllustrationFailed] = useState(false);
 
-  // Below 1025px the field is collapsed behind the app bar's search icon: a
-  // permanently expanded one cost a whole row of a small screen, and what
-  // people arrive to do is browse the feed. Desktop is wide enough to just show
-  // it, so this state only gates the compact layout — the CSS override below
-  // keeps the field open from 1025px up whatever this says.
-  const [searchOpen, setSearchOpen] = useState(false);
-  // A non-empty query forces it open. Otherwise picking a destination from the
-  // rail (which fills this field in) narrowed the grid on a phone with nothing
-  // on screen to say why.
-  const searchExpanded = searchOpen || query.trim().length > 0;
-
   // 1025px inclusive, matching the CSS boundary. Needed in JS and not just
   // Tailwind because `aria-hidden` on the collapsed field can't come from a
   // variant, and leaving it set at desktop widths would hide a visible field
   // from screen readers.
   const compactLayout = useMediaQuery("(max-width: 1024px)");
 
-  // Opening from an icon should land the caret in the field; otherwise the tap
+  // Below 1025px the field starts open and folds away on scroll, handing its
+  // job to the app bar's search icon. Open-by-default because searching is the
+  // first thing the hero offers and a field behind an icon reads as absent;
+  // folding on scroll because the header is sticky, so an always-open field
+  // would hold a whole row of a small screen for the entire page.
+  //
+  // Two thresholds rather than one: a single boundary flips back and forth
+  // under a fingertip resting near it, and each flip resizes the sticky header.
+  const [scrolledPast, setScrolledPast] = useState(false);
+  // Explicit re-open from the icon once it has folded.
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const scrollRef = appShell?.scrollRef;
+  useEffect(() => {
+    const scroller = scrollRef?.current;
+    if (!scroller) return;
+    const COLLAPSE_AT = 56;
+    const RESTORE_AT = 16;
+    const onScroll = () => {
+      const y = scroller.scrollTop;
+      if (y > COLLAPSE_AT) {
+        setScrolledPast(true);
+      } else if (y < RESTORE_AT) {
+        setScrolledPast(false);
+        // Back at the top the field is open again on its own, so a stale
+        // "opened from the icon" would leave the toggle showing a close X.
+        setSearchOpen(false);
+      }
+    };
+    // Deferred rather than called straight away: a browser that restored the
+    // scroll position on reload lands mid-page, and this is a state write that
+    // has no business happening synchronously inside an effect.
+    const raf = requestAnimationFrame(onScroll);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [scrollRef]);
+
+  // Desktop always shows it. On compact it is open until scrolled away, and a
+  // non-empty query pins it open regardless — otherwise picking a destination
+  // from the rail (which fills this field in) would narrow the grid on a phone
+  // with nothing on screen to say why.
+  const searchExpanded = !compactLayout || !scrolledPast || searchOpen || query.trim().length > 0;
+  // The icon is the field's stand-in, so it only earns a slot once the field
+  // has actually folded away.
+  const showSearchToggle = compactLayout && scrolledPast;
+
+  // Opening from the icon should land the caret in the field; otherwise the tap
   // reveals an input and then asks for a second tap to use it.
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -78,7 +116,7 @@ export function HomeHero({
           src={HERO_ILLUSTRATION}
           alt=""
           onError={() => setIllustrationFailed(true)}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-[50%_70%]"
         />
       )}
       {/* Weak at the top so the frosted bar above doesn't turn grey behind its
@@ -92,7 +130,7 @@ export function HomeHero({
         avatarUrl={avatarUrl}
         onAvatarClick={appShell?.openAccount}
         avatarLabel={accountLabel}
-        onSearchClick={() => setSearchOpen((open) => !open)}
+        onSearchClick={showSearchToggle ? () => setSearchOpen((open) => !open) : undefined}
         searchOpen={searchExpanded}
         searchControls={SEARCH_ID}
       />
@@ -102,34 +140,36 @@ export function HomeHero({
           empty dark band under the app bar. What's left below 640px is the bar
           itself, and the hero's rounded bottom becomes the bar's. From 640px up
           the heading is back and the padding comes with it. */}
-      <div className="relative z-10 px-4 sm:px-6 sm:pb-12 sm:pt-12">
+      <div className="relative z-10 px-4 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
-          {/* Phones get the search field as the hero's only content — the
-              heading was a full line of large type restating what the page
-              already is, above a fold that has to reach the feed. */}
-          <h1 className="hidden text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] sm:block min-[640px]:text-[32px] min-[1025px]:text-[38px]">
-            จุดหมายที่คุณจะไป
-          </h1>
-
-          {/* Every bit of the field's spacing lives on the form, inside the
-              collapsing wrapper, so a collapsed field contributes no height at
-              all — on phones that's what lets the hero shrink to the bar, and
-              from 640px up it's what keeps the gap under the heading from
-              surviving a collapse. */}
+          {/* Heading and field share one collapsing region, and every bit of
+              their spacing lives inside it. Two reasons: a collapsed hero then
+              contributes nothing at all (on a phone it shrinks to the app bar),
+              and the heading folds away with the field on scroll instead of
+              staying pinned — it belongs to the same "hero content" the scroll
+              gesture is dismissing. From 1025px up the region never collapses,
+              so desktop is unaffected.
+              max-h-64 rather than a tighter cap: at 640px+ the padded content
+              measures ~210px, and a cap under that would clip the field. */}
           <div
             id={SEARCH_ID}
             ref={searchWrapRef}
             className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none ${
-              searchExpanded ? "max-h-32 opacity-100" : "max-h-0 opacity-0"
+              searchExpanded ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
             } min-[1025px]:max-h-none min-[1025px]:opacity-100`}
             aria-hidden={!searchExpanded && compactLayout}
           >
-            <form onSubmit={handleSubmit} role="search" className="py-4 sm:mt-7 sm:py-0">
+            <div className="py-5 sm:py-12">
+            <h1 className="text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] min-[640px]:text-[32px] min-[1025px]:text-[38px]">
+              จุดหมายที่คุณจะไป
+            </h1>
+
+            <form onSubmit={handleSubmit} role="search" className="mt-4 sm:mt-7">
               {/* The pale ring is what lifts the field off the scrim — without
                   it the white pill reads as sitting flat on the photo. */}
-              <div className="flex items-center gap-2 rounded-full bg-white p-1.5 ring-4 ring-white/25 transition focus-within:ring-white/70">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)]">
-                  <Search size={17} strokeWidth={2.5} />
+              <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 transition focus-within:ring-white/70 min-[640px]:gap-1.5 min-[1025px]:ring-[3px]">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)] min-[640px]:h-7 min-[640px]:w-7 min-[1025px]:h-8 min-[1025px]:w-8">
+                  <Search strokeWidth={2.5} className="h-[15px] w-[15px] min-[1025px]:h-4 min-[1025px]:w-4" />
                 </span>
                 <input
                   value={query}
@@ -141,17 +181,18 @@ export function HomeHero({
                   // middle of the placeholder text on focus, and typing then
                   // grows the query outwards from the centre. The placeholder
                   // looked right at rest and wrong the moment anyone used it.
-                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)] sm:text-base"
+                  className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)] min-[640px]:text-[13px] min-[1025px]:text-sm"
                 />
                 <button
                   type="submit"
                   aria-label="ค้นหาทริป"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white transition hover:bg-[#2b2b2b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white transition hover:bg-[#2b2b2b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 min-[640px]:h-8 min-[640px]:w-8 min-[1025px]:h-9 min-[1025px]:w-9"
                 >
-                  <ArrowRight size={18} strokeWidth={2.5} />
+                  <ArrowRight strokeWidth={2.5} className="h-4 w-4 min-[1025px]:h-[17px] min-[1025px]:w-[17px]" />
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       </div>
