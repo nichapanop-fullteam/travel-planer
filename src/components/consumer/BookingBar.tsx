@@ -39,8 +39,8 @@ export function BookingBar({
       }`}
     >
       <div
-        className={`flex flex-1 flex-col overflow-hidden bg-white sm:flex-row sm:items-stretch ${
-          compact ? "rounded-2xl" : "rounded-[20px] lg:rounded-[22px]"
+        className={`flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-0 sm:overflow-hidden sm:bg-white ${
+          compact ? "sm:rounded-2xl" : "sm:rounded-[20px] lg:rounded-[22px]"
         }`}
       >
         {fields.map((field, i) => (
@@ -76,7 +76,7 @@ function BookingField({
   return (
     <>
       <label
-        className={`flex flex-1 items-center text-left ${
+        className={`flex flex-1 items-center rounded-2xl bg-white text-left sm:rounded-none sm:bg-transparent ${
           compact ? "gap-2 px-3.5 py-2.5" : "gap-2.5 px-4 py-3 lg:gap-3 lg:px-6 lg:py-4"
         }`}
         style={{

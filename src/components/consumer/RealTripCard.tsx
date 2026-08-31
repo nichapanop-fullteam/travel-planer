@@ -49,9 +49,11 @@ export function RealTripCard({
   showStatus?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
-  /** Pushes this card's cover further portrait (2/3 vs the 4/5 default) on
-   *  the masonry layout (<=1024px), to seed the column stagger — masonry
-   *  compounds any height difference down the column, so it doesn't take much.
+  /** Pushes this card's cover taller than the 4/5 default on the masonry
+   *  layout (<=1024px), to seed the column stagger — masonry compounds any
+   *  height difference down the column, so it doesn't take much. At 3/4 the
+   *  cover is ~7% taller than its neighbours, which is enough for the two
+   *  columns to read as staggered rather than as a plain grid.
    *  Ignored from 1025px up, where the feed is a uniform grid and a mismatched
    *  card would look like a mistake. */
   tall?: boolean;
@@ -239,7 +241,7 @@ export function RealTripCard({
         className={`relative block overflow-hidden rounded-[24px] bg-[var(--color-surface)] ${
           // Landscape cover, per the reference. `tall` keeps a portrait one on
           // masonry only, to seed the column stagger.
-          tall ? "aspect-[2/3] min-[1025px]:aspect-[4/5]" : "aspect-[4/5]"
+          tall ? "aspect-[3/4] min-[1025px]:aspect-[4/5]" : "aspect-[4/5]"
         }`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}

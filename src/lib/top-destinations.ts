@@ -65,3 +65,43 @@ export function deriveTopDestinations(trips: BackendTripListItem[], limit?: numb
     .sort((a, b) => b.tripCount - a.tripCount || a.label.localeCompare(b.label, "th"))
     .slice(0, limit ?? undefined);
 }
+
+// The "Search Trend" list on /search. Same honesty as deriveTopDestinations
+// above — there is no trending-searches endpoint, so this ranks the real
+// destinations people have actually published trips to. Grouped by the whole
+// destination string rather than the country half, because the list shows the
+// place and its country on two lines and "Tokyo" and "Kyoto" are two trends,
+// not one.
+export interface TrendingPlace {
+  /** Destination as stored, e.g. "Tokyo, Japan" — the term a tap searches for. */
+  destination: string;
+  /** City half, or the whole string when there is no comma. */
+  place: string;
+  /** Country half, absent for a single-segment destination. */
+  country?: string;
+  tripCount: number;
+}
+
+export function deriveTrendingPlaces(trips: BackendTripListItem[], limit?: number): TrendingPlace[] {
+  const counts = new Map<string, number>();
+  for (const trip of trips) {
+    const destination = trip.destination.trim();
+    if (!destination) continue;
+    counts.set(destination, (counts.get(destination) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([destination, tripCount]) => {
+      const segments = destination.split(",").map((part) => part.trim()).filter(Boolean);
+      return {
+        destination,
+        place: segments[0] ?? destination,
+        country: segments.length > 1 ? segments[segments.length - 1] : undefined,
+        tripCount,
+      };
+    })
+    // Ties broken by label so the list doesn't reshuffle between renders — with
+    // one trip per destination (the common case early on) every count is 1.
+    .sort((a, b) => b.tripCount - a.tripCount || a.destination.localeCompare(b.destination, "th"))
+    .slice(0, limit ?? undefined);
+}

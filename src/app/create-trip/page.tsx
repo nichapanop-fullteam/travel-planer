@@ -34,6 +34,7 @@ import { buildGuestsLabel, GuestPickerDialog } from "@/components/consumer/Guest
 import { RecommendedPlacesStep, type SelectedRecommendation } from "@/components/consumer/RecommendedPlacesStep";
 import { Divider } from "@/components/ui/Divider";
 import { clearLastCreateTripSearch, getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
+import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 import { DEFAULT_RECOMMENDATION_CENTER, type RecommendedPlace } from "@/lib/place-recommendations";
 import { saveTripDraft } from "@/lib/trip-drafts";
 import {
@@ -556,7 +557,7 @@ function CreateTripForm() {
                 </div>
               )}
 
-          <div className="flex flex-col gap-1 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-1 px-4 pb-28 pt-2 sm:px-6 lg:px-8 lg:pb-2">
             <FormRow
               label="สไตล์การเที่ยว"
               hint="เลือกได้หลายอย่าง"
@@ -575,7 +576,7 @@ function CreateTripForm() {
                   <button
                     type="button"
                     onClick={() => setExtraStyles((prev) => [...prev, ...remainingStyleOptions])}
-                    className="inline-flex items-center gap-1.5 rounded-[20px] border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[var(--color-sel-bg)]"
+                    className="inline-flex items-center gap-1.5 rounded-[20px] border px-3 py-2 text-xs font-semibold transition-colors sm:px-4 sm:py-2.5 sm:text-sm hover:bg-[var(--color-sel-bg)]"
                     style={{ borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }}
                   >
                     <Plus size={14} />
@@ -806,7 +807,7 @@ function CreateTripForm() {
                           <button
                             type="button"
                             onClick={() => setExtraHotelStyles((prev) => [...prev, ...remainingHotelStyleOptions])}
-                            className="inline-flex items-center gap-1.5 rounded-[20px] border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[var(--color-sel-bg)]"
+                            className="inline-flex items-center gap-1.5 rounded-[20px] border px-3 py-2 text-xs font-semibold transition-colors sm:px-4 sm:py-2.5 sm:text-sm hover:bg-[var(--color-sel-bg)]"
                             style={{ borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }}
                           >
                             <Plus size={14} />
@@ -829,7 +830,7 @@ function CreateTripForm() {
                           <button
                             type="button"
                             onClick={() => setExtraHotelGrades((prev) => [...prev, ...remainingHotelGradeOptions])}
-                            className="inline-flex items-center gap-1.5 rounded-[20px] border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[var(--color-sel-bg)]"
+                            className="inline-flex items-center gap-1.5 rounded-[20px] border px-3 py-2 text-xs font-semibold transition-colors sm:px-4 sm:py-2.5 sm:text-sm hover:bg-[var(--color-sel-bg)]"
                             style={{ borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }}
                           >
                             <Plus size={14} />
@@ -875,7 +876,7 @@ function CreateTripForm() {
                   <button
                     type="button"
                     onClick={() => setExtraConds((prev) => [...prev, ...remainingCondOptions])}
-                    className="inline-flex items-center gap-1.5 rounded-[20px] border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[var(--color-sel-bg)]"
+                    className="inline-flex items-center gap-1.5 rounded-[20px] border px-3 py-2 text-xs font-semibold transition-colors sm:px-4 sm:py-2.5 sm:text-sm hover:bg-[var(--color-sel-bg)]"
                     style={{ borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }}
                   >
                     <Plus size={14} />
@@ -894,7 +895,8 @@ function CreateTripForm() {
               once something's selected on step 2 — this generic footer
               would otherwise duplicate that CTA. */}
           {!(step === 2 && selectedRecommendations.length > 0) && (
-            <div className="flex flex-col-reverse items-center gap-4 border-t border-[var(--color-border)]/40 px-4 py-5 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
+            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)]/40 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_20px_rgba(0,0,0,0.07)] sm:px-6 lg:static lg:px-8 lg:py-5 lg:pb-5 lg:shadow-none">
+              <div className="mx-auto flex w-full max-w-6xl items-center gap-4 lg:justify-between">
               {mode === "ai" ? (
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -907,9 +909,9 @@ function CreateTripForm() {
                   <span className="text-sm text-[var(--color-muted)]">{step} จาก 2</span>
                 </div>
               ) : (
-                <span />
+                <span className="hidden lg:block" />
               )}
-              <div className="flex w-full items-center justify-between gap-4 sm:w-auto sm:justify-end sm:gap-8">
+              <div className="flex w-full items-center justify-between gap-4 sm:justify-end sm:gap-8 lg:w-auto">
                 <button
                   type="button"
                   onClick={() => (step === 2 ? setStep(1) : submit(true))}
@@ -922,12 +924,13 @@ function CreateTripForm() {
                   type="button"
                   onClick={() => submit(false)}
                   disabled={status === "loading"}
-                  className="group inline-flex flex-1 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-base font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
+                  className="group inline-flex flex-1 items-center justify-center gap-2 rounded-full px-7 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:text-base lg:py-3.5"
                   style={{ backgroundColor: "var(--color-accent-orange)" }}
                 >
                   {step === 2 ? "สร้างแพลน" : mode === "self" ? "เริ่มจัดทริปเอง" : "สร้างแพลน"}
                   <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
                 </button>
+              </div>
               </div>
             </div>
           )}
@@ -979,6 +982,11 @@ function Hero({
 }) {
   const router = useRouter();
 
+  // Decorative — on a load failure the deep-green ground below is the
+  // intended backdrop anyway, so the broken image is simply dropped. Same
+  // guard /main's hero uses over the same asset.
+  const [illustrationFailed, setIllustrationFailed] = useState(false);
+
   // Arriving from the Topbar search bar carries a start date but no
   // duration yet — show it so the date the traveler picked doesn't look
   // dropped. Any real duration (set via the date dialog) wins over it.
@@ -993,14 +1001,20 @@ function Hero({
       : "");
 
   return (
-    <div className="relative flex min-h-[230px] flex-col items-center justify-center gap-4 overflow-hidden px-4 pb-6 pt-14 text-center sm:min-h-[290px] sm:gap-5 sm:px-6 sm:pb-8 sm:pt-20 lg:min-h-[320px]">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/images/hero-mountain.jpg"
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/40" />
+    <div className="relative flex min-h-[230px] flex-col items-center justify-center gap-4 overflow-hidden bg-[var(--color-deep-green)] px-4 pb-6 pt-14 text-center sm:min-h-[290px] sm:gap-5 sm:px-6 sm:pb-8 sm:pt-20 lg:min-h-[320px]">
+      {!illustrationFailed && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={HERO_ILLUSTRATION}
+          alt=""
+          onError={() => setIllustrationFailed(true)}
+          className="absolute inset-0 h-full w-full object-cover object-[50%_70%]"
+        />
+      )}
+      {/* Same scrim as /main's hero: the illustration is bright (cream sky,
+          orange sun) and the old weak-in-the-middle gradient left the white
+          title and the search bar's labels sitting on it unreadably. */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-black/55 to-black/75" />
 
       <button
         type="button"
@@ -1142,7 +1156,7 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-[20px] border px-4 py-2.5 text-sm font-medium shadow-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
+      className="inline-flex items-center gap-1.5 rounded-[20px] border px-3 py-2 text-xs font-medium shadow-sm sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
       style={
         isOn
           ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)", fontWeight: 700 }
@@ -1160,7 +1174,7 @@ function Tag({ label, isOn, onClick }: { label: string; isOn: boolean; onClick: 
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center rounded-[20px] border px-4 py-2.5 text-sm font-medium shadow-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
+      className="inline-flex items-center rounded-[20px] border px-3 py-2 text-xs font-medium shadow-sm sm:px-4 sm:py-2.5 sm:text-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
       style={
         isOn
           ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)", fontWeight: 700 }
@@ -1217,7 +1231,7 @@ function RecommendChip({ isOn, onClick }: { isOn: boolean; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center rounded-[20px] border px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
+      className="inline-flex items-center rounded-[20px] border px-3 py-2 text-xs font-semibold shadow-sm sm:px-4 sm:py-2.5 sm:text-sm transition-transform hover:-translate-y-0.5 active:translate-y-0"
       style={
         isOn
           ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }

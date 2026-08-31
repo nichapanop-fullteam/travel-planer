@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChevronRight, SearchX } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -40,8 +41,25 @@ const CATEGORY_FILTERS: { key: "forYou" | Category; label: string }[] = [
 const DESTINATION_PREVIEW_COUNT = 4;
 
 export default function MainPage() {
+  // useSearchParams (read below for /search's ?q= handoff) bails out of static
+  // prerendering unless it is under a Suspense boundary. Wrapping here keeps
+  // /main a static route — the alternative, force-dynamic, would make every
+  // visit server-rendered for one optional query parameter.
+  return (
+    <Suspense fallback={null}>
+      <MainFeed />
+    </Suspense>
+  );
+}
+
+function MainFeed() {
   const { backendUser, isLoading: authLoading } = useAuth();
-  const [query, setQuery] = useState("");
+  // /search hands its term over as ?q= rather than duplicating the feed grid.
+  // Read once as the initial value, not synced on every change: the feed's own
+  // search box writes to this state directly, and mirroring it back into the
+  // URL would fight the field on every keystroke.
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
   const [destinationsExpanded, setDestinationsExpanded] = useState(false);
 
@@ -229,7 +247,7 @@ export default function MainPage() {
             className="sticky z-20 bg-[#fbfdfc]"
             style={{ top: "var(--home-hero-h, 0px)" }}
           >
-            <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 pb-3 pt-6 sm:px-6 lg:px-10 xl:px-14">
+            <div className="mx-auto w-full max-w-[var(--container-feed)] px-4 pb-2.5 pt-4 sm:px-6 lg:px-10 xl:px-14 min-[640px]:pb-3 min-[640px]:pt-5 min-[1025px]:pt-6">
           <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
             {CATEGORY_FILTERS.map((filter) => {
               const isActive = category === filter.key;
@@ -244,7 +262,7 @@ export default function MainPage() {
                   type="button"
                   onClick={() => setCategory(filter.key)}
                   aria-pressed={isActive}
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold transition-colors min-[640px]:px-3.5 min-[640px]:py-2 min-[640px]:text-sm ${
                     isActive
                       ? "bg-[#111111] text-[var(--color-accent-lime)]"
                       : `border border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] ${

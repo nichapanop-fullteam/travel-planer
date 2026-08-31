@@ -1870,20 +1870,10 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
               <Clock size={13} />
               {checkInOutLabel}
             </p>
-            <div className="flex items-center gap-2">
-              <HotelBookingButton
-                name={name}
-                className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
-              />
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
-                style={{ backgroundColor: "var(--color-accent-orange)" }}
-              >
-                ดูรายละเอียด
-                <ChevronRight size={12} />
-              </button>
-            </div>
+            <HotelBookingButton
+              name={name}
+              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
+            />
           </div>
         </div>
       </div>

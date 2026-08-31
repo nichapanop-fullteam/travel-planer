@@ -22,6 +22,7 @@ import {
   Coffee,
   Compass,
   Globe2,
+  Heart,
   GripVertical,
   ImagePlus,
   LoaderCircle,
@@ -75,6 +76,8 @@ import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
 import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 import { Logo } from "@/components/common/Logo";
+import { RemixIcon } from "@/components/common/RemixIcon";
+import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 
 // Bespoke per-activity icons for the Luang Prabang demo itinerary — overrides
 // the generic category icon when an activity sets `icon`.
@@ -107,7 +110,7 @@ import {
   reconcileTripWithServer,
   uploadActivityImagesForItem,
 } from "@/lib/trips-create-api";
-import { getTrip } from "@/lib/trips-api";
+import { getTrip, likeTrip, unlikeTrip } from "@/lib/trips-api";
 import {
   createTripDayOnServer,
   createTripItemOnServer,
@@ -122,6 +125,7 @@ import {
 import { getTripDrafts } from "@/lib/trip-drafts";
 import {
   formatTHB,
+  getDayRouteEstimate,
   getDayTotalCost,
   getGoogleMapsUrl,
   getTripDistanceKm,
@@ -164,6 +168,26 @@ const TABS: { key: TabKey; label: string }[] = [
 // tab bar stretched to 1857px, giving each 80px label a 362px button. Every
 // band on the page now shares this, so they line up at every width.
 const SHELL = "mx-auto w-full max-w-[var(--container-max)] px-4 sm:px-6 lg:px-10";
+
+// One geometry for every pill in TripAttributionBar's control row — แชร์,
+// แก้ไขทริป, the Remix CTA and both halves of the visibility switch. They used
+// to carry their own copies of these classes and had drifted apart: on a phone
+// the filled buttons stood 40px tall next to a 30px visibility pair, which is
+// the mismatch you notice first in that row. Anything added to the row should
+// use these two rather than restating them.
+//
+// The height splits at sm because the row goes from thumb-sized full-width
+// controls to a compact inline toolbar. CONTROL_HEIGHT is the outer height of
+// the visibility track too — see SEGMENT_HEIGHT for how its segments are sized
+// to reach it — so the switch and the buttons line up at both sizes.
+const CONTROL_BASE =
+  "inline-flex items-center justify-center gap-1.5 rounded-full px-4 text-sm font-semibold sm:px-3.5 sm:text-xs";
+const CONTROL_HEIGHT = "min-h-11 sm:min-h-9"; // 44px / 36px
+// The visibility track wraps its segments in a 1px border and 4px of padding,
+// which border-box adds on top of whatever the segments are tall. Subtracting
+// that 10px here is what actually lands the track on CONTROL_HEIGHT — matching
+// the numbers alone left it 2px taller than the buttons beside it.
+const SEGMENT_HEIGHT = "min-h-[34px] sm:min-h-[26px]";
 
 // Adjusts the day list to a new nights count — used both by "แก้ไขทริป"
 // (editing duration) and "เพิ่มวัน" (adding a single day). Never drops a day
@@ -244,6 +268,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const router = useRouter();
   const [trip, setTrip] = useState<GeneratedTrip | null | undefined>(undefined);
   const [tab, setTab] = useState<TabKey>("overview");
+  // Which day's row is selected in ตารางแพลน. Lives here rather than inside
+  // PlanTab because Hero's summary stats now read it too — see showSummaryStats
+  // in Hero for why "ภาพรวมทริป" and "แพลนทริป" no longer show the same numbers.
+  const [planDayIndex, setPlanDayIndex] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -262,6 +290,14 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const [sharePreparing, setSharePreparing] = useState(false);
+  // Optimistic like state for TripSocialBar, held as an override rather than
+  // seeded from `trip`: the trip arrives asynchronously, so seeding would mean
+  // a setState inside an effect. Null = "nobody has clicked", and the bar reads
+  // straight off the trip. A refetch does not clear it, which is deliberate —
+  // right after a tap the click is the newer truth, not the response.
+  const [likeOverride, setLikeOverride] = useState<{ liked: boolean; count: number } | null>(null);
+  const [liking, setLiking] = useState(false);
   const segmentBackfillRequestedRef = useRef(new Set<string>());
   const { backendUser, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
@@ -570,10 +606,11 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // (handleSaveActivity, handleUpdateActivityTravel, etc.) — called right
   // after EditTripDialog's onSave applies the patch locally, since there's
   // no more standalone "บันทึก" button to batch trip-level edits behind.
-  async function syncTripToServer(nextTrip: GeneratedTrip) {
+  async function syncTripToServer(nextTrip: GeneratedTrip): Promise<GeneratedTrip | null> {
     try {
       if (nextTrip.backendSynced) {
         await syncTripUpdatesToServer(nextTrip);
+        return nextTrip;
       } else {
         // Photos uploaded during this first sync come back keyed by their new
         // server activity id, and have to be applied after the reconcile —
@@ -601,9 +638,11 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         // the real one so a reload/bookmark doesn't 404 (getGeneratedTrip
         // can no longer find the old id; it was just renamed in storage).
         router.replace(`/generated-plan/${synced.id}`);
+        return synced;
       }
     } catch (err) {
       console.warn("บันทึกทริปไปเซิร์ฟเวอร์ไม่สำเร็จ", err);
+      return null;
     }
   }
 
@@ -1005,16 +1044,146 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const canEdit = isOwner && !readOnly;
 
   // Share links are an owner-only feature (all four management endpoints
-  // answer 404 for anyone else), and they need a real backend row — a
-  // local-only trip has nothing for POST /trips/:id/share to attach to, same
-  // reason onChangeVisibility is gated on backendSynced below. When this is
-  // false the "แชร์" button isn't rendered at all rather than failing on tap.
-  const canShare = !readOnly && isOwner && Boolean(trip.backendSynced);
-  const handleShareClick = () => setShareDialogOpen(true);
+  // answer 404 for anyone else) and need a real backend row for
+  // POST /trips/:id/share to attach a link to. This used to also require
+  // Boolean(trip.backendSynced), which hid the button entirely for any trip
+  // that had never been synced — the normal starting state for anything built
+  // in this browser. handleShareClick now syncs first when that's missing,
+  // the same on-first-write pattern every other mutation in this file follows
+  // (see syncTripToServer), so the button just works instead of not existing.
+  const canShare = !readOnly && isOwner;
+
+  async function handleShareClick() {
+    if (trip!.backendSynced) {
+      setShareDialogOpen(true);
+      return;
+    }
+    setSharePreparing(true);
+    // syncTripToServer swallows its own errors (see its catch) and returns
+    // null rather than throwing, so success is read off its return value —
+    // not off `trip.backendSynced` here, which is a stale closure until this
+    // render's setTrip actually lands.
+    const synced = await syncTripToServer(trip!);
+    setSharePreparing(false);
+    if (synced?.backendSynced) {
+      setShareDialogOpen(true);
+    } else {
+      showToast("เตรียมทริปสำหรับแชร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  }
+
+  // Room under the content for however many bars are pinned to the bottom edge
+  // at this width. Written entirely in max-* variants so there is no desktop
+  // padding for a min-* variant to have to undo: an earlier version stacked
+  // `pb-20 min-[1025px]:pb-0` against `sm:!pb-20` and lost, because Tailwind
+  // emits the arbitrary min-[1025px] variant before sm and both carried
+  // !important — leaving 80px of dead space under a bar that wasn't there.
+  //
+  // Up to 1024px the read-only page stacks MobileActionBar on TripSocialBar
+  // and the editor pins the action row alone; from 1025 up neither renders,
+  // because TripAttributionBar shows the same buttons inline there.
+  // What the pinned action row offers, if anything. Null means the row isn't
+  // rendered at all — a non-owner reading a trip that can't be remixed has no
+  // action to pin.
+  //
+  // The editor's row carries แก้ไขทริป + แชร์ because those are exactly the
+  // two buttons TripAttributionBar hides below 1025px; the read-only page's
+  // carries one button only, since its แชร์ already lives in TripSocialBar
+  // right underneath.
+  const actionBar: MobileActionBarProps | null = readOnly
+    ? isOwner
+      ? {
+          primary: {
+            label: "แก้ไขทริป",
+            icon: <Pencil size={15} />,
+            color: "var(--color-accent-orange)",
+            onClick: () => router.push(`/generated-plan/${trip.id}`),
+          },
+        }
+      : canRemix
+        ? {
+            primary: {
+              label: "Remix Trip",
+              icon: <RemixIcon className="h-4 w-5 shrink-0" />,
+              color: "var(--color-accent-violet)",
+              onClick: handleRemixClick,
+            },
+            // Only Remix needs explaining — that it copies rather than edits
+            // the original is the thing people get wrong.
+            caption: "ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ",
+          }
+        : null
+    : isOwner
+      ? {
+          primary: {
+            label: "แก้ไขทริป",
+            icon: <Pencil size={15} />,
+            color: "var(--color-accent-orange)",
+            onClick: handleEditTripClick,
+          },
+          secondary: canShare
+            ? { label: "แชร์", icon: <Share2 size={15} />, onClick: handleShareClick }
+            : undefined,
+        }
+      : null;
+
+  const bottomBarPadding = readOnly
+    ? actionBar
+      ? "max-[1024px]:pb-32"
+      : "max-[1024px]:pb-16"
+    : actionBar
+      ? "max-[1024px]:pb-20"
+      : "";
+
+  const liked = likeOverride?.liked ?? trip.isLiked ?? false;
+  const likeCount = likeOverride?.count ?? trip.likeCount ?? 0;
+
+  // Same optimistic-toggle-then-roll-back shape RealTripCard uses on the feed,
+  // so a like registers instantly in both places and undoes itself the same
+  // way when the call fails.
+  function handleToggleLike() {
+    if (!backendUser) {
+      router.push(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    if (liking) return;
+
+    const next = !liked;
+    const previous = { liked, count: likeCount };
+    setLikeOverride({ liked: next, count: likeCount + (next ? 1 : -1) });
+    setLiking(true);
+    (next ? likeTrip(trip!.id) : unlikeTrip(trip!.id))
+      .catch(() => {
+        setLikeOverride(previous);
+        showToast(next ? "กดถูกใจไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" : "เอาถูกใจออกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      })
+      .finally(() => setLiking(false));
+  }
+
+  // Shares the page itself, never a managed share link — deliberately, even
+  // for the owner. ShareTripDialog creates, disables and reissues real links,
+  // which are writes, and TripSocialBar only exists on the read-only page
+  // where writes are off (see canShare, which is false whenever readOnly is).
+  // The owner still manages links from the editor's own แชร์ button.
+  //
+  // The OS sheet where there is one, the clipboard otherwise.
+  function handleSocialShare() {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: trip!.title || trip!.destination, url }).catch(() => {
+        // The user dismissing the sheet rejects too — nothing to report.
+      });
+      return;
+    }
+    navigator.clipboard
+      .writeText(url)
+      .then(() => showToast("คัดลอกลิงก์ทริปแล้ว"))
+      .catch(() => showToast("คัดลอกลิงก์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
+  }
 
   return (
     <div
-      className={`min-h-screen bg-white ${!isOwner && canRemix ? "pb-28 sm:pb-0" : ""}`}
+      className={`min-h-screen bg-white ${bottomBarPadding}`}
     >
       <div
         className={`fixed inset-0 z-50 flex transition-opacity duration-300 ${
@@ -1040,6 +1209,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         onMenuClick={() => setSidebarOpen(true)}
         userAvatarUrl={backendUser?.avatarUrl}
         tab={tab}
+        planDayIndex={planDayIndex}
       />
 
       {galleryDialogOpen && (
@@ -1073,6 +1243,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           visibilitySaving={visibilitySaving}
           onChangeVisibility={trip.backendSynced ? handleChangeVisibility : undefined}
           onShareClick={canShare ? handleShareClick : undefined}
+          sharePreparing={sharePreparing}
           canRemix={canRemix}
           onRemixClick={handleRemixClick}
           onEditTrip={
@@ -1080,6 +1251,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               ? () => router.push(`/generated-plan/${trip.id}`)
               : handleEditTripClick
           }
+          hideActionsOnCompact={Boolean(actionBar)}
         />
 
         <div className={`${SHELL} py-5 sm:py-8`}>
@@ -1115,6 +1287,8 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
             <PlanTab
               trip={trip}
               canEdit={canEdit}
+              dayIndex={planDayIndex}
+              onDayIndexChange={setPlanDayIndex}
               onAddDay={handleAddDay}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
@@ -1183,7 +1357,108 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         />
       )}
 
-      {!isOwner && canRemix && <MobileRemixBar onRemixClick={handleRemixClick} />}
+      {/* Read-only only, and it is the ONLY place the primary action appears
+          below 1025px — TripAttributionBar hides its copy there (see
+          hideActionsOnCompact) so the same button isn't offered twice on one
+          screen. The editor gets no bar of its own: a non-owner never stays on
+          it (the redirect above sends them here), so the Remix CTA has nobody
+          left to serve there. */}
+      {(readOnly || actionBar) && (
+        // One fixed wrapper for both rows rather than two independently
+        // pinned bars. Stacking them by offsetting the upper one meant
+        // hard-coding the lower one's height, which was 5px off and had the
+        // action bar clipping the social bar's top border. Normal flow inside
+        // a single container cannot drift.
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 bg-white min-[1025px]:hidden"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          {actionBar && <MobileActionBar {...actionBar} />}
+          {readOnly && (
+            <TripSocialBar
+              likeCount={likeCount}
+              liked={liked}
+              liking={liking}
+              onToggleLike={handleToggleLike}
+              saveCount={trip.saveCount ?? 0}
+              onShare={handleSocialShare}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The read-only page's footer: the trip's social counts and the one way to
+// pass it on.
+//
+// The lower row of the read-only page's bottom bar, which the wrapper shows up
+// to 1024px inclusive so it covers iPad in both orientations — the same 1025px
+// split MobileBottomNav and FrostedTopNav use, and for the same reason: `lg`
+// would treat landscape iPad (exactly 1024) as a desktop. From there up the
+// page has room to carry these inline, and a bar pinned across a wide screen is
+// mostly empty rule.
+//
+// Deliberately three equal columns rather than a left/right split: the two
+// counts and the share action carry the same weight here, and an even split is
+// what keeps the middle one from reading as an afterthought.
+function TripSocialBar({
+  likeCount,
+  liked,
+  liking,
+  onToggleLike,
+  saveCount,
+  onShare,
+}: {
+  likeCount: number;
+  liked: boolean;
+  liking: boolean;
+  onToggleLike: () => void;
+  saveCount: number;
+  onShare: () => void;
+}) {
+  return (
+    <div
+      className="grid grid-cols-3 items-center border-t py-1"
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <button
+        type="button"
+        onClick={onToggleLike}
+        disabled={liking}
+        aria-pressed={liked}
+        aria-label={liked ? "เอาถูกใจออก" : "กดถูกใจทริปนี้"}
+        className="flex min-h-11 items-center justify-center gap-1.5 text-[13px] font-semibold transition-colors disabled:opacity-60"
+        style={{ color: liked ? "var(--color-danger)" : "var(--foreground)" }}
+      >
+        <Heart size={16} fill={liked ? "currentColor" : "none"} />
+        {likeCount.toLocaleString()} ถูกใจ
+      </button>
+
+      {/* Read-only. Saving a trip is a real action (POST /trips/:id/save) but
+          it needs the viewer's own isSaved flag to render a correct on/off
+          state, and GET /trips/:id's isSaved is not threaded onto
+          GeneratedTrip yet — a toggle that always starts "off" would tell
+          people they had not saved a trip they had. The count alone is
+          honest. */}
+      <div
+        className="flex min-h-11 items-center justify-center gap-1.5 text-[13px] font-semibold"
+        style={{ color: "var(--foreground)" }}
+      >
+        <Bookmark size={16} />
+        {saveCount.toLocaleString()} บันทึก
+      </div>
+
+      <button
+        type="button"
+        onClick={onShare}
+        className="flex min-h-11 items-center justify-center gap-1.5 text-[13px] font-semibold transition-colors hover:bg-[var(--color-surface)]"
+        style={{ color: "var(--foreground)" }}
+      >
+        <Share2 size={16} />
+        แชร์ทริป
+      </button>
     </div>
   );
 }
@@ -1196,6 +1471,7 @@ function Hero({
   onMenuClick,
   userAvatarUrl,
   tab,
+  planDayIndex,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1204,6 +1480,10 @@ function Hero({
   onMenuClick: () => void;
   userAvatarUrl?: string | null;
   tab: TabKey;
+  // Which day is selected in แพลนทริป's ตารางแพลน — read only when tab is
+  // "plan" (see summaryStats below), so overview stays whole-trip regardless
+  // of whatever day a previous visit to the plan tab left this on.
+  planDayIndex: number;
 }) {
   const dateRangeLabel =
     trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : undefined;
@@ -1214,18 +1494,47 @@ function Hero({
   // "ทริปของฉัน" (plan tab) swaps the status/style badges for a trip-summary
   // stat row instead — same figures the old standalone TripStatsCard showed,
   // now living directly in the header.
-  const placeStats = useMemo(() => getTripPlaceStats(trip), [trip]);
-  const distanceKm = useMemo(() => getTripDistanceKm(trip), [trip]);
+  //
+  // ภาพรวมทริป always summarises the whole trip. แพลนทริป used to show that
+  // same whole-trip summary too, which made the stat row read as fixed chrome
+  // rather than something the day tabs it sits above actually controlled —
+  // switching วันที่ 1 → 2 changed the itinerary below but never the numbers
+  // above it. On the plan tab these now reflect whichever day is selected in
+  // ตารางแพลน (planDayIndex, lifted up from PlanTab), while overview keeps
+  // reading the whole trip regardless of what day a previous visit to the
+  // plan tab left that on.
+  const selectedDay =
+    tab === "plan" && trip.days.length > 0 ? trip.days[Math.min(planDayIndex, trip.days.length - 1)] : undefined;
+  const placeStats = useMemo(
+    () => getTripPlaceStats(selectedDay ? { days: [selectedDay] } : trip),
+    [trip, selectedDay]
+  );
+  const distanceKm = useMemo(
+    () => (selectedDay ? getDayRouteEstimate(selectedDay).distanceKm : getTripDistanceKm(trip)),
+    [trip, selectedDay]
+  );
+  // "รวมงบ/วัน" on overview is the trip's spend averaged over its planned
+  // days; on the plan tab, now that this is per-day, it's just that one day's
+  // own total — no averaging needed since there's nothing left to average.
   const costPerDay = useMemo(() => {
+    if (selectedDay) return getDayTotalCost(selectedDay);
     const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
     if (plannedDays === 0) return 0;
     return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
-  }, [trip]);
+  }, [trip, selectedDay]);
+  // A day's own "ที่พัก" is whether it has a check-in stop — trip.accommodation
+  // is a whole-trip concept (one chosen stay for the entire itinerary) and
+  // doesn't map onto "does this one day involve a hotel".
+  const staysCount = selectedDay
+    ? selectedDay.activities.filter((a) => a.category === "hotel").length
+    : trip.accommodation
+      ? 1
+      : 0;
   const showSummaryStats = tab === "overview" || tab === "plan";
   const summaryStats = [
     { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
     { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
-    { key: "stays", label: "ที่พัก", value: trip.accommodation ? "1" : "0" },
+    { key: "stays", label: "ที่พัก", value: `${staysCount}` },
     { key: "budget", label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
     { key: "distance", label: "Total Distance", value: `${distanceKm} km` },
   ];
@@ -1269,11 +1578,21 @@ function Hero({
           opened from a trip card rather than "แก้ไขแพลน") gets the swipeable
           gallery instead. */}
       {images.length <= 1 ? (
+        // A trip with no cover and no gallery yet used to fall back to
+        // /images/hero-mountain.jpg — a generic photo unrelated to the brand.
+        // Now it shows the same illustration /main's own hero uses (see
+        // lib/hero-image.ts), so an empty-cover trip reads as this app's
+        // blank state rather than a random stock photo. object-position
+        // switches with it: 80%/30% is tuned for a real destination photo,
+        // 50%/70% is what /main uses to keep the illustration's sun and
+        // skyline centered — the two crops aren't interchangeable.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={images[0] ?? "/images/hero-mountain.jpg"}
+          src={images[0] ?? HERO_ILLUSTRATION}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover object-[80%_30%]"
+          className={`absolute inset-0 h-full w-full object-cover ${
+            images[0] ? "object-[80%_30%]" : "object-[50%_70%]"
+          }`}
         />
       ) : (
         <HeroImageCarousel images={images} title={trip.title || trip.destination} />
@@ -1538,7 +1857,7 @@ function HeroImageCarousel({ images, title }: { images: string[]; title: string 
 }
 
 // Creator identity + social proof + the primary Remix CTA (desktop/tablet
-// inline variant — see MobileRemixBar below for the mobile sticky bar).
+// inline variant — see MobileActionBar below for the pinned compact bar).
 // Rendered for every trip; individual pieces degrade gracefully when their
 // backing data is absent (no creator, no counts, owner viewing their own).
 function TripAttributionBar({
@@ -1547,18 +1866,27 @@ function TripAttributionBar({
   visibilitySaving,
   onChangeVisibility,
   onShareClick,
+  sharePreparing = false,
   canRemix,
   onRemixClick,
   onEditTrip,
+  hideActionsOnCompact = false,
 }: {
   trip: GeneratedTrip;
   isOwner: boolean;
   onShareClick?: () => void;
+  // True while handleShareClick is syncing an unsynced trip to the server
+  // before it can open ShareTripDialog — see canShare's comment.
+  sharePreparing?: boolean;
   visibilitySaving: boolean;
   onChangeVisibility?: (next: "private" | "public") => void;
   canRemix: boolean;
   onRemixClick: () => void;
   onEditTrip?: () => void;
+  /** Drops the action buttons below 1025px, where MobileActionBar already
+   *  pins the same one to the bottom of the screen. The visibility switch is
+   *  not duplicated down there, so it stays at every width. */
+  hideActionsOnCompact?: boolean;
 }) {
   const showRealExperienceBadge = !isOwner && (trip.planMode === "self" || trip.planMode === "manual");
   const hasCounts = trip.saveCount != null || trip.remixCount != null;
@@ -1621,40 +1949,58 @@ function TripAttributionBar({
           )}
         </div>
 
-        <div className="flex w-full flex-col items-stretch gap-1 sm:w-auto sm:items-end">
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            {onShareClick && (
-              <button
-                type="button"
-                onClick={onShareClick}
-                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)] sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
-                style={{ borderColor: "var(--color-border)" }}
+        {/* Two nested rows rather than one wrapping row. Wrapping put the
+            actions and the visibility pair on the same flex line, so on a
+            phone แก้ไขทริป took a whole row to itself (flex-1 with nothing
+            beside it) while ส่วนตัว/เผยแพร่ shared the next one — three
+            controls, three different widths. Now the actions share one row and
+            the visibility control owns the next, full width, as one segmented
+            track. From sm up both collapse back onto a single right-aligned
+            line. Heights are pinned to CONTROL_HEIGHT so nothing in the row is
+            taller than its neighbour. */}
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            {(onShareClick || (!isOwner && canRemix) || (isOwner && onEditTrip)) && (
+              <div
+                className={`flex w-full items-center gap-2 sm:w-auto ${
+                  hideActionsOnCompact ? "max-[1024px]:hidden" : ""
+                }`}
               >
-                <Share2 size={13} />
-                แชร์
-              </button>
-            )}
-            {!isOwner && canRemix && (
-              <button
-                type="button"
-                onClick={onRemixClick}
-                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-transparent px-4 py-2 text-sm font-bold text-white sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
-                style={{ backgroundColor: "var(--color-brand-green)" }}
-              >
-                <Repeat2 size={13} />
-                นำไปปรับเป็นทริปของฉัน
-              </button>
-            )}
-            {isOwner && onEditTrip && (
-              <button
-                type="button"
-                onClick={onEditTrip}
-                className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-transparent px-4 py-2 text-sm font-semibold text-white sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
-                style={{ backgroundColor: "var(--color-accent-orange)" }}
-              >
-                <Pencil size={13} />
-                แก้ไขทริป
-              </button>
+                {onShareClick && (
+                  <button
+                    type="button"
+                    onClick={onShareClick}
+                    disabled={sharePreparing}
+                    className={`${CONTROL_BASE} ${CONTROL_HEIGHT} flex-1 border transition-colors hover:bg-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none`}
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    {sharePreparing ? <LoaderCircle size={13} className="animate-spin" /> : <Share2 size={13} />}
+                    แชร์
+                  </button>
+                )}
+                {!isOwner && canRemix && (
+                  <button
+                    type="button"
+                    onClick={onRemixClick}
+                    className={`${CONTROL_BASE} ${CONTROL_HEIGHT} flex-1 border border-transparent font-bold text-white transition-opacity hover:opacity-90 sm:flex-none`}
+                    style={{ backgroundColor: "var(--color-accent-violet)" }}
+                  >
+                    <RemixIcon className="h-4 w-5 shrink-0" />
+                    Remix Trip
+                  </button>
+                )}
+                {isOwner && onEditTrip && (
+                  <button
+                    type="button"
+                    onClick={onEditTrip}
+                    className={`${CONTROL_BASE} ${CONTROL_HEIGHT} flex-1 border border-transparent text-white transition-opacity hover:opacity-90 sm:flex-none`}
+                    style={{ backgroundColor: "var(--color-accent-orange)" }}
+                  >
+                    <Pencil size={13} />
+                    แก้ไขทริป
+                  </button>
+                )}
+              </div>
             )}
             {isOwner && onChangeVisibility && (
               <VisibilityControl
@@ -1691,23 +2037,27 @@ function VisibilityControl({
     { value: "public", label: "เผยแพร่", icon: Globe2 },
   ];
 
-  // Borrows its geometry wholesale from แชร์ / แก้ไขทริป next to it:
-  // rounded-full, border, px-3.5 py-1.5, text-xs font-semibold, size-13 icon.
-  // The previous version wrapped both options in a bordered `p-1` container,
-  // which stood 38px tall beside 30px buttons and read as a different kind of
-  // component — a box holding pills rather than a pill. Each option now
-  // matches one of the two reference buttons: the selected one is filled like
-  // แก้ไขทริป, the unselected one is outlined like แชร์.
+  // A real segmented track — one bordered container holding two segments —
+  // rather than two free-standing pills. An earlier version dropped the
+  // container because it stood 38px tall beside 30px buttons and read as a
+  // different kind of component; now that every control in the row shares
+  // CONTROL_HEIGHT that mismatch is gone, and the container earns its place
+  // back: it is what says these two are one choice rather than two more
+  // buttons in a row of four.
   //
-  // gap-1 inside against the row's gap-2 outside: with the container gone,
-  // equal gaps would leave four identically spaced pills and no cue that
-  // these two are one choice. The tighter gap keeps them reading as a pair.
+  // Full width on a phone (the row's second line is all its own) and
+  // content-width from sm up, where it sits inline with the action buttons.
   //
   // The explanatory line lives in VisibilityHint, a sibling, so this stays a
   // single-row element — inside, it made the control a two-row column and
   // anything placed beside it aligned to the gap between pill and text.
   return (
-    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label="สถานะการแชร์ทริปนี้">
+    <div
+      className={`inline-flex w-full items-center gap-1 rounded-full border p-1 sm:w-auto ${CONTROL_HEIGHT}`}
+      style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
+      role="radiogroup"
+      aria-label="สถานะการแชร์ทริปนี้"
+    >
       {options.map(({ value, label, icon: Icon }) => {
         const active = visibility === value;
         return (
@@ -1718,10 +2068,11 @@ function VisibilityControl({
             aria-checked={active}
             disabled={saving || active}
             onClick={() => onChange(value)}
-            className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+            className={`${CONTROL_BASE} ${SEGMENT_HEIGHT} flex-1 transition-colors disabled:cursor-not-allowed sm:flex-none ${
+              active ? "" : "hover:bg-[var(--color-sel-bg)]"
+            }`}
             style={{
               backgroundColor: active ? "var(--color-brand-green)" : "transparent",
-              borderColor: active ? "var(--color-brand-green)" : "var(--color-border)",
               color: active ? "#fff" : "var(--color-muted)",
             }}
           >
@@ -1736,7 +2087,9 @@ function VisibilityControl({
 
 function VisibilityHint({ visibility }: { visibility: "private" | "public" }) {
   return (
-    <p className="max-w-[320px] text-right text-[11px] text-[var(--color-muted)]">
+    // Left-aligned on a phone, where the controls above it are full-width and
+    // a right-ragged caption under them read as detached from anything.
+    <p className="max-w-full text-[11px] text-[var(--color-muted)] sm:max-w-[320px] sm:text-right">
       {visibility === "public"
         ? "ทริปนี้เผยแพร่อยู่ ผู้อื่นที่เห็นสามารถนำไปทำสำเนาเป็นของตัวเองได้"
         : "ทริปนี้เป็นส่วนตัว มีแค่คุณที่เห็นและนำไปทำสำเนาได้"}
@@ -1775,24 +2128,46 @@ function RemixSourceBanner({ remixedFrom }: { remixedFrom: NonNullable<Generated
 
 // Mobile-only sticky bottom CTA — kept visible without scrolling, per the
 // requirement that the primary action never requires scrolling to reach.
-function MobileRemixBar({ onRemixClick }: { onRemixClick: () => void }) {
+interface MobileActionBarProps {
+  primary: { label: string; icon: ReactNode; color: string; onClick: () => void };
+  /** Outlined companion to the left of the primary button. */
+  secondary?: { label: string; icon: ReactNode; onClick: () => void };
+  caption?: string;
+}
+
+// The action row of the pinned bottom bar. Positioning belongs to the wrapper —
+// this is just a row inside it, so it can sit alone (the editor) or on top of
+// TripSocialBar (the read-only page) without knowing which.
+//
+// The secondary button is deliberately the narrower of the two: on the editor
+// แชร์ and แก้ไขทริป share this row, and giving them equal halves made the
+// destination people actually came for look like an alternative to แชร์.
+function MobileActionBar({ primary, secondary, caption }: MobileActionBarProps) {
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-1 border-t bg-white px-4 py-3 sm:hidden"
-      style={{ borderColor: "var(--color-border)", paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-    >
-      <button
-        type="button"
-        onClick={onRemixClick}
-        className="flex w-full items-center justify-center gap-1.5 rounded-full py-3 text-sm font-bold text-white"
-        style={{ backgroundColor: "var(--color-brand-green)" }}
-      >
-        <Repeat2 size={15} />
-        นำไปปรับเป็นทริปของฉัน
-      </button>
-      <p className="text-center text-[11px] text-[var(--color-muted)]">
-        ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ
-      </p>
+    <div className="flex flex-col gap-0.5 border-t px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
+      <div className="flex items-center gap-2">
+        {secondary && (
+          <button
+            type="button"
+            onClick={secondary.onClick}
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-colors hover:bg-[var(--color-surface)]"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            {secondary.icon}
+            {secondary.label}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={primary.onClick}
+          className="flex flex-1 items-center justify-center gap-2 rounded-full py-2 text-sm font-bold text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: primary.color }}
+        >
+          {primary.icon}
+          {primary.label}
+        </button>
+      </div>
+      {caption && <p className="text-center text-[10px] text-[var(--color-muted)]">{caption}</p>}
     </div>
   );
 }
@@ -2603,6 +2978,8 @@ function WeatherTab() {
 function PlanTab({
   trip,
   canEdit,
+  dayIndex,
+  onDayIndexChange,
   autoTravelCalculationEnabled,
   onAddDay,
   onAddActivity,
@@ -2613,6 +2990,10 @@ function PlanTab({
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
+  // Controlled from GeneratedPlanPage now, not owned here — Hero's summary
+  // stats need to know which day is selected too.
+  dayIndex: number;
+  onDayIndexChange: (index: number) => void;
   autoTravelCalculationEnabled: boolean;
   onAddDay: () => void;
   onAddActivity: (dayId: string) => void;
@@ -2621,7 +3002,6 @@ function PlanTab({
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
   onDeleteActivityTravel: (dayId: string, activityId: string, estimatedSegmentId?: string) => Promise<void>;
 }) {
-  const [dayIndex, setDayIndex] = useState(0);
   const [showMap, setShowMap] = useState(true);
 
   // Its own แชร์/remix pair lived here too. Both are in the attribution bar
@@ -2673,7 +3053,7 @@ function PlanTab({
             <button
               key={d.id}
               type="button"
-              onClick={() => setDayIndex(i)}
+              onClick={() => onDayIndexChange(i)}
               className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
               style={
                 i === dayIndex

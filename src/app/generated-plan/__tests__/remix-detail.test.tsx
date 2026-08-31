@@ -78,7 +78,7 @@ describe("Remix on the trip detail/Planner page", () => {
     mockBackendUser = { id: "some-other-user", name: "Viewer" };
     render(<GeneratedPlanPage />);
 
-    expect(await screen.findAllByText("นำไปปรับเป็นทริปของฉัน")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Remix Trip")).not.toHaveLength(0);
   });
 
   it("hides the Remix CTA when the current user owns this (private draft) trip", async () => {
@@ -86,7 +86,7 @@ describe("Remix on the trip detail/Planner page", () => {
     render(<GeneratedPlanPage />);
 
     await waitFor(() => expect(screen.queryByText(/หลวงพระบาง/)).toBeInTheDocument());
-    expect(screen.queryByText("นำไปปรับเป็นทริปของฉัน")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remix Trip")).not.toBeInTheDocument();
   });
 
   it("shows creator attribution (avatar/name) from the source trip", async () => {
@@ -100,7 +100,7 @@ describe("Remix on the trip detail/Planner page", () => {
     mockBackendUser = { id: "some-other-user", name: "Viewer" };
     render(<GeneratedPlanPage />);
 
-    const [cta] = await screen.findAllByText("นำไปปรับเป็นทริปของฉัน");
+    const [cta] = await screen.findAllByText("Remix Trip");
     cta.closest("button")?.click();
 
     expect(await screen.findByText("ตั้งค่าทริปของคุณ")).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe("Remix on the trip detail/Planner page", () => {
     mockBackendUser = null;
     render(<GeneratedPlanPage />);
 
-    const [cta] = await screen.findAllByText("นำไปปรับเป็นทริปของฉัน");
+    const [cta] = await screen.findAllByText("Remix Trip");
     cta.closest("button")?.click();
 
     expect(remixTripMock).not.toHaveBeenCalled();
@@ -123,7 +123,7 @@ describe("Remix on the trip detail/Planner page", () => {
     remixTripMock.mockResolvedValue({ id: "brand-new-trip-id" });
     render(<GeneratedPlanPage />);
 
-    const [cta] = await screen.findAllByText("นำไปปรับเป็นทริปของฉัน");
+    const [cta] = await screen.findAllByText("Remix Trip");
     cta.closest("button")?.click();
     (await screen.findByText("สร้างทริปของฉัน")).click();
 
@@ -173,7 +173,7 @@ describe("Remix on the trip detail/Planner page", () => {
     remixTripMock.mockRejectedValue(new RemixApiError("forbidden", "ไม่สามารถนำแผนส่วนตัวนี้ไปใช้ได้"));
     render(<GeneratedPlanPage />);
 
-    const [cta] = await screen.findAllByText("นำไปปรับเป็นทริปของฉัน");
+    const [cta] = await screen.findAllByText("Remix Trip");
     cta.closest("button")?.click();
     (await screen.findByText("สร้างทริปของฉัน")).click();
 

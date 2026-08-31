@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowRight, Search } from "lucide-react";
 import { FrostedTopNav } from "@/components/consumer/FrostedTopNav";
 import { useAppShell } from "@/components/layout/AppShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuth } from "@/providers/AuthProvider";
-
-/** Flat travel illustration behind the hero scrim. Still guarded by onError:
- *  the deep-green ground underneath is a usable background on its own, so a
- *  missing asset degrades to a plain dark hero rather than a broken image. */
-const HERO_ILLUSTRATION = "/images/hero-main.png";
+import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 
 const SEARCH_ID = "home-search";
 
@@ -164,7 +161,28 @@ export function HomeHero({
               จุดหมายที่คุณจะไป
             </h1>
 
-            <form onSubmit={handleSubmit} role="search" className="mt-4 sm:mt-7">
+            {/* Compact layout hands searching to /search — the full-screen
+                surface with recent terms and trends. Rendered as a link that
+                copies the field's shape rather than a real input, so the hero
+                looks identical and the tap goes straight to the page instead of
+                opening a keyboard under a 45px app bar. Desktop keeps the live
+                field: there is room for it, and no page to send anyone to. */}
+            <Link
+              href="/search"
+              className="mt-4 flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 min-[640px]:gap-1.5 min-[1025px]:hidden"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)] min-[640px]:h-7 min-[640px]:w-7">
+                <Search strokeWidth={2.5} className="h-[15px] w-[15px]" />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)] min-[640px]:text-[13px]">
+                {query.trim() || "ค้นหาชื่อที่ ย่าน หรือประเภท"}
+              </span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white min-[640px]:h-8 min-[640px]:w-8">
+                <ArrowRight strokeWidth={2.5} className="h-4 w-4" />
+              </span>
+            </Link>
+
+            <form onSubmit={handleSubmit} role="search" className="mt-4 hidden sm:mt-7 min-[1025px]:block">
               {/* The pale ring is what lifts the field off the scrim — without
                   it the white pill reads as sitting flat on the photo. */}
               <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 transition focus-within:ring-white/70 min-[640px]:gap-1.5 min-[1025px]:ring-[3px]">

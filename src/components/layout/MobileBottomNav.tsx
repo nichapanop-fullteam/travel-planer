@@ -3,7 +3,7 @@
 import type { ReactElement } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bookmark, Briefcase, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useAppShell } from "@/components/layout/AppShell";
 
 type NavKey = "home" | "myTrips" | "saved" | "messages";
@@ -13,7 +13,12 @@ type NavKey = "home" | "myTrips" | "saved" | "messages";
 // assets below.
 type NavIcon = ((props: { className: string }) => ReactElement) & { displayName?: string };
 
-// The design's own stroke weight, applied to every outline glyph in the bar.
+// The notch: a circle centred on the sheet's top edge, cut a few pixels wider
+// than the 48px create button so a ring of page shows between the two.
+const NOTCH_MASK =
+  "radial-gradient(circle 30px at 50% 0, transparent 29.5px, #000 30.5px)";
+
+// Home.svg's own stroke weight — it is the only outline glyph left in the bar.
 const ICON_STROKE = 1.5;
 
 // Inlined from the design's Home.svg. A stroked glyph, unlike the solid
@@ -46,8 +51,22 @@ const ProfileIcon: NavIcon = ({ className }) => (
 );
 ProfileIcon.displayName = "NavProfileIcon";
 // Matched to Home.svg's 1.5 so the outline glyphs share one weight.
-const MyTripsIcon: NavIcon = ({ className }) => <Briefcase className={className} strokeWidth={ICON_STROKE} />;
-const SavedIcon: NavIcon = ({ className }) => <Bookmark className={className} strokeWidth={ICON_STROKE} />;
+// Inlined from the design's luggage.svg and video_template.svg. Both are solid
+// glyphs (the export fills them at #1C1B1F), so they take `fill="currentColor"`
+// where Home.svg takes a stroke — that split is the design's, not an accident.
+const MyTripsIcon: NavIcon = ({ className }) => (
+  <svg viewBox="0 0 15 22" fill="currentColor" aria-hidden className={className}>
+    <path d="M1.9521 20.5494C1.42757 20.5494 0.971143 20.3713 0.582807 20.0149C0.194269 19.6583 0 19.2189 0 18.6967V5.92308C0 5.38678 0.190323 4.92885 0.570969 4.54929C0.951615 4.16952 1.41088 3.97964 1.94876 3.97964H4.22414V1.94343C4.22414 1.40713 4.41436 0.949103 4.7948 0.569342C5.17545 0.189781 5.63825 0 6.18322 0H8.81678C9.35567 0 9.81575 0.189478 10.197 0.568434C10.5783 0.94739 10.7689 1.40451 10.7689 1.93981V3.97269H13.0479C13.5866 3.97269 14.0466 4.16217 14.4278 4.54113C14.8093 4.92008 15 5.38073 15 5.92308V18.6665C15 19.1862 14.8057 19.63 14.4172 19.9976C14.0289 20.3655 13.5724 20.5494 13.0479 20.5494V20.8399C13.0479 21.1616 12.9331 21.4354 12.7034 21.6612C12.4739 21.8871 12.2104 22 11.9129 22C11.6157 22 11.3523 21.8871 11.1228 21.6612C10.8931 21.4354 10.7783 21.1616 10.7783 20.8399V20.5494H4.22171V20.8701C4.22171 21.1662 4.10828 21.4285 3.88143 21.657C3.65459 21.8857 3.37967 22 3.0567 22C2.75073 22 2.49019 21.8857 2.27507 21.657C2.05976 21.4285 1.9521 21.1662 1.9521 20.8701V20.5494ZM1.9521 18.978H13.0479C13.1568 18.978 13.2463 18.9432 13.3165 18.8735C13.3866 18.8038 13.4216 18.7146 13.4216 18.606V5.92308C13.4216 5.81449 13.3866 5.72534 13.3165 5.65563C13.2463 5.58593 13.1568 5.55107 13.0479 5.55107H1.9521C1.84323 5.55107 1.75368 5.58593 1.68346 5.65563C1.61345 5.72534 1.57844 5.81449 1.57844 5.92308V18.606C1.57844 18.7146 1.61345 18.8038 1.68346 18.8735C1.75368 18.9432 1.84323 18.978 1.9521 18.978ZM4.59537 17.0624H6.17381V7.4667H4.59537V17.0624ZM8.82619 17.0624H10.4046V7.4667H8.82619V17.0624ZM5.80956 3.97964H9.19044V1.94343C9.19044 1.83484 9.15543 1.7457 9.08542 1.67599C9.0154 1.60628 8.92585 1.57143 8.81678 1.57143H6.18322C6.07415 1.57143 5.9846 1.60628 5.91458 1.67599C5.84456 1.7457 5.80956 1.83484 5.80956 1.94343V3.97964Z" />
+  </svg>
+);
+MyTripsIcon.displayName = "NavMyTripsIcon";
+
+const PuntokIcon: NavIcon = ({ className }) => (
+  <svg viewBox="0 0 19 21" fill="currentColor" aria-hidden className={className}>
+    <path d="M2.77875 20.6C2.27375 20.6 1.87958 20.4583 1.59625 20.175C1.31292 19.8917 1.17125 19.4974 1.17125 18.9923V17.9173H2.47125V18.9923C2.47125 19.0821 2.50008 19.1558 2.55775 19.2135C2.61542 19.2712 2.68908 19.3 2.77875 19.3H15.4213C15.5109 19.3 15.5846 19.2712 15.6423 19.2135C15.6999 19.1558 15.7288 19.0821 15.7288 18.9923V17.9173H17.0288V18.9923C17.0288 19.4974 16.8871 19.8917 16.6038 20.175C16.3204 20.4583 15.9263 20.6 15.4213 20.6H2.77875ZM1.60775 15.925C1.10258 15.925 0.708333 15.7833 0.425 15.5C0.141667 15.2167 0 14.8224 0 14.3173V6.28275C0 5.77758 0.141667 5.38333 0.425 5.1C0.708333 4.81667 1.10258 4.675 1.60775 4.675H16.5923C17.0974 4.675 17.4917 4.81667 17.775 5.1C18.0583 5.38333 18.2 5.77758 18.2 6.28275V14.3173C18.2 14.8224 18.0583 15.2167 17.775 15.5C17.4917 15.7833 17.0974 15.925 16.5923 15.925H1.60775ZM1.17125 2.68275V1.60775C1.17125 1.10258 1.31292 0.708333 1.59625 0.425C1.87958 0.141667 2.27375 0 2.77875 0H15.4213C15.9263 0 16.3204 0.141667 16.6038 0.425C16.8871 0.708333 17.0288 1.10258 17.0288 1.60775V2.68275H15.7288V1.60775C15.7288 1.51792 15.6999 1.44417 15.6423 1.3865C15.5846 1.32883 15.5109 1.3 15.4213 1.3H2.77875C2.68908 1.3 2.61542 1.32883 2.55775 1.3865C2.50008 1.44417 2.47125 1.51792 2.47125 1.60775V2.68275H1.17125ZM1.60775 14.625H16.5923C16.6821 14.625 16.7558 14.5962 16.8135 14.5385C16.8712 14.4808 16.9 14.4071 16.9 14.3173V6.28275C16.9 6.19292 16.8712 6.11917 16.8135 6.0615C16.7558 6.00383 16.6821 5.975 16.5923 5.975H1.60775C1.51792 5.975 1.44417 6.00383 1.3865 6.0615C1.32883 6.11917 1.3 6.19292 1.3 6.28275V14.3173C1.3 14.4071 1.32883 14.4808 1.3865 14.5385C1.44417 14.5962 1.51792 14.625 1.60775 14.625ZM7.4635 12.8078L11.6365 10.3L7.4635 7.79225V12.8078Z" />
+  </svg>
+);
+PuntokIcon.displayName = "NavPuntokIcon";
 
 // Fixed bottom tab bar for phones and tablets — the pattern that makes a site
 // read as an app rather than a page.
@@ -69,9 +88,8 @@ const SavedIcon: NavIcon = ({ className }) => <Bookmark className={className} st
 // in step matters: at widths where one applied and the other didn't, the layout
 // was neither the app treatment nor the desktop one.
 const DESTINATIONS: { key: NavKey; label: string; icon: NavIcon; href: string }[] = [
-  { key: "home", label: "หน้าแรก", icon: HomeIcon, href: "/main" },
-  { key: "myTrips", label: "ทริปของฉัน", icon: MyTripsIcon, href: "/my-trips" },
-  { key: "saved", label: "บันทึกไว้", icon: SavedIcon, href: "/saved" },
+  { key: "home", label: "Home", icon: HomeIcon, href: "/main" },
+  { key: "myTrips", label: "My Trip", icon: MyTripsIcon, href: "/my-trips" },
 ];
 
 export function MobileBottomNav({ active }: { active?: NavKey }) {
@@ -86,9 +104,7 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"
-        : pathname?.startsWith("/saved")
-          ? "saved"
-          : undefined);
+        : undefined);
 
   return (
     <nav
@@ -98,21 +114,42 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
       className="fixed inset-x-0 bottom-0 z-40 min-[1025px]:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      {/* The raised button overflows the sheet's top edge, so the sheet can't
-          clip — the rounding lives here and nothing here is overflow-hidden. */}
-      <div className="relative rounded-t-[26px] bg-white shadow-[0_-6px_24px_rgba(16,24,40,0.10)]">
+      <div className="relative">
+        {/* The sheet, with the reference's notch cut out of its top edge.
+            Rebuilt as a mask rather than using the exported Union 1.svg: that
+            file is a 1844x544 PNG wrapped in an <svg>, so it would stretch (and
+            blur) the notch to whatever width the phone happens to be. A
+            radial-gradient mask keeps the cutout a true circle at every width
+            and costs no asset.
+
+            It is its own layer, behind everything: a mask applies to an
+            element's children too, so the raised button drawn inside it would
+            be punched out along with the notch.
+
+            drop-shadow rather than box-shadow — a mask clips a box-shadow away,
+            while a filter runs after masking and so follows the cut shape. */}
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-t-[26px] bg-white"
+          style={{
+            WebkitMaskImage: NOTCH_MASK,
+            maskImage: NOTCH_MASK,
+            filter: "drop-shadow(0 -4px 14px rgba(16, 24, 40, 0.12))",
+          }}
+        />
+        <div className="relative">
         {/* Soft halo behind the circle, blurred and non-interactive. It is what
             makes the button read as lifted off the sheet rather than pasted
             onto it. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute -top-4 left-1/2 h-14 w-14 -translate-x-1/2 rounded-full bg-[var(--color-accent-orange)]/45 blur-xl"
+          className="pointer-events-none absolute -top-6 left-1/2 h-14 w-14 -translate-x-1/2 rounded-full bg-[var(--color-accent-orange)]/45 blur-xl"
         />
 
         <Link
           href="/create-trip"
           aria-label="สร้างทริป"
-          className="group absolute -top-3 left-1/2 flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full bg-gradient-to-b from-[#FFA24B] to-[#F35F28] text-white shadow-[0_8px_20px_-4px_rgba(243,113,48,0.65)] transition-transform duration-150 active:scale-95"
+          className="group absolute -top-5 left-1/2 flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full bg-gradient-to-b from-[#FFA24B] to-[#F35F28] text-white shadow-[0_8px_20px_-4px_rgba(243,113,48,0.65)] transition-transform duration-150 active:scale-95"
         >
           <Plus size={22} strokeWidth={2.6} />
         </Link>
@@ -123,11 +160,16 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
           <TabItem item={DESTINATIONS[0]} isActive={resolved === DESTINATIONS[0].key} />
           <TabItem item={DESTINATIONS[1]} isActive={resolved === DESTINATIONS[1].key} />
           <span aria-hidden className="w-14 shrink-0" />
-          <TabItem item={DESTINATIONS[2]} isActive={resolved === DESTINATIONS[2].key} />
+          {/* Puntok has no route yet — nothing in the app answers to it — so the
+              slot is drawn and disabled rather than pointed somewhere wrong.
+              It took Saved's place at your call; /saved is still reachable from
+              the drawer behind the hero's menu button. */}
+          <TabButton label="Puntok" icon={PuntokIcon} disabled />
           {/* Profile opens the account dialog rather than navigating: the
               standalone /account page was removed in favour of that dialog, so
               there's no route to point at. Uses the shell's single instance. */}
-          <TabButton label="โปรไฟล์" icon={ProfileIcon} onClick={appShell?.openAccount} disabled={!appShell} />
+          <TabButton label="Profile" icon={ProfileIcon} onClick={appShell?.openAccount} disabled={!appShell} />
+        </div>
         </div>
       </div>
     </nav>
@@ -161,7 +203,7 @@ function TabItem({
       href={item.href}
       aria-current={isActive ? "page" : undefined}
       className={ITEM_CLASS}
-      style={{ color: isActive ? "var(--color-primary)" : "var(--color-muted)" }}
+      style={{ color: isActive ? "var(--color-accent-orange)" : "var(--color-muted)" }}
     >
       <Icon className={ICON_CLASS} />
       <span className={LABEL_CLASS}>{item.label}</span>
