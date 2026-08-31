@@ -42,6 +42,7 @@ import {
   RefreshCcw,
   Repeat2,
   Share2,
+  Shuffle,
   Sparkles,
   Star,
   Ticket,
@@ -1623,6 +1624,17 @@ function TripAttributionBar({
 
         <div className="flex w-full flex-col items-stretch gap-1 sm:w-auto sm:items-end">
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {/* Navigates to the /remix discovery page — a separate feature
+                from the "นำไปปรับเป็นทริปของฉัน" button below, which remixes
+                this specific trip. This one browses other creators' trips. */}
+            <Link
+              href="/remix"
+              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold sm:min-h-0 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-xs"
+              style={{ backgroundColor: "#241512", color: "#D7FF3D" }}
+            >
+              <Shuffle size={13} />
+              Remix Trip
+            </Link>
             {onShareClick && (
               <button
                 type="button"
