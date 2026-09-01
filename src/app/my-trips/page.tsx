@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, LoaderCircle, Menu, Pencil, Search, X } from "lucide-react";
+import { CheckCircle2, LoaderCircle } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
-import { AppShell, useAppShell } from "@/components/layout/AppShell";
+import { AppShell } from "@/components/layout/AppShell";
+import { HomeHero } from "@/components/consumer/HomeHero";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { CreateTripButton } from "@/components/ui/CreateTripButton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -20,7 +20,7 @@ import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 // on every request that returns user-specific data (see lib/trips-api.ts).
 export default function MyTripsPage() {
   const router = useRouter();
-  const { user, backendUser, isLoading } = useAuth();
+  const { backendUser, isLoading } = useAuth();
   const [trips, setTrips] = useState<BackendTripListItem[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -104,36 +104,29 @@ export default function MyTripsPage() {
   });
 
   return (
-    <AppShell hideDesktopSidebar hideTopbar>
+    <AppShell active="myTrips" hideDesktopSidebar hideTopbar>
+      {/* /main's hero, reused whole rather than a second header that drifts
+          from it: the frosted app bar (wordmark, menu, account avatar), the
+          page's one <h1>, and the search field. Two of its options matter here:
+          the field is wired to this page's own tripQuery, and
+          compactSearchHref={null} keeps it live at every width — /main's
+          hand-off to /search searches *public* trips, which is not what a
+          search box under "ทริปของฉัน" means. */}
+      <div className="sticky top-0 z-30">
+        <HomeHero
+          query={tripQuery}
+          onQueryChange={setTripQuery}
+          eyebrow="ยินดีต้อนรับกลับมา"
+          title="ทริปของฉัน"
+          searchPlaceholder="ค้นหาทริปของคุณ"
+          compactSearchHref={null}
+          suggestPlaces={false}
+        />
+      </div>
+
       <div className="min-h-full bg-[#f7faf8]">
-        <header
-          className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur"
-          style={{ paddingTop: "env(safe-area-inset-top)" }}
-        >
-          <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10 xl:px-14">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <MyTripsMenuButton />
-              <Link href="/main" className="text-xl font-extrabold tracking-[-0.04em] text-[var(--color-brand-green)]">PUNGUIDE</Link>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-4">
-              <Link href="/main" className="hidden text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--foreground)] sm:block">สำรวจทริป</Link>
-              <CreateTripButton />
-              <AccountAvatarButton src={backendUser.avatarUrl || user?.photoURL || "/images/profile-avatar.jpg"} />
-            </div>
-          </div>
-        </header>
-
         <main className="mx-auto w-full max-w-[var(--container-feed)] px-4 py-8 sm:px-6 sm:py-12 lg:px-10 xl:px-14">
-          <div className="flex flex-wrap items-end justify-between gap-5">
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-primary)]">ยินดีต้อนรับกลับมา</p>
-              <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">ทริปของฉัน</h1>
-              <p className="mt-2 text-sm text-[var(--color-muted)]">จัดการแพลนทั้งหมดของคุณในที่เดียว</p>
-            </div>
-            <EditProfileButton />
-          </div>
-
-          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-[#dcebe3] bg-white p-5"><p className="text-sm text-[var(--color-muted)]">ทริปทั้งหมด</p><p className="mt-2 text-3xl font-extrabold">{trips?.length ?? "–"}</p></div>
             <div className="rounded-2xl border border-[#dcebe3] bg-white p-5"><p className="text-sm text-[var(--color-muted)]">กำลังวางแผน</p><p className="mt-2 text-3xl font-extrabold text-[var(--color-primary)]">{trips?.filter((trip) => trip.status.toLowerCase() !== "completed").length ?? "–"}</p></div>
             <div className="rounded-2xl border border-[#dcebe3] bg-white p-5"><p className="text-sm text-[var(--color-muted)]">จุดหมาย</p><p className="mt-2 text-3xl font-extrabold">{trips ? new Set(trips.map((trip) => trip.destination)).size : "–"}</p></div>
@@ -141,11 +134,22 @@ export default function MyTripsPage() {
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="text-xl font-extrabold">รายการทริป</h2><p className="mt-1 text-sm text-[var(--color-muted)]">เปิดดู แก้ไข หรือลบทริปของคุณ</p></div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <label className="flex items-center gap-2 rounded-xl border border-[#dcebe3] bg-white px-3.5 py-2.5 sm:w-64"><Search size={16} className="text-[var(--color-muted)]" /><input value={tripQuery} onChange={(event) => setTripQuery(event.target.value)} placeholder="ค้นหาทริป..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" />{tripQuery && <button type="button" onClick={() => setTripQuery("")} aria-label="ล้างการค้นหา"><X size={14} /></button>}</label>
+            {/* No search box of its own any more — the hero's field writes to
+                this same tripQuery, and two inputs showing the same text was
+                all that was left of it. CreateTripButton moved down here from
+                the old header: FrostedTopNav has no slot for it, and this is
+                the row the trip list actually starts at. */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="flex rounded-xl border border-[#dcebe3] bg-white p-1">
                 {([["all", "ทั้งหมด"], ["draft", "ร่าง"], ["published", "เผยแพร่"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setTripFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${tripFilter === value ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-muted)] hover:bg-[#eef7f2]"}`}>{label}</button>)}
               </div>
+              {/* Desktop only, same 1025px boundary the rest of this page
+                  splits on: below it MobileBottomNav's raised centre button is
+                  already the create action, and this one collapses to a bare
+                  "+" under 640px — two identical plus buttons on one screen. */}
+              <span className="hidden min-[1025px]:block">
+                <CreateTripButton />
+              </span>
             </div>
           </div>
 
@@ -186,56 +190,5 @@ export default function MyTripsPage() {
         </main>
       </div>
     </AppShell>
-  );
-}
-
-// The shell's Topbar is hidden on this page (it duplicated this header), so
-// this is the only way into the nav drawer at any width.
-function MyTripsMenuButton() {
-  const appShell = useAppShell();
-  if (!appShell) return null;
-  return (
-    <button
-      type="button"
-      onClick={appShell.openSidebar}
-      aria-label="เปิดเมนู"
-      // Desktop only, same as /main's: below 1025px MobileBottomNav reaches
-      // everything the drawer does, so this was a duplicate route.
-      className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--foreground)] transition-colors hover:bg-[var(--color-surface)] min-[1025px]:flex"
-    >
-      <Menu size={20} />
-    </button>
-  );
-}
-
-// These three read the shell context, so they have to be children of
-// <AppShell> rather than inline in the page — the page component renders
-// AppShell, which puts it *above* the provider where useAppShell() sees null.
-function AccountAvatarButton({ src }: { src: string }) {
-  const appShell = useAppShell();
-  return (
-    <button
-      type="button"
-      onClick={appShell?.openAccount}
-      aria-label="บัญชีผู้ใช้"
-      // The bottom bar's โปรไฟล์ tab opens this same dialog below 1025px.
-      className="hidden rounded-full hover:opacity-80 min-[1025px]:block"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt="" className="h-9 w-9 rounded-full object-cover" />
-    </button>
-  );
-}
-
-function EditProfileButton() {
-  const appShell = useAppShell();
-  return (
-    <button
-      type="button"
-      onClick={appShell?.openAccount}
-      className="inline-flex items-center gap-2 rounded-xl border border-[#d6e4dd] bg-white px-4 py-2.5 text-sm font-semibold hover:bg-[#eef7f2]"
-    >
-      <Pencil size={15} /> แก้ไขโปรไฟล์
-    </button>
   );
 }

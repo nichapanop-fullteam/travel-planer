@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Search } from "lucide-react";
+import { ArrowRight, MapPin, Search } from "lucide-react";
+import { usePlaceAutocomplete } from "@/hooks/usePlaceAutocomplete";
 import { FrostedTopNav } from "@/components/consumer/FrostedTopNav";
 import { useAppShell } from "@/components/layout/AppShell";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -10,6 +11,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 
 const SEARCH_ID = "home-search";
+const SUGGESTIONS_ID = "home-search-suggestions";
 
 // /main's hero — the frosted app bar, the page's one <h1>, and the feed search.
 // Replaces the old white sticky HomeNavbar + tinted FeedSearchBar band: the
@@ -22,9 +24,29 @@ const SEARCH_ID = "home-search";
 export function HomeHero({
   query,
   onQueryChange,
+  eyebrow,
+  title = "จุดหมายที่คุณจะไป",
+  searchPlaceholder = "ค้นหาชื่อที่ ย่าน หรือประเภท",
+  compactSearchHref = "/search",
+  suggestPlaces = true,
 }: {
   query: string;
   onQueryChange: (next: string) => void;
+  /** Small line above the heading — /my-trips' "ยินดีต้อนรับกลับมา". Omitted
+   *  on /main, where the heading stands on its own. */
+  eyebrow?: string;
+  title?: string;
+  searchPlaceholder?: string;
+  /** Where the compact layout hands searching off to. /main sends people to
+   *  /search, the full-screen surface with recent terms and trends. A page
+   *  whose field filters a list already on screen (/my-trips) passes null:
+   *  there is nothing to hand off to, so the live field stays at every width
+   *  and the app bar grows no search icon. */
+  compactSearchHref?: string | null;
+  /** Destination autocomplete under the desktop field. Off for a field that
+   *  filters the user's own trips — a Places row there names a place, not one
+   *  of their trips, so choosing one would empty the list. */
+  suggestPlaces?: boolean;
 }) {
   const appShell = useAppShell();
   const { user: firebaseUser, backendUser } = useAuth();
@@ -84,7 +106,42 @@ export function HomeHero({
   const searchExpanded = !compactLayout || !scrolledPast || query.trim().length > 0;
   // The icon is the folded field's stand-in, so it only earns a slot once the
   // field has actually folded away.
-  const showSearchIcon = compactLayout && scrolledPast;
+  const showSearchIcon = compactLayout && scrolledPast && compactSearchHref != null;
+
+  // Destination suggestions under the desktop field. Compact layouts send
+  // people to /search instead, which has the room for a full list, so the
+  // lookup only runs where the panel can actually show — passing "" keeps the
+  // hook idle rather than firing requests nobody will see. Same for a caller
+  // that turned suggestions off.
+  const suggestions = usePlaceAutocomplete(suggestPlaces && !compactLayout ? query : "");
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const showSuggestions = suggestionsOpen && !!suggestions && suggestions.length > 0;
+
+  function chooseSuggestion(description: string) {
+    onQueryChange(description);
+    setSuggestionsOpen(false);
+    setActiveIndex(-1);
+  }
+
+  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setSuggestionsOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+    if (!showSuggestions || !suggestions) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      // Kept on the input rather than moving focus into the list: the field has
+      // to stay editable while the highlight moves, which is what aria-activedescendant is for.
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((i) => (i + delta + suggestions.length) % suggestions.length);
+    } else if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      chooseSuggestion(suggestions[activeIndex].description);
+    }
+  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,7 +149,7 @@ export function HomeHero({
   }
 
   return (
-    <div className="relative overflow-hidden bg-[var(--color-deep-green)]">
+    <div className="relative bg-[var(--color-deep-green)]">
       {!illustrationFailed && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -113,7 +170,7 @@ export function HomeHero({
         avatarUrl={avatarUrl}
         onAvatarClick={appShell?.openAccount}
         avatarLabel={accountLabel}
-        searchHref={showSearchIcon ? "/search" : undefined}
+        searchHref={showSearchIcon ? compactSearchHref ?? undefined : undefined}
       />
 
       {/* No vertical padding on phones: the heading is hidden there and the
@@ -134,14 +191,23 @@ export function HomeHero({
               measures ~210px, and a cap under that would clip the field. */}
           <div
             id={SEARCH_ID}
-            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none ${
+            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none min-[1025px]:overflow-visible ${
               searchExpanded ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
             } min-[1025px]:max-h-none min-[1025px]:opacity-100`}
             aria-hidden={!searchExpanded && compactLayout}
           >
             <div className="py-5 sm:py-12">
-            <h1 className="text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] min-[640px]:text-[32px] min-[1025px]:text-[38px]">
-              จุดหมายที่คุณจะไป
+            {eyebrow && (
+              <p className="text-center text-sm font-semibold text-white/85 drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] min-[640px]:text-[15px]">
+                {eyebrow}
+              </p>
+            )}
+            <h1
+              className={`text-center text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] min-[640px]:text-[32px] min-[1025px]:text-[38px] ${
+                eyebrow ? "mt-1.5" : ""
+              }`}
+            >
+              {title}
             </h1>
 
             {/* Compact layout hands searching to /search — the full-screen
@@ -150,22 +216,28 @@ export function HomeHero({
                 looks identical and the tap goes straight to the page instead of
                 opening a keyboard under a 45px app bar. Desktop keeps the live
                 field: there is room for it, and no page to send anyone to. */}
+            {compactSearchHref && (
             <Link
-              href="/search"
+              href={compactSearchHref}
               className="mt-4 flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 min-[640px]:gap-1.5 min-[1025px]:hidden"
             >
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)] min-[640px]:h-7 min-[640px]:w-7">
                 <Search strokeWidth={2.5} className="h-[15px] w-[15px]" />
               </span>
               <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)] min-[640px]:text-[13px]">
-                {query.trim() || "ค้นหาชื่อที่ ย่าน หรือประเภท"}
+                {query.trim() || searchPlaceholder}
               </span>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white min-[640px]:h-8 min-[640px]:w-8">
                 <ArrowRight strokeWidth={2.5} className="h-4 w-4" />
               </span>
             </Link>
+            )}
 
-            <form onSubmit={handleSubmit} role="search" className="mt-4 hidden sm:mt-7 min-[1025px]:block">
+            <form
+              onSubmit={handleSubmit}
+              role="search"
+              className={`relative mt-4 sm:mt-7 ${compactSearchHref ? "hidden min-[1025px]:block" : "block"}`}
+            >
               {/* The pale ring is what lifts the field off the scrim — without
                   it the white pill reads as sitting flat on the photo. */}
               <div className="flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 transition focus-within:ring-white/70 min-[640px]:gap-1.5 min-[1025px]:ring-[3px]">
@@ -174,8 +246,23 @@ export function HomeHero({
                 </span>
                 <input
                   value={query}
-                  onChange={(e) => onQueryChange(e.target.value)}
-                  placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
+                  onChange={(e) => {
+                    onQueryChange(e.target.value);
+                    setSuggestionsOpen(true);
+                    setActiveIndex(-1);
+                  }}
+                  onKeyDown={handleSearchKeyDown}
+                  // A click lands before blur, so closing on blur immediately
+                  // would cancel the selection. The delay is the usual way to
+                  // let the click through first.
+                  onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}
+                  onFocus={() => setSuggestionsOpen(true)}
+                  role="combobox"
+                  aria-expanded={showSuggestions}
+                  aria-controls={SUGGESTIONS_ID}
+                  aria-autocomplete="list"
+                  aria-activedescendant={activeIndex >= 0 ? `${SUGGESTIONS_ID}-${activeIndex}` : undefined}
+                  placeholder={searchPlaceholder}
                   aria-label="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว"
                   // Left-aligned, not centred like the reference's placeholder:
                   // with an empty value a centred field puts the caret in the
@@ -192,6 +279,48 @@ export function HomeHero({
                   <ArrowRight strokeWidth={2.5} className="h-4 w-4 min-[1025px]:h-[17px] min-[1025px]:w-[17px]" />
                 </button>
               </div>
+
+              {/* Sits over the page rather than pushing it: the hero is sticky,
+                  so growing it would shove the whole feed down on every
+                  keystroke. */}
+              {showSuggestions && suggestions && (
+                <ul
+                  id={SUGGESTIONS_ID}
+                  role="listbox"
+                  className="absolute inset-x-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-2xl bg-white p-1.5 text-left shadow-[0_12px_32px_rgba(16,24,40,0.18)]"
+                >
+                  {suggestions.map((place, index) => (
+                    <li key={place.externalRef} id={`${SUGGESTIONS_ID}-${index}`} role="option" aria-selected={index === activeIndex}>
+                      <button
+                        type="button"
+                        // onMouseDown, not onClick: the input's blur fires
+                        // first on a plain click and would close the list out
+                        // from under the pointer.
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          chooseSuggestion(place.description);
+                        }}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                          index === activeIndex ? "bg-[var(--color-surface)]" : ""
+                        }`}
+                      >
+                        <MapPin size={16} className="shrink-0 text-[var(--color-primary)]" strokeWidth={2} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-[var(--foreground)]">
+                            {place.mainText}
+                          </span>
+                          {place.secondaryText && (
+                            <span className="block truncate text-xs text-[var(--color-muted)]">
+                              {place.secondaryText}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </form>
             </div>
           </div>
