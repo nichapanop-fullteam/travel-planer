@@ -1151,6 +1151,11 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           onAddDay={handleAddDay}
           onClose={() => setActivityDialogRequest(null)}
           onSave={handleSaveActivity}
+          onExploreRecommended={() => {
+            const dayId = activityDialogRequest.dayId;
+            setActivityDialogRequest(null);
+            setRecommendRequest({ dayId });
+          }}
         />
       )}
       {recommendRequest && (
@@ -4187,6 +4192,7 @@ function AddActivityDialog({
   onAddDay,
   onClose,
   onSave,
+  onExploreRecommended,
 }: {
   days: Day[];
   initialDayId: string;
@@ -4197,6 +4203,11 @@ function AddActivityDialog({
   onAddDay: () => void;
   onClose: () => void;
   onSave: (dayId: string, activity: Activity) => void;
+  // "ยังไม่รู้จะไปไหน?" — same banner as the plan-tab day list, offered here too
+  // since someone who opened this to add a place manually may not actually
+  // have one in mind yet. Closes this dialog and opens RecommendPlacesFlow
+  // instead (the mirror of that flow's own onAddManually, going the other way).
+  onExploreRecommended: () => void;
 }) {
   const isEditing = initialActivity !== undefined;
   const [selectedDayId, setSelectedDayId] = useState<string | null>(initialDayId);
@@ -4291,6 +4302,31 @@ function AddActivityDialog({
                 <X size={16} />
               </button>
             </div>
+
+            {/* Same "ยังไม่รู้จะไปไหน?" banner as the plan-tab day list — offered
+                here too since arriving at a manual-add form doesn't mean
+                having a place in mind already. Not shown while editing an
+                existing stop, where exploring recommendations doesn't apply. */}
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={onExploreRecommended}
+                className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed px-4 py-2 text-left"
+                style={{ borderColor: "var(--color-accent-orange)", backgroundColor: "#FDF0E7" }}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+                  <span className="text-sm font-semibold">ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ</span>
+                </span>
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
+                  style={{ backgroundColor: "var(--color-accent-orange)" }}
+                >
+                  สำรวจ
+                  <ChevronRight size={12} />
+                </span>
+              </button>
+            )}
 
             {!isEditing && (
               <div className="flex flex-col gap-2">
