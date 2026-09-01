@@ -2134,8 +2134,16 @@ function AccommodationSetupForm({
         // AccommodationSetupForm). Demo-safe as-is (patch() keeps them in
         // React state + localStorage for the session), just won't survive a
         // different device/browser or cleared storage until the backend fix
-        // lands and onSave is pointed at it.
+        // lands and onSave is pointed at it. The notice right below says the
+        // same thing on-screen, for the demo in the meantime.
         <div className="flex flex-col gap-3">
+          <div
+            className="flex items-start gap-2 rounded-2xl px-3.5 py-2.5 text-xs"
+            style={{ backgroundColor: "#FFF3D6", color: "#8A6A00" }}
+          >
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+            <span>ข้อมูลด้านล่างนี้บันทึกไว้แค่ในเครื่องนี้ชั่วคราว ระบบหลังบ้านสำหรับเก็บถาวรอยู่ระหว่างพัฒนา</span>
+          </div>
           <LabeledInput label="ชื่อโรงแรม" value={name} onChange={setName} onBlur={() => patch({ name })} placeholder="ชื่อโรงแรม" />
           <LabeledInput
             label="ตำแหน่งที่อยู่ของที่พัก"
