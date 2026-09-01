@@ -43,6 +43,7 @@ import {
   RefreshCcw,
   Repeat2,
   Share2,
+  Shuffle,
   Sparkles,
   Star,
   Ticket,
@@ -1977,6 +1978,20 @@ function TripAttributionBar({
             taller than its neighbour. */}
         <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            {/* Navigates to the /remix discovery page — a separate feature
+                from the "Remix Trip" button below (which remixes this
+                specific trip via onRemixClick). This one browses other
+                creators' trips, so it isn't gated behind onShareClick/
+                canRemix/onEditTrip or hideActionsOnCompact — there's no
+                MobileActionBar equivalent for it to defer to below 1025px. */}
+            <Link
+              href="/remix"
+              className={`${CONTROL_BASE} ${CONTROL_HEIGHT} w-full border border-transparent font-bold sm:w-auto`}
+              style={{ backgroundColor: "#241512", color: "#D7FF3D" }}
+            >
+              <Shuffle size={13} />
+              Remix Trip
+            </Link>
             {(onShareClick || (!isOwner && canRemix) || (isOwner && onEditTrip)) && (
               <div
                 className={`flex w-full items-center gap-2 sm:w-auto ${
@@ -4102,23 +4117,38 @@ function EditField({
   value,
   onChange,
   placeholder,
+  rows,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  // Multiline (textarea) when set — e.g. "หมายเหตุการเดินทาง" needs more room
+  // than a single-line input gives it.
+  rows?: number;
 }) {
   return (
     <div>
       <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">{label}</label>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none"
-        style={{ borderColor: "var(--color-border)" }}
-      />
+      {rows ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none"
+          style={{ borderColor: "var(--color-border)" }}
+        />
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none"
+          style={{ borderColor: "var(--color-border)" }}
+        />
+      )}
     </div>
   );
 }
@@ -4648,125 +4678,129 @@ function AddActivityDialog({
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="flex max-h-[90vh] w-full max-w-2xl flex-col gap-5 overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-bold">{isEditing ? "แก้ไขสถานที่" : "เพิ่มสถานที่"}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        <div className="flex max-h-[90vh] w-full max-w-[1132px] flex-col rounded-3xl bg-white shadow-2xl">
+          <div className="flex flex-col gap-5 overflow-y-auto p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-bold">{isEditing ? "แก้ไขสถานที่" : "เพิ่มสถานที่"}</h3>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                style={{ backgroundColor: "var(--color-surface)" }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {!isEditing && (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-semibold text-[var(--color-muted)]">เลือกวันที่ต้องการเพิ่มแพลน</p>
+                <div
+                  className="flex items-center gap-1.5 overflow-x-auto rounded-2xl p-1.5"
+                  style={{ backgroundColor: "var(--color-page-cream)" }}
+                >
+                  <DayTab label="ทุกวัน" isActive={selectedDayId === null} onClick={() => setSelectedDayId(null)} />
+                  {days.map((day) => (
+                    <DayTab
+                      key={day.id}
+                      label={`วันที่ ${day.dayNumber}`}
+                      isActive={selectedDayId === day.id}
+                      onClick={() => setSelectedDayId(day.id)}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={onAddDay}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold"
+                    style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }}
+                  >
+                    <Plus size={14} />
+                    เพิ่มวัน
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Optional — a free-text note/heading about the stop, shown on the
+                itinerary list (PlanActivityRow) under the time/cost line when set. */}
+            <label
+              className="flex items-start gap-3 rounded-2xl px-4 py-3.5"
               style={{ backgroundColor: "var(--color-surface)" }}
             >
-              <X size={16} />
-            </button>
-          </div>
+              <MessageSquare size={16} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="เพิ่มหัวข้อเรื่อง หรือรายละเอียดเพิ่มเติม (ไม่บังคับ)"
+                rows={1}
+                className="w-full resize-none bg-transparent text-sm focus:outline-none"
+              />
+            </label>
 
-          {!isEditing && (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm font-semibold text-[var(--color-muted)]">เลือกวันที่ต้องการเพิ่มแพลน</p>
-              <div
-                className="flex items-center gap-1.5 overflow-x-auto rounded-2xl p-1.5"
-                style={{ backgroundColor: "var(--color-page-cream)" }}
-              >
-                <DayTab label="ทุกวัน" isActive={selectedDayId === null} onClick={() => setSelectedDayId(null)} />
-                {days.map((day) => (
-                  <DayTab
-                    key={day.id}
-                    label={`วันที่ ${day.dayNumber}`}
-                    isActive={selectedDayId === day.id}
-                    onClick={() => setSelectedDayId(day.id)}
-                  />
-                ))}
-                <button
-                  type="button"
-                  onClick={onAddDay}
-                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold"
-                  style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }}
-                >
-                  <Plus size={14} />
-                  เพิ่มวัน
-                </button>
-              </div>
-            </div>
-          )}
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-[200px_1fr]">
+              <ActivityImagesField images={images} onChange={setImages} />
 
-          {/* Optional — a free-text note/heading about the stop, shown on the
-              itinerary list (PlanActivityRow) under the time/cost line when set. */}
-          <label
-            className="flex items-start gap-3 rounded-2xl px-4 py-3.5"
-            style={{ backgroundColor: "var(--color-surface)" }}
-          >
-            <MessageSquare size={16} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="เพิ่มหัวข้อเรื่อง หรือรายละเอียดเพิ่มเติม (ไม่บังคับ)"
-              rows={1}
-              className="w-full resize-none bg-transparent text-sm focus:outline-none"
-            />
-          </label>
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-[200px_1fr]">
-            <ActivityImagesField images={images} onChange={setImages} />
-
-            <div className="flex flex-col gap-4">
-              <ActivityPlaceSearchField value={title} onChange={handleTitleChange} onSelectPlace={handleSelectPlace} />
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">
-                    เวลา <span className="font-normal text-[var(--color-muted)]">(ไม่บังคับ)</span>
-                  </label>
-                  <div
-                    className="flex w-full items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{ borderColor: "var(--color-border)" }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setShowTimePicker(true)}
-                      className="flex flex-1 items-center gap-2 text-left focus:outline-none"
+              <div className="flex flex-col gap-4">
+                <ActivityPlaceSearchField value={title} onChange={handleTitleChange} onSelectPlace={handleSelectPlace} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">
+                      เวลา <span className="font-normal text-[var(--color-muted)]">(ไม่บังคับ)</span>
+                    </label>
+                    <div
+                      className="flex w-full items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm"
+                      style={{ borderColor: "var(--color-border)" }}
                     >
-                      <Clock size={14} style={{ color: "var(--color-muted)" }} />
-                      {time ? (
-                        formatTimeDisplay(time)
-                      ) : (
-                        <span className="text-[var(--color-muted)]">ไม่ระบุเวลา</span>
-                      )}
-                    </button>
-                    {time && (
                       <button
                         type="button"
-                        onClick={() => setTime("")}
-                        aria-label="ล้างเวลา"
-                        className="shrink-0 rounded-full p-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
+                        onClick={() => setShowTimePicker(true)}
+                        className="flex flex-1 items-center gap-2 text-left focus:outline-none"
                       >
-                        <X size={13} />
+                        <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                        {time ? (
+                          formatTimeDisplay(time)
+                        ) : (
+                          <span className="text-[var(--color-muted)]">ไม่ระบุเวลา</span>
+                        )}
                       </button>
-                    )}
+                      {time && (
+                        <button
+                          type="button"
+                          onClick={() => setTime("")}
+                          aria-label="ล้างเวลา"
+                          className="shrink-0 rounded-full p-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface)]"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <ActivityCategoryField value={category} onChange={setCategory} />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ค่าใช้จ่าย (บาท)</label>
+                  <div className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: "var(--color-border)" }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cost}
+                      onChange={(e) => setCost(e.target.value.replace(/[^\d]/g, ""))}
+                      placeholder="0"
+                      className="w-full bg-transparent text-sm focus:outline-none"
+                    />
+                    <span className="shrink-0 text-xs font-semibold text-[var(--color-muted)]">THB</span>
                   </div>
                 </div>
-                <ActivityCategoryField value={category} onChange={setCategory} />
-              </div>
 
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">ค่าใช้จ่าย (บาท)</label>
-                <div className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: "var(--color-border)" }}>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={cost}
-                    onChange={(e) => setCost(e.target.value.replace(/[^\d]/g, ""))}
-                    placeholder="0"
-                    className="w-full bg-transparent text-sm focus:outline-none"
-                  />
-                  <span className="shrink-0 text-xs font-semibold text-[var(--color-muted)]">THB</span>
-                </div>
+                <EditField label="หมายเหตุการเดินทาง" value={travelNote} onChange={setTravelNote} placeholder="เช่น ออกก่อนเวลา ~5 นาที" rows={6} />
               </div>
-
-              <EditField label="หมายเหตุการเดินทาง" value={travelNote} onChange={setTravelNote} placeholder="เช่น ออกก่อนเวลา ~5 นาที" />
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Kept outside the scrollable body above so it stays put at the
+              bottom of the modal instead of scrolling away with the form. */}
+          <div className="flex shrink-0 items-center gap-3 border-t p-6" style={{ borderColor: "var(--color-border)" }}>
             <button
               type="button"
               onClick={onClose}

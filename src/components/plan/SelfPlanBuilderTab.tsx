@@ -831,15 +831,7 @@ function AddPlacesAccordion({
   );
 }
 
-function Checkbox({
-  checked,
-  onClick,
-  color = "var(--color-brand-green)",
-}: {
-  checked: boolean;
-  onClick: () => void;
-  color?: string;
-}) {
+function Checkbox({ checked, onClick }: { checked: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -848,10 +840,10 @@ function Checkbox({
         onClick();
       }}
       aria-pressed={checked}
-      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
-      style={checked ? { backgroundColor: color, borderColor: color } : { borderColor: "var(--color-border)" }}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
+      style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}
     >
-      {checked && <Check size={12} className="text-white" />}
+      <Pencil size={14} />
     </button>
   );
 }
@@ -914,7 +906,7 @@ function PlaceCheckCard({
           <Check size={14} className="text-white" />
         </span>
       ) : (
-        <Checkbox checked={checked} onClick={onToggle} color="var(--color-accent-orange)" />
+        <Checkbox checked={checked} onClick={onToggle} />
       )}
     </div>
   );
@@ -1294,10 +1286,11 @@ function AddPlaceDialog({
   );
 }
 
-// Checked = the header row (photo/name/address/checkbox, same as
-// PlaceCheckCard) plus an inline เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form underneath,
-// all inside one bordered card — only used by AddPlaceDialog's
-// showDetailsForm mode (the recommend-flow's review step).
+// Checked = the header row (photo/name/address/edit-pencil) plus an inline
+// เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form underneath, all inside one bordered card —
+// only used by AddPlaceDialog's showDetailsForm mode (the recommend-flow's
+// review step). Clicking the pencil (or the row) is what selects a place —
+// it isn't checked until then.
 function SelectedPlaceCard({
   place,
   checked,
@@ -1314,28 +1307,7 @@ function SelectedPlaceCard({
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   return (
-    <div
-      className="relative flex flex-col gap-3 rounded-2xl border p-3"
-      style={
-        checked
-          ? { backgroundColor: "var(--color-page-cream)", borderColor: "var(--color-accent-orange)" }
-          : { borderColor: "var(--color-border)" }
-      }
-    >
-      {/* Floating corner badge once checked — replaces the inline square
-          checkbox, matching the reference's checked-state treatment. */}
-      {checked && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={`เอา ${place.name} ออกจากรายการที่เลือก`}
-          className="absolute -right-2 -top-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white shadow-md"
-          style={{ backgroundColor: "var(--color-accent-orange)" }}
-        >
-          <Check size={14} />
-        </button>
-      )}
-
+    <div className="flex flex-col gap-3 rounded-2xl border p-3" style={{ borderColor: "var(--color-border)" }}>
       <div
         role="button"
         tabIndex={0}
@@ -1363,7 +1335,7 @@ function SelectedPlaceCard({
           <p className="truncate text-sm font-bold">{place.name}</p>
           <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
         </div>
-        {!checked && <Checkbox checked={false} onClick={onToggle} color="var(--color-accent-orange)" />}
+        <Checkbox checked={checked} onClick={onToggle} />
       </div>
 
       {checked && draft && (
@@ -1501,7 +1473,8 @@ export function RecommendPlacesFlow({
         places={stagedPlaces}
         // Re-confirm, not carry-over — arriving here shows every staged place
         // unchecked (count 0) even though it was already picked in the browse
-        // grid, so "เพิ่มลงแพลน" is a deliberate final step, not a rubber stamp.
+        // grid, so clicking the pencil to check it is a deliberate final
+        // step, not a rubber stamp.
         initialCheckedIds={new Set()}
         days={trip.days}
         initialDayId={initialDayId}
