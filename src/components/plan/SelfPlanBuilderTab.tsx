@@ -1947,7 +1947,13 @@ function AccommodationAccordion({
   onExploreRecommended: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
+  // trip.accommodation alone isn't enough to pick "gallery" here — merely
+  // toggling "จองแล้ว"/"ยังไม่จอง" in the setup form below saves a non-empty
+  // accommodation object (patch's `{ name: "", amenities: [], ... }`) before
+  // any real stay is chosen, and AccommodationGallery has nothing to show
+  // without an actual hotel-category stop in the itinerary — it silently
+  // renders null, which used to leave this section blank once toggled.
+  const hasData = collectAccommodationOptions(trip).length > 0;
 
   // Still rendered without data — canEdit gets the setup form instead of
   // the section just vanishing, since arriving here doesn't mean not needing
