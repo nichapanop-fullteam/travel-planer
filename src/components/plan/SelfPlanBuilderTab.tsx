@@ -1913,21 +1913,10 @@ export function AccommodationSection({
   onEditActivity: (dayId: string, activity: Activity) => void;
   onExploreRecommended: () => void;
 }) {
-  // null, not a stand-in city. This used to fall back to
-  // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
-  // missing silently filled every recommendation list with Luang Prabang's
-  // places — a Bangkok trip listing วัดเชียงทอง and ภูสี with nothing on
-  // screen admitting it. A wrong answer that looks right is worse than none,
-  // so the lists now render NoDestinationCoordsNotice instead.
-  const center = trip.destinationPlace
-    ? { lat: trip.destinationPlace.latitude, lng: trip.destinationPlace.longitude }
-    : null;
-
   return (
     <AccommodationAccordion
       trip={trip}
       canEdit={canEdit}
-      center={center}
       onSaveAccommodation={onSaveAccommodation}
       onEditActivity={onEditActivity}
       onExploreRecommended={onExploreRecommended}
@@ -1935,52 +1924,32 @@ export function AccommodationSection({
   );
 }
 
-// Renders only for a trip that actually has somewhere to stay — a hotel stop
-// in the itinerary, or a trip.accommodation set by the recommended-places
-// carousel / AccommodationEditDialog. It used to render unconditionally and
-// lead with the "จองแล้ว"/"ยังไม่จอง" setup form, so a trip with no stay yet
-// showed an empty section whose only content was a form asking for one.
-//
-// Note this makes the section read-only-by-arrival: it is no longer a way to
-// *add* accommodation, only to see and edit what's already there. The add
-// paths are the recommended-places carousel above and adding a hotel place to
-// a day in the itinerary.
-// Hides the whole setup form under the hotel card — the ชื่อโรงแรม /
-// ตำแหน่งที่อยู่ / วันที่เข้าพัก-วันที่ออก / เวลา Check in-Check out inputs,
-// and with them the จองแล้ว/ยังไม่จอง pair and the unbooked branch's
-// style/grade tags. Gated here at the call site rather than inside the form so
-// nothing renders an empty wrapper below the gallery.
-//
-// SHOW_BOOKING_STATUS_TOGGLE below is the inner switch for just the
-// จองแล้ว/ยังไม่จอง pair; it stays off independently, so turning this one back
-// on restores the inputs without the toggle unless that one is flipped too.
-const SHOW_ACCOMMODATION_SETUP_FORM = false;
-
+// Shows the hotel gallery once the trip actually has somewhere to stay (a
+// hotel stop in the itinerary, or a trip.accommodation set below) — before
+// that, canEdit gets the "จองแล้ว"/"ยังไม่จอง" setup form instead, so there's
+// still a way to *add* one, not just see/edit what's already there.
 function AccommodationAccordion({
   trip,
   canEdit,
-  center,
   onSaveAccommodation,
   onEditActivity,
   onExploreRecommended,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
-  center: { lat: number; lng: number } | null;
-  // Backs the "จองแล้ว"/"ยังไม่จอง" setup form below — same callback the
-  // recommended-places carousel above already uses to set trip.accommodation.
+  // Backs the "จองแล้ว"/"ยังไม่จอง" setup form below — same callback
+  // AccommodationGallery's own edits already use to set trip.accommodation.
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
-  // Opens RecommendPlacesFlow (filtered there to include hotels) when the
-  // trip has nowhere to stay yet — the picker path this section's own add
-  // paths point to, now that typing one in by hand (SHOW_ACCOMMODATION_SETUP_FORM)
-  // and the carousel above it (SHOW_PLACE_DISCOVERY_PANEL) are both off.
+  // Opens RecommendPlacesFlow (filtered there to include hotels) — the setup
+  // form's own "ยังไม่จอง" branch below uses this too, so picking one there
+  // is what actually fills trip.accommodation in.
   onExploreRecommended: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
 
-  // Still rendered without data — canEdit gets a "pick one" CTA instead of
+  // Still rendered without data — canEdit gets the setup form instead of
   // the section just vanishing, since arriving here doesn't mean not needing
   // a stay, only not having picked one yet.
   if (!hasData && !canEdit) return null;
@@ -2011,27 +1980,13 @@ function AccommodationAccordion({
           {hasData ? (
             <AccommodationGallery trip={trip} canEdit={canEdit} onEditActivity={onEditActivity} />
           ) : (
-            <button
-              type="button"
-              onClick={onExploreRecommended}
-              className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-2 text-left"
-              style={{ borderColor: "var(--color-accent-orange)" }}
-            >
-              <span className="flex items-center gap-2.5">
-                <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
-                <span className="text-sm font-semibold">ยังไม่มีที่พัก ลองดูที่แนะนำ</span>
-              </span>
-              <span
-                className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
-                style={{ backgroundColor: "var(--color-accent-orange)" }}
-              >
-                เลือกที่พัก
-                <ChevronRight size={12} />
-              </span>
-            </button>
-          )}
-          {canEdit && SHOW_ACCOMMODATION_SETUP_FORM && (
-            <AccommodationSetupForm accommodation={trip.accommodation} center={center} onSave={onSaveAccommodation} />
+            canEdit && (
+              <AccommodationSetupForm
+                accommodation={trip.accommodation}
+                onSave={onSaveAccommodation}
+                onExploreRecommended={onExploreRecommended}
+              />
+            )
           )}
         </div>
       )}
@@ -2039,68 +1994,21 @@ function AccommodationAccordion({
   );
 }
 
-const HOTEL_STYLE_OPTIONS = ["บูทีค", "รีสอร์ท", "โรงแรมทั่วไป", "โฮมสเตย์", "วิลล่า", "ฮอสเทล"];
-const HOTEL_GRADE_OPTIONS = ["1", "2", "3", "4", "5"];
-
-// Same visual family as create-trip's own tag chips (Tag/RecommendChip
-// there) — small, self-contained copies rather than importing from a route
-// page, since these two are the only pieces this form actually needs.
-function StyleTag({ label, isOn, onClick }: { label: string; isOn: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors"
-      style={
-        isOn
-          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }
-          : { borderColor: "var(--color-border-tag)", color: "var(--foreground)" }
-      }
-    >
-      {label}
-    </button>
-  );
-}
-
-function RecommendTag({ isOn, onClick }: { isOn: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center rounded-full border px-3.5 py-2 text-xs font-bold transition-colors"
-      style={
-        isOn
-          ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }
-          : { borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
-      }
-    >
-      แนะนำมาให้เลย
-    </button>
-  );
-}
-
-// Hides the "จองแล้ว"/"ยังไม่จอง" pair for now. A flag rather than deleted
-// code: the two branches it switches between are both still wired up, and the
-// toggle only needs one line flipped to come back. While it is off, `status`
-// still comes from accommodation.bookingStatus, so a stay already saved as
-// unbooked keeps showing its own style/grade fields instead of being reset.
-const SHOW_BOOKING_STATUS_TOGGLE = false;
-
-// The "โรงแรม หรือที่พักของคุณ" setup form — booking-status toggle switches
-// between confirming an already-booked stay's details (name/address/dates/
-// times) and gathering preferences for one that isn't booked yet (desired
-// style/grade + a free-text hint), the latter backed by a recommended-hotels
-// carousel. Every field autosaves onto trip.accommodation via onSave — same
-// client-only object AccommodationEditDialog and the recommend carousel
-// above already write to, no separate "save" step.
+// The "โรงแรม หรือที่พักของคุณ" setup form — only rendered while the trip has
+// no stay yet (see AccommodationAccordion). The "จองแล้ว"/"ยังไม่จอง" toggle
+// switches between confirming an already-booked stay's details (name/address/
+// dates/times) and, for one that isn't booked yet, the same "สำรวจที่พัก"
+// recommend banner used elsewhere — picking one there is what actually
+// fills this in, same as AccommodationGallery's onSave already does. Every
+// field autosaves onto trip.accommodation via onSave, no separate "save" step.
 function AccommodationSetupForm({
   accommodation,
-  center,
   onSave,
+  onExploreRecommended,
 }: {
   accommodation?: TripAccommodation;
-  center: { lat: number; lng: number } | null;
   onSave: (accommodation: TripAccommodation) => void;
+  onExploreRecommended: () => void;
 }) {
   // Defaults to showing the "จองแล้ว" form open even before anything's been
   // saved — this is local UI state only, so nothing lands in trip.accommodation
@@ -2110,14 +2018,9 @@ function AccommodationSetupForm({
   const [address, setAddress] = useState(accommodation?.address ?? "");
   const [checkInTime, setCheckInTime] = useState(accommodation?.checkIn ?? "");
   const [checkOutTime, setCheckOutTime] = useState(accommodation?.checkOut ?? "");
-  const [preferredHotelName, setPreferredHotelName] = useState(accommodation?.preferredHotelName ?? "");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showCheckInPicker, setShowCheckInPicker] = useState(false);
   const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
-
-  const desiredStyles = accommodation?.desiredStyles ?? [];
-  const desiredGrade = accommodation?.desiredGrade;
-  const hotelSuggestions = usePlaceSuggestions(center, ["hotel"]);
 
   function patch(next: Partial<TripAccommodation>) {
     onSave({ name: "", amenities: [], ...accommodation, ...next });
@@ -2129,49 +2032,24 @@ function AccommodationSetupForm({
     patch({ bookingStatus: resolved ?? undefined });
   }
 
-  function toggleStyle(style: string) {
-    const next = desiredStyles.includes(style) ? desiredStyles.filter((s) => s !== style) : [...desiredStyles, style];
-    patch({ desiredStyles: next });
-  }
-
-  function toggleGrade(grade: string) {
-    patch({ desiredGrade: desiredGrade === grade ? undefined : grade });
-  }
-
-  function pickHotel(place: EnrichedPlace) {
-    setStatus("booked");
-    setName(place.name);
-    setAddress(place.address);
-    onSave({
-      ...accommodation,
-      name: place.name,
-      imageUrl: place.imageUrl,
-      address: place.address,
-      amenities: accommodation?.amenities ?? [],
-      bookingStatus: "booked",
-    });
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      {SHOW_BOOKING_STATUS_TOGGLE && (
-        <div className="grid grid-cols-2 gap-3">
-          <AccommodationStatusToggle
-            icon={Check}
-            title="จองแล้ว"
-            subtitle="แนบไฟล์การจองหรือลิงก์"
-            isOn={status === "booked"}
-            onClick={() => setBookingStatus("booked")}
-          />
-          <AccommodationStatusToggle
-            icon={Search}
-            title="ยังไม่จอง"
-            subtitle="บอกสไตล์กับเกรดคร่าวๆ"
-            isOn={status === "unbooked"}
-            onClick={() => setBookingStatus("unbooked")}
-          />
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3">
+        <AccommodationStatusToggle
+          icon={Check}
+          title="จองแล้ว"
+          subtitle="แนบไฟล์การจองหรือลิงก์"
+          isOn={status === "booked"}
+          onClick={() => setBookingStatus("booked")}
+        />
+        <AccommodationStatusToggle
+          icon={Search}
+          title="ยังไม่จอง"
+          subtitle="บอกสไตล์กับเกรดคร่าวๆ"
+          isOn={status === "unbooked"}
+          onClick={() => setBookingStatus("unbooked")}
+        />
+      </div>
 
       {status === "booked" && (
         <div className="flex flex-col gap-3">
@@ -2241,54 +2119,24 @@ function AccommodationSetupForm({
       )}
 
       {status === "unbooked" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-[var(--color-muted)]">สไตล์โรงแรมที่ต้องการ</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {HOTEL_STYLE_OPTIONS.map((style) => (
-                <StyleTag key={style} label={style} isOn={desiredStyles.includes(style)} onClick={() => toggleStyle(style)} />
-              ))}
-              <RecommendTag isOn={desiredGrade === "แนะนำมาให้เลย"} onClick={() => toggleGrade("แนะนำมาให้เลย")} />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-[var(--color-muted)]">เกรดที่พัก</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {HOTEL_GRADE_OPTIONS.map((grade) => (
-                <StyleTag key={grade} label={`${grade}★`} isOn={desiredGrade === grade} onClick={() => toggleGrade(grade)} />
-              ))}
-              <RecommendTag isOn={desiredGrade === "แนะนำมาให้เลย"} onClick={() => toggleGrade("แนะนำมาให้เลย")} />
-            </div>
-          </div>
-
-          <LabeledInput
-            label="ถ้ามีที่พักในใจแล้ว บอกเราได้"
-            value={preferredHotelName}
-            onChange={setPreferredHotelName}
-            onBlur={() => patch({ preferredHotelName })}
-            placeholder="ชื่อโรงแรม หรือย่านที่สนใจ"
-          />
-
-          <div className="flex flex-col gap-2">
-            <p className="flex items-center gap-1.5 text-sm font-bold">
-              <Flag size={13} style={{ color: "var(--color-brand-green)" }} />
-              ที่พักแนะนำ
-            </p>
-            {center === null && <NoDestinationCoordsNotice what="ที่พัก" />}
-            {center !== null && hotelSuggestions === null && (
-              <p className="py-4 text-center text-sm text-[var(--color-muted)]">กำลังโหลด...</p>
-            )}
-            {center !== null && hotelSuggestions !== null && hotelSuggestions.length === 0 && (
-              <p className="py-4 text-center text-sm text-[var(--color-muted)]">ไม่พบที่พักแนะนำ</p>
-            )}
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {hotelSuggestions?.map((place) => (
-                <RecommendedHotelCard key={place.id} place={place} onAdd={() => pickHotel(place)} />
-              ))}
-            </div>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={onExploreRecommended}
+          className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-2 text-left"
+          style={{ borderColor: "var(--color-accent-orange)" }}
+        >
+          <span className="flex items-center gap-2.5">
+            <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+            <span className="text-sm font-semibold">สำรวจที่พัก</span>
+          </span>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            สำรวจ
+            <ChevronRight size={12} />
+          </span>
+        </button>
       )}
 
       <DatePickerDialog
@@ -2369,42 +2217,6 @@ function AccommodationStatusToggle({
 // badge like the other recommend cards in this file, but with the name and
 // "+ เพิ่ม" button sharing a row (rather than the button pinned below) to fit
 // this narrower card.
-function RecommendedHotelCard({ place, onAdd }: { place: EnrichedPlace; onAdd: () => void }) {
-  return (
-    <div className="flex w-60 shrink-0 flex-col gap-2 rounded-2xl bg-white p-3 shadow-sm">
-      <div className="relative h-24 w-full overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
-        {place.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={place.imageUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center">
-            <Building2 size={20} style={{ color: "var(--color-muted)" }} />
-          </span>
-        )}
-        {place.rating !== undefined && (
-          <span className="absolute left-1.5 top-1.5 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
-            <Star size={9} style={{ color: "var(--color-accent-orange)" }} fill="currentColor" />
-            {place.rating.toFixed(1)}
-          </span>
-        )}
-      </div>
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 truncate text-sm font-bold">{place.name}</p>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
-          style={{ backgroundColor: "var(--color-accent-orange)" }}
-        >
-          <Plus size={11} />
-          เพิ่ม
-        </button>
-      </div>
-      <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
-    </div>
-  );
-}
-
 function LabeledInput({
   label,
   value,
