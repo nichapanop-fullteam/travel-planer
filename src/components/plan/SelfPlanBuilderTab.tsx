@@ -1408,6 +1408,7 @@ function SelectedPlaceCard({
 export function RecommendPlacesFlow({
   trip,
   initialDayId,
+  lockToCategory,
   onAddDay,
   onClose,
   onAddActivityDirect,
@@ -1416,6 +1417,11 @@ export function RecommendPlacesFlow({
 }: {
   trip: GeneratedTrip;
   initialDayId: string;
+  // Set by AccommodationSection's "สำรวจที่พัก" — a DRAWER_FILTERS key (just
+  // "hotel" today) the grid opens already filtered to, with the filter-tabs
+  // row hidden entirely rather than merely pre-selected, since that entry
+  // point only ever wants a hotel and there's nothing else worth switching to.
+  lockToCategory?: string;
   onAddDay: () => void;
   onClose: () => void;
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
@@ -1433,7 +1439,7 @@ export function RecommendPlacesFlow({
     : null;
   const places = usePlaceSuggestions(center, ["mixed"]);
 
-  const [filterKey, setFilterKey] = useState("all");
+  const [filterKey, setFilterKey] = useState(lockToCategory ?? "all");
   const [query, setQuery] = useState("");
   const [stagedPlaces, setStagedPlaces] = useState<EnrichedPlace[]>([]);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -1547,24 +1553,26 @@ export function RecommendPlacesFlow({
             />
           </div>
 
-          <div className="flex shrink-0 gap-2 overflow-x-auto [scrollbar-width:none]">
-            {DRAWER_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilterKey(f.key)}
-                className="flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
-                style={
-                  activeFilter.key === f.key
-                    ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
-                    : { borderColor: "var(--color-border)" }
-                }
-              >
-                {f.icon && <f.icon size={13} />}
-                {f.label}
-              </button>
-            ))}
-          </div>
+          {!lockToCategory && (
+            <div className="flex shrink-0 gap-2 overflow-x-auto [scrollbar-width:none]">
+              {DRAWER_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setFilterKey(f.key)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
+                  style={
+                    activeFilter.key === f.key
+                      ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-brand-green)", color: "var(--color-brand-green)" }
+                      : { borderColor: "var(--color-border)" }
+                  }
+                >
+                  {f.icon && <f.icon size={13} />}
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="grid flex-1 auto-rows-min grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
             {center === null && (

@@ -249,7 +249,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // always defaulting to day 1 — each day's own "+ สถานที่" button still opens
   // the plain manual-entry form via activityDialogRequest above. See
   // RecommendPlacesFlow's onAddManually for the way back to that form too.
-  const [recommendRequest, setRecommendRequest] = useState<{ dayId: string } | null>(null);
+  const [recommendRequest, setRecommendRequest] = useState<{ dayId: string; onlyHotels?: boolean } | null>(null);
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
@@ -1103,6 +1103,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               onConfirm={handleConfirm}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
+              onExploreRecommendedAccommodation={() => setRecommendRequest({ dayId: trip.days[0].id, onlyHotels: true })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onAddActivityDirect={handleSaveActivity}
@@ -1166,6 +1167,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         <RecommendPlacesFlow
           trip={trip}
           initialDayId={recommendRequest.dayId}
+          lockToCategory={recommendRequest.onlyHotels ? "hotel" : undefined}
           onAddDay={handleAddDay}
           onClose={() => setRecommendRequest(null)}
           onAddActivityDirect={handleSaveActivity}
@@ -2012,6 +2014,7 @@ function OverviewTab({
   onConfirm,
   onAddActivity,
   onExploreRecommended,
+  onExploreRecommendedAccommodation,
   onEditActivity,
   onDeleteActivity,
   onAddActivityDirect,
@@ -2037,6 +2040,10 @@ function OverviewTab({
   // to day 1), distinct from onAddActivity which opens the plain manual-entry
   // form for a specific day's own "+ สถานที่" button.
   onExploreRecommended: () => void;
+  // Same modal, but locked to the "ที่พัก" filter with the category tabs
+  // hidden entirely — AccommodationSection's "สำรวจที่พัก" only ever wants a
+  // hotel, so there's nothing to sort/switch away from here.
+  onExploreRecommendedAccommodation: () => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
@@ -2078,7 +2085,7 @@ function OverviewTab({
         canEdit={canEdit}
         onSaveAccommodation={onSaveAccommodation}
         onEditActivity={onEditActivity}
-        onExploreRecommended={onExploreRecommended}
+        onExploreRecommended={onExploreRecommendedAccommodation}
       />
 
       <ItineraryAccordion
