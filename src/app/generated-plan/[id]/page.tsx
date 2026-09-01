@@ -31,7 +31,6 @@ import {
   Maximize2,
   MapPin,
   Menu,
-  MessageSquare,
   Minus,
   MoreVertical,
   Navigation,
@@ -73,7 +72,7 @@ import {
   type PlaceFullDetails,
 } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
-import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
+import { addTripMediaFromPlace, deleteTripMediaForActivity, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 import { Logo } from "@/components/common/Logo";
 import { RemixIcon } from "@/components/common/RemixIcon";
@@ -929,13 +928,22 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
   function handleDeleteActivity(dayId: string, activityId: string) {
     updateDay(dayId, (d) => ({ ...d, activities: d.activities.filter((a) => a.id !== activityId) }));
-    if (trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId)) {
-      deleteTripItemOnServer(activityId, autoTravelCalculationEnabled)
-        .then(() => {
-          if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
-        })
-        .catch((err) => console.warn("ลบกิจกรรมจากเซิร์ฟเวอร์ไม่สำเร็จ", err));
-    }
+    if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(activityId)) return;
+
+    const tripId = trip!.id;
+    // Media rows still pointing at this activity (sourceActivityId) make
+    // DELETE /items/:id 500 instead of succeeding — the backend doesn't
+    // cascade this itself (confirmed live against a stuck item). Best-effort:
+    // still try deleting the item even if this fails, same as before.
+    deleteTripMediaForActivity(tripId, activityId)
+      .catch((err) => console.warn("ลบรูปภาพของกิจกรรมไม่สำเร็จ", err))
+      .then(() =>
+        deleteTripItemOnServer(activityId, autoTravelCalculationEnabled)
+          .then(() => {
+            if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+          })
+          .catch((err) => console.warn("ลบกิจกรรมจากเซิร์ฟเวอร์ไม่สำเร็จ", err))
+      );
   }
 
   // Drag-reordered stop order — PATCH /days/:dayId/items/order (see
@@ -4624,10 +4632,12 @@ function AddActivityDialog({
   const [time, setTime] = useState(initialActivity?.time ?? "");
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [title, setTitle] = useState(initialActivity?.title ?? "");
-  const [notes, setNotes] = useState(initialActivity?.notes ?? "");
+  // Falls back to the legacy travelNote field for an activity edited before
+  // the two note boxes merged into this one — otherwise old content saved
+  // there would just silently not show up here to edit/consolidate.
+  const [notes, setNotes] = useState(initialActivity?.notes || initialActivity?.travelNote || "");
   const [category, setCategory] = useState<ActivityCategory>(initialActivity?.category ?? "sightseeing");
   const [cost, setCost] = useState(initialActivity?.cost ? String(initialActivity.cost) : "");
-  const [travelNote, setTravelNote] = useState(initialActivity?.travelNote ?? "");
   const [images, setImages] = useState<string[]>(initialActivity?.images ?? []);
   const [selectedPlace, setSelectedPlace] = useState<ExternalSearchPlace | null>(null);
   const prevDayCountRef = useRef(days.length);
@@ -4679,10 +4689,12 @@ function AddActivityDialog({
       category,
       notes: notes.trim() || undefined,
       cost: cost.trim() ? Number(cost.replace(/[^\d]/g, "")) || 0 : 0,
-      travelNote: travelNote.trim() || undefined,
-      // Not editable from this dialog — carry over untouched so saving a
-      // title/time/cost tweak doesn't wipe out the travel-leg-from-previous
-      // data set separately via TravelConnectorRow.
+      // Not editable from this dialog — carry over untouched. travelNote is
+      // legacy (its own box merged into the single "โน้ต" field above, which
+      // already falls back to it when initializing), and travelFromPrevious
+      // is TravelConnectorRow's, so saving a title/time/cost tweak here
+      // shouldn't wipe either one out.
+      travelNote: initialActivity?.travelNote,
       travelFromPrevious: initialActivity?.travelFromPrevious,
       icon: initialActivity?.icon,
       images: images.length > 0 ? images : undefined,
@@ -4765,22 +4777,6 @@ function AddActivityDialog({
               </div>
             )}
 
-            {/* Optional — a free-text note/heading about the stop, shown on the
-                itinerary list (PlanActivityRow) under the time/cost line when set. */}
-            <label
-              className="flex items-start gap-3 rounded-2xl px-4 py-3.5"
-              style={{ backgroundColor: "var(--color-surface)" }}
-            >
-              <MessageSquare size={16} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="เพิ่มหัวข้อเรื่อง หรือรายละเอียดเพิ่มเติม (ไม่บังคับ)"
-                rows={1}
-                className="w-full resize-none bg-transparent text-sm focus:outline-none"
-              />
-            </label>
-
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-[200px_1fr]">
               <ActivityImagesField images={images} onChange={setImages} />
 
@@ -4837,7 +4833,17 @@ function AddActivityDialog({
                   </div>
                 </div>
 
-                <EditField label="หมายเหตุการเดินทาง" value={travelNote} onChange={setTravelNote} placeholder="เช่น ออกก่อนเวลา ~5 นาที" rows={6} />
+                {/* Single free-text note field — used to be split into a short
+                    "หัวข้อ" box up top and a separate "หมายเหตุการเดินทาง" box
+                    down here, which read as the same thing split across two
+                    spots in the form. Merged into one, kept at the bottom. */}
+                <EditField
+                  label="โน้ต"
+                  value={notes}
+                  onChange={setNotes}
+                  placeholder="เพิ่มหัวข้อเรื่อง หรือรายละเอียดเพิ่มเติม (ไม่บังคับ)"
+                  rows={6}
+                />
               </div>
             </div>
           </div>
