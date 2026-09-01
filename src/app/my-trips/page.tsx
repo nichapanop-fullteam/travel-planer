@@ -106,7 +106,10 @@ export default function MyTripsPage() {
   return (
     <AppShell hideDesktopSidebar hideTopbar>
       <div className="min-h-full bg-[#f7faf8]">
-        <header className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur">
+        <header
+          className="sticky top-0 z-20 border-b border-[#e5eee9] bg-white/95 backdrop-blur"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
           <div className="mx-auto flex h-[72px] w-full max-w-[var(--container-feed)] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10 xl:px-14">
             <div className="flex min-w-0 items-center gap-1.5">
               <MyTripsMenuButton />

@@ -1019,7 +1019,7 @@ function Hero({
       <button
         type="button"
         onClick={() => router.back()}
-        className="absolute left-4 top-4 flex items-center gap-1.5 text-sm font-medium text-white drop-shadow-sm sm:left-6 sm:top-6 lg:left-8 lg:top-8"
+        className="absolute left-4 top-[calc(1rem+env(safe-area-inset-top))] flex items-center gap-1.5 text-sm font-medium text-white drop-shadow-sm sm:left-6 sm:top-[calc(1.5rem+env(safe-area-inset-top))] lg:left-8 lg:top-[calc(2rem+env(safe-area-inset-top))]"
       >
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/25 backdrop-blur-sm">
           <ChevronLeft size={16} />

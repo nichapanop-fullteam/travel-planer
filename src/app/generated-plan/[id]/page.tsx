@@ -1231,7 +1231,13 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
             pinned for the whole length of the page. Translucent + blurred
             rather than solid, so the itinerary reads as passing underneath;
             over the page's own white it's invisible at rest. */}
-        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-md">
+        {/* Same inset as the hero bar above, for the same reason: once the hero
+            scrolls away this is what sits at the top of the screen, and in
+            standalone that top is behind the status bar. */}
+        <div
+          className="sticky top-0 z-30 bg-white/85 backdrop-blur-md"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
           <div className={`${SHELL} py-3`}>
             <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
           </div>
@@ -1618,7 +1624,18 @@ function Hero({
           the three things that had drifted since. The 28px radius that used
           to be here belonged to the hero's three-layer motif (photo, bar,
           white sheet); it goes so the two app bars read as one component. */}
-      <div className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+      {/* paddingTop rather than a top offset: installed as a PWA the page runs
+          under the status bar and notch (viewportFit "cover" in layout.tsx), and
+          without this the back/menu buttons sat behind the clock and camera.
+          Padding keeps the frosted panel itself covering that strip, so the
+          status bar reads against the bar instead of the cover photo. The
+          inset is 0 in a normal browser tab, so this costs nothing there —
+          FrostedTopNav already does exactly this, and this bar not doing it
+          was the last piece of drift between the two. */}
+      <div
+        className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         {/* --container-feed and the feed padding ramp, copied from
             FrostedTopNav rather than this route's own SHELL, so the controls
             land where /main's do. Note this is a wider grid than the bands

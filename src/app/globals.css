@@ -105,6 +105,29 @@ body {
   display: none;
 }
 
+/* iOS zooms the whole page when a text control smaller than 16px takes focus,
+   and there is no way back out of that zoom except pinching. In the installed
+   PWA (viewportFit: "cover", see app/layout.tsx) the result is a page shoved
+   off-screen: the /search field did it on mount, and every field on
+   /create-trip did it on tap.
+
+   Floored here rather than in each component because it is not a design
+   decision — it is a platform constraint that applies to every text entry in
+   the app, and there are ~45 of them. `max(16px, 1em)` keeps anything already
+   larger and only lifts the ones under the threshold.
+
+   Scoped to coarse pointers so mouse-driven desktops keep the smaller sizes the
+   design asks for. The alternative fix — locking the viewport with
+   maximum-scale=1 — would take pinch-zoom away from everyone, including people
+   who rely on it. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* /main's feed caps at four columns at every width. This used to break out to
    five columns past 1800px and drop the container's max-width entirely, which
    let the grid run the full width of an ultrawide display — cards got narrow
