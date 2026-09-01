@@ -203,6 +203,10 @@ export function PlaceDiscoveryPanel({
           ? toActivity(place, day, `เช็คอิน ${place.name}`, i)
           : toActivity(place, day, undefined, i);
       if (place.category === "hotel") {
+        // The hotel stop itself persists fine via onAddActivityDirect below
+        // (a real backend item, same as any other place) — only this
+        // display-override object doesn't (client-only, see the TODO above
+        // AccommodationSetupForm).
         onSaveAccommodation({ name: place.name, imageUrl: place.imageUrl, amenities: [], description: place.priceLabel });
       }
       onAddActivityDirect(day.id, activity);
@@ -1565,6 +1569,8 @@ export function RecommendPlacesFlow({
                 }
               : toActivity(place, day, isHotel ? `เช็คอิน ${place.name}` : undefined, i);
             if (isHotel) {
+              // Same as PlaceDiscoveryPanel's onConfirm above — the item
+              // itself persists, this display-override object doesn't yet.
               onSaveAccommodation({ name: place.name, imageUrl: place.imageUrl, amenities: [], description: place.priceLabel });
             }
             onAddActivityDirect(day.id, activity);
@@ -2065,6 +2071,13 @@ function AccommodationAccordion({
 // recommend banner used elsewhere — picking one there is what actually
 // fills this in, same as AccommodationGallery's onSave already does. Every
 // field autosaves onto trip.accommodation via onSave, no separate "save" step.
+//
+// TODO(backend, expected 2026-09-02 evening): every field below is
+// client-only — onSave -> applyPatch only ever writes to this browser's
+// localStorage (see TripAccommodation's own doc comment in types/index.ts).
+// PATCH /trips/:id has no accommodation field to send it to yet (see the
+// handoff doc). Once that lands, wire onSave to a real PATCH call here —
+// nothing in this form's own shape needs to change, just where onSave writes.
 function AccommodationSetupForm({
   accommodation,
   onSave,
@@ -2116,6 +2129,12 @@ function AccommodationSetupForm({
       </div>
 
       {status === "booked" && (
+        // ชื่อโรงแรม / ตำแหน่งที่อยู่ / วันที่เข้าพัก-ออก / เวลา Check in-Check out —
+        // none of these 5 fields persist past this browser (see TODO above
+        // AccommodationSetupForm). Demo-safe as-is (patch() keeps them in
+        // React state + localStorage for the session), just won't survive a
+        // different device/browser or cleared storage until the backend fix
+        // lands and onSave is pointed at it.
         <div className="flex flex-col gap-3">
           <LabeledInput label="ชื่อโรงแรม" value={name} onChange={setName} onBlur={() => patch({ name })} placeholder="ชื่อโรงแรม" />
           <LabeledInput
