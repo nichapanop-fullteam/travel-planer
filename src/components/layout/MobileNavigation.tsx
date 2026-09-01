@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 
-type NavKey = "home" | "myTrips" | "saved" | "messages";
+type NavKey = "home" | "myTrips" | "puntok" | "saved" | "messages";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

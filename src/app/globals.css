@@ -128,6 +128,48 @@ body {
   }
 }
 
+/*
+ * Trip detail uses its own action/social footer instead of AppShell's main
+ * navigation.
+ *
+ * Written to fail OPEN: the bar is on by default and only hidden where the
+ * device is unambiguously a desktop — wide AND mouse-driven. The previous
+ * version was the other way round (hidden by default, shown by an allow-list
+ * of max-width / standalone+coarse / touch-tablet queries), which meant every
+ * compact case had to be named correctly or the bar vanished. An installed
+ * iOS/iPadOS PWA is exactly where that goes wrong: standalone windows can
+ * report the layout viewport differently after rotation or display scaling,
+ * fall through all three conditions, and leave the page with no primary
+ * action at all — the one failure mode worth designing against, because a
+ * desktop that keeps the bar is merely redundant while a phone that loses it
+ * is broken.
+ *
+ * The page padding follows the same shape, so content is never left sitting
+ * under a bar that is on screen.
+ */
+.trip-compact-bottom-bar {
+  display: block;
+}
+
+.trip-page-bottom-bar--one-row {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.trip-page-bottom-bar--two-rows {
+  padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1025px) and (hover: hover) and (pointer: fine) {
+  .trip-compact-bottom-bar {
+    display: none;
+  }
+
+  .trip-page-bottom-bar--one-row,
+  .trip-page-bottom-bar--two-rows {
+    padding-bottom: 0;
+  }
+}
+
 /* /main's feed caps at four columns at every width. This used to break out to
    five columns past 1800px and drop the container's max-width entirely, which
    let the grid run the full width of an ultrawide display — cards got narrow

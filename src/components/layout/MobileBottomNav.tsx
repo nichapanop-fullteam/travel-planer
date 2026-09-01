@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useAppShell } from "@/components/layout/AppShell";
 
-type NavKey = "home" | "myTrips" | "saved" | "messages";
+type NavKey = "home" | "myTrips" | "puntok" | "saved" | "messages";
 
 // Anything that can draw itself at the size the bar gives it and take its
 // colour from `currentColor` — a lucide glyph or one of the exported design
@@ -90,6 +90,7 @@ PuntokIcon.displayName = "NavPuntokIcon";
 const DESTINATIONS: { key: NavKey; label: string; icon: NavIcon; href: string }[] = [
   { key: "home", label: "Home", icon: HomeIcon, href: "/main" },
   { key: "myTrips", label: "My Trip", icon: MyTripsIcon, href: "/my-trips" },
+  { key: "puntok", label: "Puntok", icon: PuntokIcon, href: "/puntok" },
 ];
 
 export function MobileBottomNav({ active }: { active?: NavKey }) {
@@ -104,7 +105,9 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"
-        : undefined);
+        : pathname?.startsWith("/puntok")
+          ? "puntok"
+          : undefined);
 
   return (
     <nav
@@ -162,11 +165,11 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
           <TabItem item={DESTINATIONS[0]} isActive={resolved === DESTINATIONS[0].key} />
           <TabItem item={DESTINATIONS[1]} isActive={resolved === DESTINATIONS[1].key} />
           <span aria-hidden className="w-14 shrink-0" />
-          {/* Puntok has no route yet — nothing in the app answers to it — so the
-              slot is drawn and disabled rather than pointed somewhere wrong.
-              It took Saved's place at your call; /saved is still reachable from
-              the drawer behind the hero's menu button. */}
-          <TabButton label="Puntok" icon={PuntokIcon} disabled />
+          {/* Puntok took Saved's place at your call; /saved is still reachable
+              from the drawer behind the hero's menu button. The slot was drawn
+              disabled while nothing answered to it — /puntok exists now, so it
+              is a link like the other two. */}
+          <TabItem item={DESTINATIONS[2]} isActive={resolved === DESTINATIONS[2].key} />
           {/* Profile opens the account dialog rather than navigating: the
               standalone /account page was removed in favour of that dialog, so
               there's no route to point at. Uses the shell's single instance. */}
