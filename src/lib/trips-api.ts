@@ -59,6 +59,11 @@ export interface BackendTripListItem {
   remixCount?: number;
   sourceTripId?: string;
   publishedAt?: string;
+  // The trip's owner (id/name/avatarUrl only, no groupSize) — absent on rows
+  // whose owner row is gone. Backs the "By Creator" browse on /remix; the
+  // card's own creator chip still fetches the fuller BackendTrip.customer via
+  // GET /trips/:id (see RealTripCard), unchanged.
+  creator?: { id: string; name: string; avatarUrl?: string };
   // Whether the signed-in user has bookmarked this trip via POST
   // /trips/:id/save (see saveTrip/unsaveTrip below) — always `false` when
   // the request that fetched this item carried no (or an expired) auth
