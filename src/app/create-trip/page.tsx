@@ -298,6 +298,22 @@ function CreateTripForm() {
   function submit(isSkip: boolean) {
     if (!destination.trim()) {
       setStatus("error");
+      setErrorMessage(null);
+      return;
+    }
+
+    // The destination field only ever sets destination text and
+    // destinationPlace together, via DestinationPickerDialog's onConfirm —
+    // but destination alone can still arrive pre-filled with no
+    // destinationPlace attached (the ?destination= query param this page
+    // reads on load, or a restored "last search" saved before that field
+    // existed). Without real coordinates, every place-suggestion list on the
+    // trip page has nothing to search around (see NoDestinationCoordsNotice),
+    // so this has to block here rather than silently creating a crippled
+    // trip.
+    if (!destinationPlace) {
+      setStatus("error");
+      setErrorMessage("กรุณาเลือกปลายทางจากรายการค้นหาอีกครั้ง เพื่อให้ระบบแนะนำสถานที่ได้ถูกต้อง");
       return;
     }
 
