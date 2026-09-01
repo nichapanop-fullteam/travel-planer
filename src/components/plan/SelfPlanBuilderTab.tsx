@@ -1253,27 +1253,45 @@ function AddPlaceDialog({
 
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-[var(--color-muted)]">สถานที่ต้องการเพิ่ม</p>
-            <div className={showDetailsForm ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>
-              {places.map((place) =>
-                showDetailsForm ? (
-                  <SelectedPlaceCard
-                    key={place.id}
-                    place={place}
-                    expanded={expandedIds.has(place.id)}
-                    draft={drafts[place.id]}
-                    onToggleExpand={() => toggleExpanded(place.id)}
-                    onChangeDraft={(patch) => patchDraft(place.id, patch)}
-                  />
-                ) : (
-                  <PlaceCheckCard
-                    key={place.id}
-                    place={place}
-                    checked={checkedIds.has(place.id)}
-                    onToggle={() => toggleChecked(place.id)}
-                  />
-                )
-              )}
-            </div>
+            {/* "ล้างที่เลือก" only clears checkedIds, not this dialog's own
+                places prop (owned by the parent) — showDetailsForm has no
+                per-card way back in once cleared, so replace the (still
+                rendered but now-pointless) cards with this instead of
+                leaving them sitting there unchecked. */}
+            {showDetailsForm && checkedIds.size === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <span
+                  className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
+                  style={{ backgroundColor: "var(--color-surface)" }}
+                >
+                  <X size={28} style={{ color: "var(--color-muted)" }} />
+                </span>
+                <p className="text-sm font-bold">ยังไม่มีสถานที่ที่เลือก</p>
+                <p className="text-xs text-[var(--color-muted)]">กดย้อนกลับเพื่อเลือกสถานที่ที่ต้องการเพิ่ม</p>
+              </div>
+            ) : (
+              <div className={showDetailsForm ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>
+                {places.map((place) =>
+                  showDetailsForm ? (
+                    <SelectedPlaceCard
+                      key={place.id}
+                      place={place}
+                      expanded={expandedIds.has(place.id)}
+                      draft={drafts[place.id]}
+                      onToggleExpand={() => toggleExpanded(place.id)}
+                      onChangeDraft={(patch) => patchDraft(place.id, patch)}
+                    />
+                  ) : (
+                    <PlaceCheckCard
+                      key={place.id}
+                      place={place}
+                      checked={checkedIds.has(place.id)}
+                      onToggle={() => toggleChecked(place.id)}
+                    />
+                  )
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -1286,18 +1304,13 @@ function AddPlaceDialog({
               </span>
               {checkedIds.size > 0 ? "สถานที่ที่เลือก" : "ยังไม่ได้เลือกสถานที่"}
             </span>
-            {/* showDetailsForm places arrive pre-checked with no per-card way
-                to re-check afterward, so clearing here would be a dead end —
-                "ย้อนกลับ" to the browse grid is the correction path instead. */}
-            {!showDetailsForm && (
-              <button
-                type="button"
-                onClick={() => setCheckedIds(new Set())}
-                className="text-sm font-semibold underline text-[var(--color-muted)]"
-              >
-                ล้างที่เลือก
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setCheckedIds(new Set())}
+              className="text-sm font-semibold underline text-[var(--color-muted)]"
+            >
+              ล้างที่เลือก
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
