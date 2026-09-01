@@ -230,16 +230,6 @@ function reanchorDayDates(days: Day[], startDateIso: string): Day[] {
 const EDIT_COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
 const EDIT_MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
 
-// Free-text fallback for the older `travelNote` display spots — kept in sync
-// with `travelFromPrevious` so both stay readable even where the structured
-// object isn't rendered yet.
-function summarizeTravelNote(travel: TravelFromPrevious): string {
-  const parts: string[] = [];
-  if (travel.durationMin !== undefined) parts.push(`~${travel.durationMin} นาที`);
-  if (travel.distanceKm !== undefined) parts.push(`${travel.distanceKm} กม.`);
-  return parts.join(" · ");
-}
-
 export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boolean } = {}) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -782,6 +772,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     };
   }
 
+  // Deliberately leaves travelNotesFromPrev untouched — unlike the rest of
+  // this patch, that field now carries the traveler's own "หมายเหตุการเดินทาง"
+  // text from AddActivityDialog (see activityPatch below), not something tied
+  // to the travel leg itself, so dismissing/clearing the leg shouldn't wipe it.
   function clearedTravelPatch(): UpdateTripItemRequest {
     return {
       travelTypeFromPrev: null,
@@ -790,7 +784,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       travelDistanceFromPrevKm: null,
       travelCostFromPrevAmount: null,
       travelCostFromPrevCurrency: null,
-      travelNotesFromPrev: null,
     };
   }
 
@@ -804,6 +797,12 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       costCurrency: "THB",
       notes: activity.notes ?? null,
       ...(activity.travelFromPrevious ? travelPatch(activity.travelFromPrevious) : {}),
+      // Placed after the travelPatch spread so it always wins: AddActivityDialog's
+      // "หมายเหตุการเดินทาง" writes to activity.travelNote directly, and this is
+      // the only place that persists it — nothing else in this file's PATCH
+      // payloads ever sent it to the backend at all (travelPatch above only
+      // forwards travelFromPrevious.notes, a separate, still-unused field).
+      travelNotesFromPrev: activity.travelNote ?? null,
     };
   }
 
@@ -932,7 +931,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           ? {
               ...a,
               travelFromPrevious: travel,
-              travelNote: summarizeTravelNote(travel),
+              // travelNote used to get overwritten with summarizeTravelNote(travel)
+              // here, back when it was purely an auto-synced mirror. It's now also
+              // where AddActivityDialog's "หมายเหตุการเดินทาง" free text lives, so
+              // recalculating the travel leg must leave it alone.
               dismissedTravelSegmentId: undefined,
             }
           : a
@@ -980,7 +982,9 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           return {
             ...activity,
             travelFromPrevious: undefined,
-            travelNote: undefined,
+            // travelNote is left as-is — same reasoning as
+            // handleUpdateActivityTravel above, dismissing the travel leg
+            // shouldn't touch the traveler's own "หมายเหตุการเดินทาง" text.
             dismissedTravelSegmentId: estimatedSegmentId,
           };
         }),
