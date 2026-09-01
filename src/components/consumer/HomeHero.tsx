@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Search } from "lucide-react";
 import { FrostedTopNav } from "@/components/consumer/FrostedTopNav";
@@ -52,9 +52,6 @@ export function HomeHero({
   // Two thresholds rather than one: a single boundary flips back and forth
   // under a fingertip resting near it, and each flip resizes the sticky header.
   const [scrolledPast, setScrolledPast] = useState(false);
-  // Explicit re-open from the icon once it has folded.
-  const [searchOpen, setSearchOpen] = useState(false);
-
   const scrollRef = appShell?.scrollRef;
   useEffect(() => {
     const scroller = scrollRef?.current;
@@ -67,9 +64,6 @@ export function HomeHero({
         setScrolledPast(true);
       } else if (y < RESTORE_AT) {
         setScrolledPast(false);
-        // Back at the top the field is open again on its own, so a stale
-        // "opened from the icon" would leave the toggle showing a close X.
-        setSearchOpen(false);
       }
     };
     // Deferred rather than called straight away: a browser that restored the
@@ -87,18 +81,10 @@ export function HomeHero({
   // non-empty query pins it open regardless — otherwise picking a destination
   // from the rail (which fills this field in) would narrow the grid on a phone
   // with nothing on screen to say why.
-  const searchExpanded = !compactLayout || !scrolledPast || searchOpen || query.trim().length > 0;
-  // The icon is the field's stand-in, so it only earns a slot once the field
-  // has actually folded away.
-  const showSearchToggle = compactLayout && scrolledPast;
-
-  // Opening from the icon should land the caret in the field; otherwise the tap
-  // reveals an input and then asks for a second tap to use it.
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!searchOpen) return;
-    searchWrapRef.current?.querySelector<HTMLInputElement>("input")?.focus();
-  }, [searchOpen]);
+  const searchExpanded = !compactLayout || !scrolledPast || query.trim().length > 0;
+  // The icon is the folded field's stand-in, so it only earns a slot once the
+  // field has actually folded away.
+  const showSearchIcon = compactLayout && scrolledPast;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -127,9 +113,7 @@ export function HomeHero({
         avatarUrl={avatarUrl}
         onAvatarClick={appShell?.openAccount}
         avatarLabel={accountLabel}
-        onSearchClick={showSearchToggle ? () => setSearchOpen((open) => !open) : undefined}
-        searchOpen={searchExpanded}
-        searchControls={SEARCH_ID}
+        searchHref={showSearchIcon ? "/search" : undefined}
       />
 
       {/* No vertical padding on phones: the heading is hidden there and the
@@ -150,7 +134,6 @@ export function HomeHero({
               measures ~210px, and a cap under that would clip the field. */}
           <div
             id={SEARCH_ID}
-            ref={searchWrapRef}
             className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none ${
               searchExpanded ? "max-h-64 opacity-100" : "max-h-0 opacity-0"
             } min-[1025px]:max-h-none min-[1025px]:opacity-100`}

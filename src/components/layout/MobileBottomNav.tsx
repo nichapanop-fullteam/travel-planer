@@ -112,7 +112,6 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
       // env(safe-area-inset-bottom) keeps the row clear of the iOS home
       // indicator, which otherwise overlaps the row on notched phones.
       className="fixed inset-x-0 bottom-0 z-40 min-[1025px]:hidden"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="relative">
         {/* The sheet, with the reference's notch cut out of its top edge.
@@ -156,7 +155,10 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
 
         {/* Two tabs, the raised button's footprint, then two more. The spacer
             is what keeps the tabs from sliding under the circle. */}
-        <div className="mx-auto flex max-w-lg items-stretch px-2 pb-1.5 pt-2">
+        <div
+          className="mx-auto flex max-w-lg items-stretch px-2 pt-2"
+          style={{ paddingBottom: "calc(0.375rem + env(safe-area-inset-bottom))" }}
+        >
           <TabItem item={DESTINATIONS[0]} isActive={resolved === DESTINATIONS[0].key} />
           <TabItem item={DESTINATIONS[1]} isActive={resolved === DESTINATIONS[1].key} />
           <span aria-hidden className="w-14 shrink-0" />

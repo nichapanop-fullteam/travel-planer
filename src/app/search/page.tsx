@@ -119,7 +119,7 @@ export default function SearchPage() {
                 onChange={(event) => setTerm(event.target.value)}
                 placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
                 aria-label="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว"
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
+                className="min-w-0 flex-1 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
               />
               <button
                 type="submit"

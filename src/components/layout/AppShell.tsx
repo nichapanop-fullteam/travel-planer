@@ -97,8 +97,12 @@ export function AppShell({
           {!hideTopbar && <Topbar onMenuClick={openSidebar} />}
           {/* Clears the fixed MobileBottomNav at exactly the widths it shows
               (<=1024px) — without it the last row of cards scrolls underneath
-              the tab bar and can't be reached. */}
-          <main className="flex-1 pb-16 min-[1025px]:pb-0">{children}</main>
+              the tab bar and can't be reached. The safe-area term matters on a
+              notched phone: the bar grows by the home-indicator inset there, so
+              a flat 4rem left the last card partly behind it. */}
+          <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] min-[1025px]:pb-0">
+            {children}
+          </main>
         </div>
 
         <MobileBottomNav active={active} />

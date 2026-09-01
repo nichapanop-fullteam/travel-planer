@@ -1,6 +1,7 @@
 "use client";
 
-import { Menu, Search, X } from "lucide-react";
+import Link from "next/link";
+import { Menu, Search } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 
 // The pale frosted app bar that sits on top of an image hero.
@@ -37,9 +38,7 @@ export function FrostedTopNav({
   avatarUrl,
   onAvatarClick,
   avatarLabel = "",
-  onSearchClick,
-  searchOpen = false,
-  searchControls,
+  searchHref,
 }: {
   onMenuClick: () => void;
   avatarUrl?: string | null;
@@ -48,12 +47,10 @@ export function FrostedTopNav({
    *  behind it should render. */
   onAvatarClick?: () => void;
   avatarLabel?: string;
-  /** Compact-layout entry point to a search field that is collapsed below
-   *  1025px. Omitted, no search button renders at all. */
-  onSearchClick?: () => void;
-  searchOpen?: boolean;
-  /** id of the element the toggle expands, for aria-controls. */
-  searchControls?: string;
+  /** Compact-layout entry point to search. A link, not a toggle: below 1025px
+   *  searching happens on its own screen, so the icon navigates rather than
+   *  unfolding a field in a 45px app bar. Omitted, no icon renders at all. */
+  searchHref?: string;
 }) {
   const avatar = (
     // eslint-disable-next-line @next/next/no-img-element
@@ -68,7 +65,10 @@ export function FrostedTopNav({
     "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 shadow-sm transition hover:bg-white";
 
   return (
-    <div className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl">
+    <div
+      className="relative z-20 border-b border-white/40 bg-gradient-to-b from-white/65 via-white/45 to-white/25 backdrop-blur-2xl"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       {/* Same width cap and padding ramp as PageContainer's "feed" variant, so
           the bar's controls land on the feed's own left and right edges instead
           of crowding the screen corners. Sharing the grid rather than picking a
@@ -95,18 +95,15 @@ export function FrostedTopNav({
               1025px, absolutely centred above it. */}
           <Logo className="pointer-events-none text-base text-[var(--foreground)] sm:text-xl min-[1025px]:absolute min-[1025px]:left-1/2 min-[1025px]:-translate-x-1/2" />
 
-          {onSearchClick && (
-            <button
-              type="button"
-              onClick={onSearchClick}
-              aria-label={searchOpen ? "ปิดการค้นหา" : "ค้นหาทริป"}
-              aria-expanded={searchOpen}
-              aria-controls={searchControls}
+          {searchHref && (
+            <Link
+              href={searchHref}
+              aria-label="ค้นหาทริป"
               className={`${iconButton} min-[1025px]:hidden`}
               style={{ color: "var(--color-brand-green)" }}
             >
-              {searchOpen ? <X size={17} strokeWidth={2.5} /> : <Search size={17} strokeWidth={2.5} />}
-            </button>
+              <Search size={17} strokeWidth={2.5} />
+            </Link>
           )}
 
           <span className="hidden shrink-0 items-center min-[1025px]:flex">
