@@ -320,7 +320,11 @@ export function buildActivity(activity: Activity, orderIndex: number): CreateTri
     travelDistanceFromPrevKm: travel?.distanceKm,
     travelCostFromPrevAmount: travel?.costAmount,
     travelCostFromPrevCurrency: travel?.costCurrency,
-    travelNotesFromPrev: travel?.notes,
+    // activity.travelNote, not travel?.notes — AddActivityDialog's
+    // "หมายเหตุการเดินทาง" writes to the flat travelNote string, and
+    // travelFromPrevious.notes is a separate, still-unused field (see the
+    // same fix on activityPatch in generated-plan/[id]/page.tsx).
+    travelNotesFromPrev: activity.travelNote,
     // activity.images (from AddActivityDialog's "เพิ่มรูป") are raw base64
     // data URLs held in local/browser storage only — there's no upload step
     // for them yet, and forwarding even a couple through this endpoint blows
