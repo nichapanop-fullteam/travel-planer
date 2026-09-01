@@ -1446,13 +1446,22 @@ export function RecommendPlacesFlow({
   const [reviewing, setReviewing] = useState(false);
 
   const activeFilter = DRAWER_FILTERS.find((f) => f.key === filterKey) ?? DRAWER_FILTERS[0];
+  // The placeholder promises three things to search by; the query used to
+  // check only the place's name, so typing an area ("Yamanashi", present in
+  // most of these cards' own addresses) or a category ("คาเฟ่") matched
+  // nothing and the box looked broken. All three fields now match, and the
+  // category is compared by its Thai label since that's what the placeholder
+  // asks for and what CATEGORY_LABEL_TH already renders on every card.
   const filtered = useMemo(() => {
     if (!places) return null;
     const trimmed = query.trim().toLowerCase();
     return places.filter(
       (p) =>
         (activeFilter.categories.length === 0 || activeFilter.categories.includes(p.category)) &&
-        (!trimmed || p.name.toLowerCase().includes(trimmed))
+        (!trimmed ||
+          p.name.toLowerCase().includes(trimmed) ||
+          p.address.toLowerCase().includes(trimmed) ||
+          CATEGORY_LABEL_TH[p.category].toLowerCase().includes(trimmed))
     );
   }, [places, query, activeFilter]);
 

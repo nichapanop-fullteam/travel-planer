@@ -1,11 +1,21 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Bell, ChevronLeft, Menu, Search, Shuffle } from "lucide-react";
+import {
+  ArrowRight,
+  Bookmark,
+  Check,
+  ChevronLeft,
+  Menu,
+  Search,
+  Shuffle,
+  SlidersHorizontal,
+} from "lucide-react";
 import { AppShell, useAppShell } from "@/components/layout/AppShell";
 import { Logo } from "@/components/common/Logo";
-import { PuntokFeed } from "@/components/consumer/PuntokFeed";
+import { PuntokFeed, type PuntokTab } from "@/components/consumer/PuntokFeed";
 import { useAuth } from "@/providers/AuthProvider";
 import { puntokClips, type PuntokClip } from "@/lib/puntok-content";
 
@@ -22,8 +32,10 @@ import { puntokClips, type PuntokClip } from "@/lib/puntok-content";
 // them: the page brings its own header, and the drawer behind the menu button
 // is the whole nav at every width.
 export default function PuntokPage() {
-  // The feed's order lives here rather than in PuntokFeed because the header's
-  // shuffle button is what changes it, and the two are siblings.
+  // Both live here rather than in PuntokFeed because the header owns the
+  // controls that change them — the filter menu switches the tab, the same
+  // menu reshuffles the order — and the header is the feed's sibling.
+  const [tab, setTab] = useState<PuntokTab>("forYou");
   const [clips, setClips] = useState<PuntokClip[]>(puntokClips);
 
   const shuffle = useCallback(() => {
@@ -51,13 +63,13 @@ export default function PuntokPage() {
           height, and the feed becomes one long 4000px page.
           The 4rem + safe-area term is the padding <main> already reserves for
           MobileBottomNav (see AppShell), which is gone from 1025px up. */}
-      <div className="flex h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] flex-col overflow-hidden min-[1025px]:h-[100dvh]">
-        <PuntokHeader onShuffle={shuffle} />
+      <div className="flex h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] flex-col overflow-hidden bg-black min-[1025px]:h-[100dvh] min-[1025px]:bg-white">
+        <PuntokHeader tab={tab} onTabChange={setTab} onShuffle={shuffle} />
         {/* min-h-0 is what lets this shrink to the space the header leaves —
             a flex child's default min-height is its content, which for a
             full-height feed is the whole viewport again. */}
         <div className="min-h-0 flex-1">
-          <PuntokFeed clips={clips} />
+          <PuntokFeed clips={clips} tab={tab} onTabChange={setTab} />
         </div>
       </div>
     </AppShell>
@@ -67,7 +79,19 @@ export default function PuntokPage() {
 // Desktop only. Below 1025px the design gives the clip the entire screen —
 // the feed's own tabs and the bottom bar are the only chrome there — so a
 // header would be taking a row away from the one thing the page is for.
-function PuntokHeader({ onShuffle }: { onShuffle: () => void }) {
+//
+// Two rows: a black bar carrying the nav and the wordmark, rounded off at the
+// bottom so it reads as a panel the feed hangs from, and a plain search row
+// under it running the full page width.
+function PuntokHeader({
+  tab,
+  onTabChange,
+  onShuffle,
+}: {
+  tab: PuntokTab;
+  onTabChange: (next: PuntokTab) => void;
+  onShuffle: () => void;
+}) {
   const router = useRouter();
   const appShell = useAppShell();
   const { user: firebaseUser, backendUser } = useAuth();
@@ -77,12 +101,13 @@ function PuntokHeader({ onShuffle }: { onShuffle: () => void }) {
   const displayName = backendUser?.name || firebaseUser?.displayName || "โปรไฟล์ผู้ใช้";
   const accountLabel = backendUser ? `บัญชีของ ${displayName}` : "เข้าสู่ระบบ";
 
-  const iconButton =
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white shadow-[var(--shadow-sm)] transition hover:bg-white/80";
+  // White on the black bar, so the glyph colour is the bar's, not the app's
+  // green — the brand accent disappears against it.
+  const barButton =
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#111111] transition hover:bg-white/85";
 
-  // Nothing to search yet — the feed is six fixed posts — so the field carries
-  // the design's shape and says so, rather than filtering a list of six or
-  // silently doing nothing on Enter.
+  // Nothing to search inside a six-post feed, so the field hands the term to
+  // /search rather than filtering six rows or doing nothing on Enter.
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const term = query.trim();
@@ -90,45 +115,32 @@ function PuntokHeader({ onShuffle }: { onShuffle: () => void }) {
   }
 
   return (
-    <header className="relative z-30 hidden shrink-0 bg-[var(--color-surface)] px-6 pb-3 pt-3 min-[1025px]:block">
-      <div className="mx-auto w-full max-w-3xl">
+    <header className="relative z-30 hidden shrink-0 bg-white min-[1025px]:block">
+      <div className="rounded-b-[26px] bg-[#111111] px-8 py-3">
         <div className="relative flex min-h-9 items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              aria-label="ย้อนกลับ"
-              className={iconButton}
-              style={{ color: "var(--foreground)" }}
-            >
-              <ChevronLeft size={18} strokeWidth={2.5} />
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={() => router.back()} aria-label="ย้อนกลับ" className={barButton}>
+              <ChevronLeft size={19} strokeWidth={2.5} />
             </button>
             <button
               type="button"
               onClick={() => appShell?.openSidebar()}
               aria-label="เมนู"
-              className={iconButton}
-              style={{ color: "var(--color-brand-green)" }}
+              className={barButton}
             >
-              <Menu size={17} strokeWidth={2.5} />
+              <Menu size={18} strokeWidth={2.5} />
             </button>
           </div>
 
-          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-xl text-[var(--foreground)]" />
+          <Logo className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-xl text-white" />
 
-          <div className="flex items-center gap-2">
-            {/* No notifications surface exists, so the bell is drawn and
-                disabled rather than pointed at a page that isn't there — the
-                same call MobileBottomNav made for this tab until now. */}
-            <button
-              type="button"
-              disabled
-              aria-label="การแจ้งเตือน (ยังไม่เปิดใช้งาน)"
-              className={`${iconButton} opacity-45`}
-              style={{ color: "var(--foreground)" }}
-            >
-              <Bell size={17} strokeWidth={2.3} />
-            </button>
+          <div className="flex items-center gap-2.5">
+            {/* The bookmark in the design, pointed at the page that already
+                answers to it. /saved lost its bottom-bar slot to Puntok, so
+                this is the one place on the screen that still reaches it. */}
+            <Link href="/saved" aria-label="ทริปที่บันทึกไว้" className={barButton}>
+              <Bookmark size={17} strokeWidth={2.3} />
+            </Link>
             <button
               type="button"
               onClick={appShell?.openAccount}
@@ -139,51 +151,131 @@ function PuntokHeader({ onShuffle }: { onShuffle: () => void }) {
               <img
                 src={avatarUrl || "/images/profile-avatar.jpg"}
                 alt=""
-                className="h-9 w-9 rounded-full border-2 border-white object-cover shadow-[var(--shadow-sm)]"
+                className="h-9 w-9 rounded-full border-2 border-white object-cover"
               />
             </button>
           </div>
         </div>
+      </div>
 
-        <div className="mt-3 flex items-center gap-2.5">
-          <form onSubmit={handleSubmit} role="search" className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 rounded-full bg-white p-1 pl-3.5 shadow-[var(--shadow-sm)] transition focus-within:ring-2 focus-within:ring-[var(--color-primary)]/35">
-              <Search
-                size={16}
-                strokeWidth={2.4}
-                className="shrink-0 text-[var(--color-muted)]"
-                aria-hidden
-              />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="ค้นหา"
-                aria-label="ค้นหาทริปหรือครีเอเตอร์"
-                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
-              />
-              <button
-                type="submit"
-                aria-label="ค้นหา"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white transition hover:bg-[#2b2b2b]"
-              >
-                <ArrowRight size={16} strokeWidth={2.5} />
-              </button>
-            </div>
-          </form>
+      {/* Full page width, not capped like PageContainer's rows: the design runs
+          this field from margin to margin, and the card below is centred on the
+          page rather than inside a column. */}
+      <div className="flex items-center gap-3 px-8 py-3">
+        <form onSubmit={handleSubmit} role="search" className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 rounded-full bg-white p-1 pl-4 ring-1 ring-[#e7e7e7] transition focus-within:ring-2 focus-within:ring-[var(--color-primary)]/40">
+            <Search size={16} strokeWidth={2.4} className="shrink-0 text-[var(--color-muted)]" aria-hidden />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="ค้นหา"
+              aria-label="ค้นหาทริปหรือครีเอเตอร์"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
+            />
+            <button
+              type="submit"
+              aria-label="ค้นหา"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white transition hover:bg-[#2b2b2b]"
+            >
+              <ArrowRight size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+        </form>
 
-          {/* The lime square from the design. Reshuffles the running order,
-              which is the one thing a "surprise me" control can honestly do
-              over a fixed set of posts. */}
-          <button
-            type="button"
-            onClick={onShuffle}
-            aria-label="สุ่มลำดับคลิป"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-accent-lime)] text-[var(--foreground)] shadow-[var(--shadow-sm)] transition hover:brightness-95 active:scale-95"
-          >
-            <Shuffle size={17} strokeWidth={2.4} />
-          </button>
-        </div>
+        <FeedFilterMenu tab={tab} onTabChange={onTabChange} onShuffle={onShuffle} />
       </div>
     </header>
+  );
+}
+
+// The lime square from the design. It holds what the phone layout shows as two
+// pills over the clip: the design leaves the desktop stage clean, so the tab
+// switch moves in here rather than being dropped — this is the only way to the
+// "กำลังติดตาม" feed at this width.
+function FeedFilterMenu({
+  tab,
+  onTabChange,
+  onShuffle,
+}: {
+  tab: PuntokTab;
+  onTabChange: (next: PuntokTab) => void;
+  onShuffle: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const options: { key: PuntokTab; label: string }[] = [
+    { key: "forYou", label: "สำหรับคุณ" },
+    { key: "following", label: "กำลังติดตาม" },
+  ];
+
+  return (
+    <div ref={wrapperRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label="ตัวเลือกฟีด"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-accent-lime)] text-[var(--foreground)] transition hover:brightness-95 active:scale-95"
+      >
+        <SlidersHorizontal size={17} strokeWidth={2.4} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-12 z-40 w-48 rounded-2xl bg-white p-1.5 shadow-[0_12px_32px_-8px_rgba(16,24,40,0.28)] ring-1 ring-black/5"
+        >
+          {options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={tab === option.key}
+              onClick={() => {
+                onTabChange(option.key);
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--color-surface)]"
+            >
+              {option.label}
+              {tab === option.key && (
+                <Check size={15} strokeWidth={3} className="text-[var(--color-primary)]" />
+              )}
+            </button>
+          ))}
+          <div className="my-1 h-px bg-[#eceeed]" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onShuffle();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--color-surface)]"
+          >
+            <Shuffle size={15} strokeWidth={2.4} />
+            สุ่มลำดับคลิป
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

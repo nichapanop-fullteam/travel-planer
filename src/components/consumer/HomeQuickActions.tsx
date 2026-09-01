@@ -16,9 +16,9 @@ import { Newspaper, Plus, Shuffle } from "lucide-react";
 //   /puntok route yet, so this tile keeps the intended visual treatment
 //   without pretending a destination is available.
 //
-// Unavailable actions remain disabled. Trip Remix carries an explicit
-// "เร็ว ๆ นี้" badge; Puntok stays visually faithful to the reference while
-// still avoiding a dead link.
+// Puntok now has a real destination (/puntok) and is live, matching the tab
+// MobileBottomNav already points there. Trip Remix is the one left disabled,
+// with an explicit "เร็ว ๆ นี้" badge rather than a link that goes nowhere.
 const ACTIONS = [
   {
     key: "create",
@@ -43,7 +43,7 @@ const ACTIONS = [
     key: "puntok",
     label: "Puntok",
     icon: Newspaper,
-    href: null,
+    href: "/puntok",
     glow: "from-[#b7ec2a]",
     ring: "bg-white/15",
   },
@@ -74,20 +74,17 @@ export function HomeQuickActions() {
           "relative flex items-center gap-3 overflow-hidden rounded-2xl bg-[#141414] px-4 py-3.5 text-white shadow-[0_4px_14px_rgba(16,24,40,0.18)]";
 
         if (!action.href) {
-          const isPuntok = action.key === "puntok";
           return (
             <button
               key={action.key}
               type="button"
               disabled
-              className={`${shell} ${isPuntok ? "cursor-default" : "cursor-not-allowed opacity-55"}`}
+              className={`${shell} cursor-not-allowed opacity-55`}
             >
               {inner}
-              {!isPuntok && (
-                <span className="relative ml-auto shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
-                  เร็ว ๆ นี้
-                </span>
-              )}
+              <span className="relative ml-auto shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+                เร็ว ๆ นี้
+              </span>
             </button>
           );
         }
