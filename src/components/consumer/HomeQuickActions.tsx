@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, Shuffle, Sparkles } from "lucide-react";
+import { Newspaper, Plus, Shuffle } from "lucide-react";
 
 // The three dark action tiles under /main's hero. Only the first has a real
-// destination today, and the other two say so rather than looking live:
+// destination today:
 //
 // - สร้างทริป  → /create-trip, the existing wizard (same route CreateTripButton
 //   has always pointed at, which is why that button is gone from this page —
@@ -12,13 +12,13 @@ import { Plus, Shuffle, Sparkles } from "lucide-react";
 // - Trip Remix → remixing starts from a public plan's own page (POST
 //   /trips/:sourceTripId/remix needs a source; see canRemix in
 //   generated-plan/[id]), so there is no standalone route to send anyone to.
-// - AI สร้างทริป → the wizard's AI mode is behind AI_MODE_ENABLED = false in
-//   app/create-trip/page.tsx; linking there today just lands on the manual
-//   flow under an AI label.
+// - Puntok → the short-form travel feed shown in the design. There is no
+//   /puntok route yet, so this tile keeps the intended visual treatment
+//   without pretending a destination is available.
 //
-// Both are rendered as disabled buttons with a "เร็ว ๆ นี้" badge: the design
-// calls for three tiles, and a dead link that silently does the wrong thing is
-// worse than a control that admits it isn't wired up yet.
+// Unavailable actions remain disabled. Trip Remix carries an explicit
+// "เร็ว ๆ นี้" badge; Puntok stays visually faithful to the reference while
+// still avoiding a dead link.
 const ACTIONS = [
   {
     key: "create",
@@ -40,13 +40,12 @@ const ACTIONS = [
     ring: "bg-white/15",
   },
   {
-    key: "ai",
-    label: "AI สร้างทริป",
-    icon: Sparkles,
+    key: "puntok",
+    label: "Puntok",
+    icon: Newspaper,
     href: null,
-    glow: "from-[#2563eb]/80",
+    glow: "from-[#b7ec2a]",
     ring: "bg-white/15",
-    badge: "AI",
   },
 ] as const;
 
@@ -66,11 +65,6 @@ export function HomeQuickActions() {
             />
             <span className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${action.ring}`}>
               <action.icon size={18} strokeWidth={2.5} />
-              {"badge" in action && action.badge && (
-                <span className="absolute -top-1.5 -right-1.5 rounded-full bg-white px-1 text-[8px] font-extrabold text-[#111111]">
-                  {action.badge}
-                </span>
-              )}
             </span>
             <span className="relative truncate text-[15px] font-bold">{action.label}</span>
           </>
@@ -80,17 +74,20 @@ export function HomeQuickActions() {
           "relative flex items-center gap-3 overflow-hidden rounded-2xl bg-[#141414] px-4 py-3.5 text-white shadow-[0_4px_14px_rgba(16,24,40,0.18)]";
 
         if (!action.href) {
+          const isPuntok = action.key === "puntok";
           return (
             <button
               key={action.key}
               type="button"
               disabled
-              className={`${shell} cursor-not-allowed opacity-55`}
+              className={`${shell} ${isPuntok ? "cursor-default" : "cursor-not-allowed opacity-55"}`}
             >
               {inner}
-              <span className="relative ml-auto shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
-                เร็ว ๆ นี้
-              </span>
+              {!isPuntok && (
+                <span className="relative ml-auto shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+                  เร็ว ๆ นี้
+                </span>
+              )}
             </button>
           );
         }

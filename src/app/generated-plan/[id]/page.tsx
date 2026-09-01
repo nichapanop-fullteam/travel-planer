@@ -43,7 +43,6 @@ import {
   RefreshCcw,
   Repeat2,
   Share2,
-  Shuffle,
   Sparkles,
   Star,
   Ticket,
@@ -1128,13 +1127,19 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         }
       : null;
 
-  const bottomBarPadding = readOnly
-    ? actionBar
-      ? "max-[1024px]:pb-32"
-      : "max-[1024px]:pb-16"
-    : actionBar
-      ? "max-[1024px]:pb-20"
-      : "";
+  // Room under the content for the pinned bar. One class, not a Tailwind
+  // max-[1024px] utility alongside it: the two set the same property at the
+  // same specificity, and which won came down to stylesheet order. The class
+  // also has to track the bar's own visibility exactly, which it can only do
+  // by living in the same stylesheet as the rule that decides it (see
+  // .trip-compact-bottom-bar in globals.css).
+  const bottomBarPadding = !actionBar
+    ? readOnly
+      ? "trip-page-bottom-bar--one-row"
+      : ""
+    : readOnly
+      ? "trip-page-bottom-bar--two-rows"
+      : "trip-page-bottom-bar--one-row";
 
   const liked = likeOverride?.liked ?? trip.isLiked ?? false;
   const likeCount = likeOverride?.count ?? trip.likeCount ?? 0;
@@ -1377,8 +1382,8 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         // action bar clipping the social bar's top border. Normal flow inside
         // a single container cannot drift.
         <div
-          className="fixed inset-x-0 bottom-0 z-40 bg-white min-[1025px]:hidden"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className="trip-compact-bottom-bar fixed inset-x-0 bottom-0 z-40 bg-white"
+          style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
         >
           {actionBar && <MobileActionBar {...actionBar} />}
           {readOnly && (
@@ -1978,20 +1983,6 @@ function TripAttributionBar({
             taller than its neighbour. */}
         <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-            {/* Navigates to the /remix discovery page — a separate feature
-                from the "Remix Trip" button below (which remixes this
-                specific trip via onRemixClick). This one browses other
-                creators' trips, so it isn't gated behind onShareClick/
-                canRemix/onEditTrip or hideActionsOnCompact — there's no
-                MobileActionBar equivalent for it to defer to below 1025px. */}
-            <Link
-              href="/remix"
-              className={`${CONTROL_BASE} ${CONTROL_HEIGHT} w-full border border-transparent font-bold sm:w-auto`}
-              style={{ backgroundColor: "#241512", color: "#D7FF3D" }}
-            >
-              <Shuffle size={13} />
-              Remix Trip
-            </Link>
             {(onShareClick || (!isOwner && canRemix) || (isOwner && onEditTrip)) && (
               <div
                 className={`flex w-full items-center gap-2 sm:w-auto ${

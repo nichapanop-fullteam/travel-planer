@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bookmark, ChevronDown, Home, MessageSquare, Menu, Briefcase } from "lucide-react";
+import { Bookmark, ChevronDown, Home, MessageSquare, Menu, Briefcase, SquarePlay } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useAppShell } from "@/components/layout/AppShell";
 import { CreateTripButton } from "@/components/ui/CreateTripButton";
 
-type NavKey = "home" | "myTrips" | "saved" | "messages";
+type NavKey = "home" | "myTrips" | "puntok" | "saved" | "messages";
 
 // Sidebar nav, restyled to match the "Discover your next journey" reference
 // layout — every visible entry now links somewhere real (see app/main,
@@ -26,9 +26,11 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"
-        : pathname?.startsWith("/saved")
-          ? "saved"
-          : undefined);
+        : pathname?.startsWith("/puntok")
+          ? "puntok"
+          : pathname?.startsWith("/saved")
+            ? "saved"
+            : undefined);
 
   const appShell = useAppShell();
 
@@ -40,6 +42,9 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
   const navItems: { key: NavKey; label: string; icon: typeof Home; href?: string; badge?: number; hidden?: boolean }[] = [
     { key: "home", label: "Home", icon: Home, href: "/main" },
     { key: "myTrips", label: "My Trips", icon: Briefcase, href: "/my-trips" },
+    // Same destination the bottom bar's Puntok tab points at, so the two navs
+    // reach the same set of pages.
+    { key: "puntok", label: "Puntok", icon: SquarePlay, href: "/puntok" },
     { key: "saved", label: "Saved", icon: Bookmark, href: "/saved" },
     { key: "messages", label: "Messages", icon: MessageSquare, badge: 2, hidden: true },
   ];

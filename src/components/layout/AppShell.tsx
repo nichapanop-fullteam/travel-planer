@@ -7,7 +7,7 @@ import { MobileNavigation } from "@/components/layout/MobileNavigation";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { UserAccountDialog } from "@/components/layout/UserAccountDialog";
 
-type NavKey = "home" | "myTrips" | "saved" | "messages";
+type NavKey = "home" | "myTrips" | "puntok" | "saved" | "messages";
 
 // Lets a page's own header (e.g. /main's HomeNavbar) open the shell's single
 // drawer instead of building a second one. Before this, /main rendered its
