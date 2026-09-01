@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   ArrowRight,
   Building2,
-  CalendarDays,
   Car,
   Check,
   ChevronDown,
@@ -52,7 +51,6 @@ import { formatTHB, resolveNightlyRate } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
-import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 
 // Matches the three carousels this tab always shows (แนะนำสถานที่ห้ามพลาด /
 // ร้านอาหารแนะนำ / ที่พักแนะนำ) — see docs for GET /places/suggest/sections,
@@ -2078,13 +2076,6 @@ function AccommodationSetupForm({
   // saved — this is local UI state only, so nothing lands in trip.accommodation
   // (see patch below) until the user actually types/selects something in it.
   const [status, setStatus] = useState<"booked" | "unbooked" | null>(accommodation?.bookingStatus ?? "booked");
-  const [name, setName] = useState(accommodation?.name ?? "");
-  const [address, setAddress] = useState(accommodation?.address ?? "");
-  const [checkInTime, setCheckInTime] = useState(accommodation?.checkIn ?? "");
-  const [checkOutTime, setCheckOutTime] = useState(accommodation?.checkOut ?? "");
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showCheckInPicker, setShowCheckInPicker] = useState(false);
-  const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
 
   function patch(next: Partial<TripAccommodation>) {
     onSave({ name: "", amenities: [], ...accommodation, ...next });
@@ -2116,76 +2107,12 @@ function AccommodationSetupForm({
       </div>
 
       {status === "booked" && (
-        <div className="flex flex-col gap-3">
-          <div
-            className="flex items-start gap-2 rounded-2xl px-3.5 py-2.5 text-xs"
-            style={{ backgroundColor: "#FFF3D6", color: "#8A6A00" }}
-          >
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-            <span>ข้อมูลด้านล่างนี้บันทึกไว้แค่ในเครื่องนี้ชั่วคราว ระบบหลังบ้านสำหรับเก็บถาวรอยู่ระหว่างพัฒนา</span>
-          </div>
-          <LabeledInput label="ชื่อโรงแรม" value={name} onChange={setName} onBlur={() => patch({ name })} placeholder="ชื่อโรงแรม" />
-          <LabeledInput
-            label="ตำแหน่งที่อยู่ของที่พัก"
-            value={address}
-            onChange={setAddress}
-            onBlur={() => patch({ address })}
-            placeholder="ตำแหน่งที่อยู่ของที่พัก"
-          />
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">วันที่เข้าพัก - วันที่ออก</label>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowDatePicker(true)}
-                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
-                {accommodation?.checkInDate ? formatShortDate(accommodation.checkInDate) : (
-                  <span className="text-[var(--color-muted)]">วันที่เข้าพัก</span>
-                )}
-              </button>
-              <span className="shrink-0 text-[var(--color-muted)]">-</span>
-              <button
-                type="button"
-                onClick={() => setShowDatePicker(true)}
-                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
-                {accommodation?.checkOutDate ? formatShortDate(accommodation.checkOutDate) : (
-                  <span className="text-[var(--color-muted)]">วันที่ออก</span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เวลา Check in - Check out</label>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCheckInPicker(true)}
-                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <Clock size={14} style={{ color: "var(--color-muted)" }} />
-                {checkInTime ? formatTimeDisplay(checkInTime) : <span className="text-[var(--color-muted)]">เวลา Check in</span>}
-              </button>
-              <span className="shrink-0 text-[var(--color-muted)]">-</span>
-              <button
-                type="button"
-                onClick={() => setShowCheckOutPicker(true)}
-                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <Clock size={14} style={{ color: "var(--color-muted)" }} />
-                {checkOutTime ? formatTimeDisplay(checkOutTime) : <span className="text-[var(--color-muted)]">เวลา Check out</span>}
-              </button>
-            </div>
-          </div>
+        <div
+          className="flex items-start gap-2 rounded-2xl px-3.5 py-2.5 text-xs"
+          style={{ backgroundColor: "#FFF3D6", color: "#8A6A00" }}
+        >
+          <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+          <span>ฟีเจอร์กรอกข้อมูลที่พักเองอยู่ระหว่างพัฒนา จะเปิดให้ใช้งานเร็วๆ นี้</span>
         </div>
       )}
 
@@ -2209,45 +2136,8 @@ function AccommodationSetupForm({
           </span>
         </button>
       )}
-
-      <DatePickerDialog
-        isOpen={showDatePicker}
-        initialStartDate={accommodation?.checkInDate}
-        initialEndDate={accommodation?.checkOutDate}
-        onClose={() => setShowDatePicker(false)}
-        onConfirm={(result) => {
-          patch({ checkInDate: result.startDate, checkOutDate: result.endDate });
-          setShowDatePicker(false);
-        }}
-      />
-      {showCheckInPicker && (
-        <TimePickerDialog
-          value={checkInTime || "14:00"}
-          onConfirm={(time) => {
-            setCheckInTime(time);
-            patch({ checkIn: time });
-          }}
-          onClose={() => setShowCheckInPicker(false)}
-        />
-      )}
-      {showCheckOutPicker && (
-        <TimePickerDialog
-          value={checkOutTime || "12:00"}
-          onConfirm={(time) => {
-            setCheckOutTime(time);
-            patch({ checkOut: time });
-          }}
-          onClose={() => setShowCheckOutPicker(false)}
-        />
-      )}
     </div>
   );
-}
-
-function formatShortDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
 function AccommodationStatusToggle({
