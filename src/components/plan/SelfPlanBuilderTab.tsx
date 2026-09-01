@@ -5,12 +5,14 @@ import Link from "next/link";
 import {
   ArrowRight,
   Building2,
+  CalendarDays,
   Car,
   Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Clock,
+  Compass,
   Flag,
   LoaderCircle,
   MapPin,
@@ -50,6 +52,7 @@ import { formatTHB, resolveNightlyRate } from "@/lib/trip-utils";
 import { TRAVEL_TYPE_OPTIONS, travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
+import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 
 // Matches the three carousels this tab always shows (แนะนำสถานที่ห้ามพลาด /
 // ร้านอาหารแนะนำ / ที่พักแนะนำ) — see docs for GET /places/suggest/sections,
@@ -2062,29 +2065,222 @@ function AccommodationAccordion({
 // recommend banner used elsewhere — picking one there is what actually
 // fills this in, same as AccommodationGallery's onSave already does. Every
 // field autosaves onto trip.accommodation via onSave, no separate "save" step.
-// The "จองแล้ว"/"ยังไม่จอง" toggle and its two branches (manual name/address/
-// dates/times form, or the "สำรวจที่พัก" recommend banner) are on hold for
-// the 2026-09-02 demo — neither trip.accommodation nor these form fields
-// persist past this browser yet (see the backend handoff doc). Collapsed to
-// this one static notice until the backend accommodation endpoint exists and
-// onSave can be pointed at it; accommodation/onExploreRecommended stay as
-// props so the call site doesn't need touching again once that's wired back.
 function AccommodationSetupForm({
+  accommodation,
+  onSave,
   onExploreRecommended,
 }: {
   accommodation?: TripAccommodation;
   onSave: (accommodation: TripAccommodation) => void;
   onExploreRecommended: () => void;
 }) {
-  void onExploreRecommended;
+  // Defaults to showing the "จองแล้ว" form open even before anything's been
+  // saved — this is local UI state only, so nothing lands in trip.accommodation
+  // (see patch below) until the user actually types/selects something in it.
+  const [status, setStatus] = useState<"booked" | "unbooked" | null>(accommodation?.bookingStatus ?? "booked");
+  const [name, setName] = useState(accommodation?.name ?? "");
+  const [address, setAddress] = useState(accommodation?.address ?? "");
+  const [checkInTime, setCheckInTime] = useState(accommodation?.checkIn ?? "");
+  const [checkOutTime, setCheckOutTime] = useState(accommodation?.checkOut ?? "");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCheckInPicker, setShowCheckInPicker] = useState(false);
+  const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
+
+  function patch(next: Partial<TripAccommodation>) {
+    onSave({ name: "", amenities: [], ...accommodation, ...next });
+  }
+
+  function setBookingStatus(next: "booked" | "unbooked") {
+    const resolved = status === next ? null : next;
+    setStatus(resolved);
+    patch({ bookingStatus: resolved ?? undefined });
+  }
+
   return (
-    <div
-      className="flex items-start gap-2 rounded-2xl px-3.5 py-2.5 text-xs"
-      style={{ backgroundColor: "#FFF3D6", color: "#8A6A00" }}
-    >
-      <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-      <span>ฟีเจอร์เพิ่มที่พักเองอยู่ระหว่างพัฒนา จะเปิดให้ใช้งานเร็วๆ นี้</span>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        <AccommodationStatusToggle
+          icon={Check}
+          title="จองแล้ว"
+          subtitle="แนบไฟล์การจองหรือลิงก์"
+          isOn={status === "booked"}
+          onClick={() => setBookingStatus("booked")}
+        />
+        <AccommodationStatusToggle
+          icon={Search}
+          title="ยังไม่จอง"
+          subtitle="บอกสไตล์กับเกรดคร่าวๆ"
+          isOn={status === "unbooked"}
+          onClick={() => setBookingStatus("unbooked")}
+        />
+      </div>
+
+      {status === "booked" && (
+        <div className="flex flex-col gap-3">
+          <div
+            className="flex items-start gap-2 rounded-2xl px-3.5 py-2.5 text-xs"
+            style={{ backgroundColor: "#FFF3D6", color: "#8A6A00" }}
+          >
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+            <span>ข้อมูลด้านล่างนี้บันทึกไว้แค่ในเครื่องนี้ชั่วคราว ระบบหลังบ้านสำหรับเก็บถาวรอยู่ระหว่างพัฒนา</span>
+          </div>
+          <LabeledInput label="ชื่อโรงแรม" value={name} onChange={setName} onBlur={() => patch({ name })} placeholder="ชื่อโรงแรม" />
+          <LabeledInput
+            label="ตำแหน่งที่อยู่ของที่พัก"
+            value={address}
+            onChange={setAddress}
+            onBlur={() => patch({ address })}
+            placeholder="ตำแหน่งที่อยู่ของที่พัก"
+          />
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">วันที่เข้าพัก - วันที่ออก</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
+                {accommodation?.checkInDate ? formatShortDate(accommodation.checkInDate) : (
+                  <span className="text-[var(--color-muted)]">วันที่เข้าพัก</span>
+                )}
+              </button>
+              <span className="shrink-0 text-[var(--color-muted)]">-</span>
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <CalendarDays size={14} style={{ color: "var(--color-muted)" }} />
+                {accommodation?.checkOutDate ? formatShortDate(accommodation.checkOutDate) : (
+                  <span className="text-[var(--color-muted)]">วันที่ออก</span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เวลา Check in - Check out</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCheckInPicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                {checkInTime ? formatTimeDisplay(checkInTime) : <span className="text-[var(--color-muted)]">เวลา Check in</span>}
+              </button>
+              <span className="shrink-0 text-[var(--color-muted)]">-</span>
+              <button
+                type="button"
+                onClick={() => setShowCheckOutPicker(true)}
+                className="flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <Clock size={14} style={{ color: "var(--color-muted)" }} />
+                {checkOutTime ? formatTimeDisplay(checkOutTime) : <span className="text-[var(--color-muted)]">เวลา Check out</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {status === "unbooked" && (
+        <button
+          type="button"
+          onClick={onExploreRecommended}
+          className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-2 text-left"
+          style={{ borderColor: "var(--color-accent-orange)" }}
+        >
+          <span className="flex items-center gap-2.5">
+            <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+            <span className="text-sm font-semibold">สำรวจที่พัก</span>
+          </span>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
+            style={{ backgroundColor: "var(--color-accent-orange)" }}
+          >
+            สำรวจ
+            <ChevronRight size={12} />
+          </span>
+        </button>
+      )}
+
+      <DatePickerDialog
+        isOpen={showDatePicker}
+        initialStartDate={accommodation?.checkInDate}
+        initialEndDate={accommodation?.checkOutDate}
+        onClose={() => setShowDatePicker(false)}
+        onConfirm={(result) => {
+          patch({ checkInDate: result.startDate, checkOutDate: result.endDate });
+          setShowDatePicker(false);
+        }}
+      />
+      {showCheckInPicker && (
+        <TimePickerDialog
+          value={checkInTime || "14:00"}
+          onConfirm={(time) => {
+            setCheckInTime(time);
+            patch({ checkIn: time });
+          }}
+          onClose={() => setShowCheckInPicker(false)}
+        />
+      )}
+      {showCheckOutPicker && (
+        <TimePickerDialog
+          value={checkOutTime || "12:00"}
+          onConfirm={(time) => {
+            setCheckOutTime(time);
+            patch({ checkOut: time });
+          }}
+          onClose={() => setShowCheckOutPicker(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+}
+
+function AccommodationStatusToggle({
+  icon: Icon,
+  title,
+  subtitle,
+  isOn,
+  onClick,
+}: {
+  icon: typeof Check;
+  title: string;
+  subtitle: string;
+  isOn: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-2.5 rounded-2xl border p-3 text-left transition-colors"
+      style={isOn ? { backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)" } : { borderColor: "var(--color-border)" }}
+    >
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: isOn ? "var(--color-brand-green)" : "var(--color-surface)" }}
+      >
+        <Icon size={14} style={{ color: isOn ? "#fff" : "var(--color-muted)" }} />
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-bold">{title}</span>
+        <span className="text-xs text-[var(--color-muted)]">{subtitle}</span>
+      </span>
+    </button>
   );
 }
 
