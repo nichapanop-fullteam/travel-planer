@@ -152,17 +152,7 @@ type TabKey = "overview" | "plan" | "weather" | "budget" | "chat";
 // anyone who didn't create the trip in this same browser. See OverviewTab,
 // which now renders the same accommodation/place-discovery/itinerary layout
 // for every trip, gated only by canEdit/isOwner.
-// "ภาพรวมทริป" is hidden for now — the route opens on แพลนทริป instead, and
-// the overview tab is not offered at all. Flip this back to true to bring it
-// back: OverviewTab and its whole branch below are left intact, so nothing
-// else has to change. Same pattern as AI_MODE_ENABLED on create-trip.
-const OVERVIEW_TAB_ENABLED = false;
-// The tab the route opens on. Kept next to the flag above because the two have
-// to agree — defaulting to a tab that isn't in the list would render a body
-// with no tab lit.
-const DEFAULT_TAB: TabKey = "plan";
-
-const ALL_TABS: { key: TabKey; label: string }[] = [
+const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "ภาพรวมทริป" },
   { key: "plan", label: "แพลนทริป" },
   { key: "weather", label: "สภาพอากาศ" },
@@ -170,7 +160,20 @@ const ALL_TABS: { key: TabKey; label: string }[] = [
  // { key: "chat", label: "ห้องแชท" },
 ];
 
-const TABS = ALL_TABS.filter((entry) => entry.key !== "overview" || OVERVIEW_TAB_ENABLED);
+// The read-only page drops ภาพรวมทริป and opens on แพลนทริป instead: someone
+// arriving at a published trip wants the itinerary, and overview's editing
+// affordances are all disabled there anyway. The editor keeps both — it is
+// where a trip gets built, and overview is where that starts.
+//
+// OverviewTab and its branch below are untouched, so the editor's behaviour is
+// exactly what it was.
+function tabsFor(readOnly: boolean) {
+  return readOnly ? TABS.filter((entry) => entry.key !== "overview") : TABS;
+}
+
+function defaultTabFor(readOnly: boolean): TabKey {
+  return readOnly ? "plan" : "overview";
+}
 
 // The one width grid for this whole route. The hero's own content (nav row,
 // tab bar, title block) used to be full-bleed while everything below it sat in
@@ -268,7 +271,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [trip, setTrip] = useState<GeneratedTrip | null | undefined>(undefined);
-  const [tab, setTab] = useState<TabKey>(DEFAULT_TAB);
+  const [tab, setTab] = useState<TabKey>(() => defaultTabFor(readOnly));
   // Which day's row is selected in ตารางแพลน. Lives here rather than inside
   // PlanTab because Hero's summary stats now read it too — see showSummaryStats
   // in Hero for why "ภาพรวมทริป" and "แพลนทริป" no longer show the same numbers.
@@ -1269,7 +1272,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           style={{ paddingTop: "env(safe-area-inset-top)" }}
         >
           <div className={`${SHELL} py-3`}>
-            <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
+            <PlanTabs tabs={tabsFor(readOnly)} tab={tab} setTab={setTab} />
           </div>
         </div>
 
