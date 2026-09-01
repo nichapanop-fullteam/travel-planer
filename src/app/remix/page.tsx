@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bookmark, ChevronLeft, Menu, Repeat2, Search, SearchX } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, MapPin, Menu, Repeat2, Search, SearchX } from "lucide-react";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
@@ -114,6 +114,22 @@ export default function RemixDiscoveryPage() {
       .slice(0, TOP_REMIX_RAIL_SIZE);
   }, [trips]);
 
+  // The cover pill reads "Top Remix" for exactly the rail's own top-N, not
+  // every trip that has ever been remixed once — "top" means this specific
+  // real ranking, wherever the trip's card happens to render (rail, grid, or
+  // grouped under its creator).
+  const topRemixIds = useMemo(() => new Set((topRemixRail ?? []).map((t) => t.id)), [topRemixRail]);
+
+  // A search that happens to match a real destination gets a location pin
+  // under the tabs, echoing that destination's own text — never a normalized
+  // or geocoded place, just the first trip row that matched. Matching logic
+  // itself is unchanged (still matchesQuery's title/destination/tags text
+  // search below); this only decides whether to show the pin.
+  const matchedDestination = useMemo(() => {
+    if (!trips || !query) return null;
+    return trips.find((t) => t.destination.toLowerCase().includes(query))?.destination ?? null;
+  }, [trips, query]);
+
   // Per-tab totals for the chip badges, off the search-filtered set so a
   // chip's number matches what selecting it would actually show.
   const tabCounts = useMemo(() => {
@@ -200,16 +216,31 @@ export default function RemixDiscoveryPage() {
 
       <div className="bg-black px-4 pb-8 pt-6 sm:px-6">
         <h1 className="text-center text-3xl font-extrabold text-white">Remix ทริป</h1>
-        <div className="mx-auto mt-5 flex max-w-xl items-center gap-2 rounded-full bg-white py-1.5 pl-5 pr-1.5">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            (e.currentTarget.elements.namedItem("remix-search") as HTMLInputElement | null)?.blur();
+          }}
+          className="mx-auto mt-5 flex max-w-xl items-center gap-2 rounded-full bg-white py-1.5 pl-5 pr-1.5"
+        >
           <Search size={16} className="shrink-0 text-[var(--color-muted)]" />
           <input
+            name="remix-search"
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
             className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
           />
-        </div>
+          <button
+            type="submit"
+            aria-label="ค้นหา"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white"
+            style={{ backgroundColor: "#6C4DFF" }}
+          >
+            <ChevronRight size={18} />
+          </button>
+        </form>
       </div>
 
       <div className="no-scrollbar overflow-x-auto px-4 py-4 sm:px-6">
@@ -251,6 +282,18 @@ export default function RemixDiscoveryPage() {
         </div>
       </div>
 
+      {matchedDestination && (
+        <div className="px-4 sm:px-6">
+          <span
+            className="inline-flex items-center gap-1 text-sm font-bold"
+            style={{ color: "var(--color-accent-violet)" }}
+          >
+            <MapPin size={14} />
+            {matchedDestination}
+          </span>
+        </div>
+      )}
+
       {topRemixRail && topRemixRail.length > 0 && (
         <section className="px-4 pt-2 sm:px-6">
           <div className="mb-3 flex items-center justify-between">
@@ -268,7 +311,7 @@ export default function RemixDiscoveryPage() {
           <div className="no-scrollbar flex gap-3 overflow-x-auto pb-2">
             {topRemixRail.map((trip) => (
               <div key={trip.id} className="w-[220px] shrink-0 sm:w-[260px]">
-                <RealTripCard trip={trip} isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)} />
+                <RealTripCard trip={trip} isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)} topRemix />
               </div>
             ))}
           </div>
@@ -321,6 +364,7 @@ export default function RemixDiscoveryPage() {
                       key={trip.id}
                       trip={trip}
                       isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)}
+                      topRemix={topRemixIds.has(trip.id)}
                     />
                   ))}
                 </div>
@@ -335,6 +379,7 @@ export default function RemixDiscoveryPage() {
                 trip={trip}
                 isOwn={Boolean(backendUserId) && myTripIds.has(trip.id)}
                 tall={index === 0}
+                topRemix={topRemixIds.has(trip.id)}
               />
             ))}
           </div>

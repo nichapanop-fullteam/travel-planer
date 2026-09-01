@@ -42,6 +42,7 @@ export function RealTripCard({
   onDelete,
   deleting = false,
   tall = false,
+  topRemix = false,
 }: {
   trip: BackendTripListItem;
   isOwn: boolean;
@@ -55,6 +56,12 @@ export function RealTripCard({
    *  Ignored from 1025px up, where the feed is a uniform grid and a mismatched
    *  card would look like a mistake. */
   tall?: boolean;
+  /** Opt-in cover pill reading "Top Remix" instead of "รีมิกซ์" — the caller's
+   *  own real ranking (e.g. /remix's top-N-by-remixCount rail), never derived
+   *  in here. Wins the one cover-pill slot over the plain isRemix pill below:
+   *  a trip can be both a remix of something AND itself heavily remixed, and
+   *  "top" is the more specific, more interesting fact to lead with. */
+  topRemix?: boolean;
 }) {
   const { backendUser } = useAuth();
   const router = useRouter();
@@ -254,6 +261,11 @@ export function RealTripCard({
               nowhere else on the card that says whether a trip is a draft. */}
           {showStatus ? (
             <StatusBadge status={trip.status} />
+          ) : topRemix ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm min-[640px]:gap-1.5 min-[640px]:px-2.5 min-[640px]:py-1.5 min-[640px]:text-[11px]">
+              <Shuffle size={11} />
+              Top Remix
+            </span>
           ) : isRemix ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm min-[640px]:gap-1.5 min-[640px]:px-2.5 min-[640px]:py-1.5 min-[640px]:text-[11px]">
               <Shuffle size={11} />
