@@ -25,6 +25,7 @@ import {
   Heart,
   GripVertical,
   ImagePlus,
+  Info,
   LoaderCircle,
   Lock,
   Mountain,
@@ -75,6 +76,7 @@ import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
 import { addTripMediaFromPlace, deleteTripMediaForActivity, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 import { Logo } from "@/components/common/Logo";
+import { MapIcon } from "@/components/common/MapIcon";
 import { RemixIcon } from "@/components/common/RemixIcon";
 import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 
@@ -3113,8 +3115,9 @@ function PlanTab({
       {header}
 
       <div className="flex flex-col gap-4 rounded-2xl p-2.5 sm:gap-5 sm:rounded-3xl sm:p-5" style={{ backgroundColor: "#FAF8F5" }}>
+      <div className={`trip-plan-layout ${showMap ? "" : "trip-plan-layout--no-map"}`}>
         <div
-          className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
+          className="trip-plan-layout__days flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
           style={{ borderColor: "var(--color-border)" }}
         >
           {trip.days.map((d, i) => (
@@ -3145,10 +3148,9 @@ function PlanTab({
           )}
         </div>
 
-        <div className={`grid grid-cols-1 gap-5 ${showMap ? "lg:grid-cols-[2fr_3fr]" : ""}`}>
-          <div className="min-w-0 overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
+          <div className="trip-plan-layout__list min-w-0 overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
             <div
-              className="flex items-center justify-between rounded-t-2xl px-4 py-3"
+              className="trip-plan-list-header items-center justify-between rounded-t-2xl px-4 py-3"
               style={{ backgroundColor: "var(--color-sel-bg)" }}
             >
               <h3 className="text-base font-bold" style={{ color: "var(--color-brand-green)" }}>
@@ -3177,6 +3179,7 @@ function PlanTab({
                       activity={a}
                       index={i + 1}
                       canEdit={canEdit}
+                      mapHidden={!showMap}
                       onEdit={() => onEditActivity(day.id, a)}
                       onDelete={() => onDeleteActivity(day.id, a.id)}
                     />
@@ -3218,9 +3221,28 @@ function PlanTab({
               )}
             </div>
           </div>
-          {showMap && <TripMapPanel day={day} />}
+          {showMap && (
+            <div className="trip-plan-layout__map min-w-0">
+              <TripMapPanel day={day} />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Compact-only stand-in for the header toggle above. Fixed rather than
+          in flow so it stays reachable however far down the stop list the
+          reader has scrolled — the map is the thing you want back at the
+          moment you have lost your bearings in the list. */}
+      <button
+        type="button"
+        onClick={() => setShowMap((v) => !v)}
+        aria-pressed={showMap}
+        aria-label={showMap ? "ซ่อนแผนที่" : "แสดงแผนที่"}
+        className="trip-plan-map-fab flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition-opacity hover:opacity-90"
+        style={{ backgroundColor: "var(--color-accent-orange)" }}
+      >
+        <MapIcon className="h-6 w-6" />
+      </button>
     </div>
   );
 }
@@ -3235,16 +3257,21 @@ function PlanActivityRow({
   activity,
   index,
   canEdit,
+  mapHidden,
   onEdit,
   onDelete,
 }: {
   activity: Activity;
   index: number;
   canEdit: boolean;
+  /** With the map gone there is no pin left to tap, so the row grows its own
+   *  way into PlacePopup — see the "เกี่ยวกับ" button below. */
+  mapHidden: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   // Open by default — the reference shows the expanded state, and a stop whose
   // notes are hidden until a second tap reads as having none.
   const [expanded, setExpanded] = useState(true);
@@ -3268,28 +3295,33 @@ function PlanActivityRow({
       <div className="flex items-start gap-2.5 sm:gap-3">
         {/* Photo leads the row now (it used to trail it) and carries the stop
             number, which was a separate green disc in the text column before —
-            two things competing to mark the same stop. */}
+            two things competing to mark the same stop.
+            Sized 80/96px rather than the 56/64 it started at: at thumbnail size
+            the photo read as an icon beside the title, and a place people are
+            deciding whether to visit is sold by how it looks. The badge and the
+            two corner chips grew with it so they stay legible against a bigger
+            image instead of shrinking into its corners. */}
         <button
           type="button"
           onClick={() => setLightboxOpen(true)}
           aria-label={`ดูรูปของ ${activity.title}`}
-          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl sm:h-16 sm:w-16"
+          className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl sm:h-24 sm:w-24"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={imageUrl} alt="" className="h-full w-full object-cover" />
           <span
-            className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white sm:h-5 sm:w-5 sm:text-[10px]"
+            className="absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white sm:h-6 sm:w-6 sm:text-xs"
             style={{ backgroundColor: "var(--foreground)" }}
           >
             {index}
           </span>
           {galleryImages && galleryImages.length > 1 ? (
-            <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
+            <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white">
               +{galleryImages.length - 1}
             </span>
           ) : (
-            <span className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 sm:h-5 sm:w-5">
-              <Maximize2 size={10} />
+            <span className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 sm:h-6 sm:w-6">
+              <Maximize2 size={12} />
             </span>
           )}
         </button>
@@ -3366,6 +3398,42 @@ function PlanActivityRow({
                   <Navigation size={11} />
                   นำทาง
                 </ResolvedNavigationLink>
+                {/* Only while the map is hidden: with it on screen the pin is
+                    already the way into this popup, and two controls opening
+                    the same panel from one row is one too many.
+                    The wrapper takes z-50 while open because PlacePopup paints
+                    at z-20 and the pinned bottom bar at z-40 — without a
+                    stacking context of its own the sheet opened underneath the
+                    bar it is supposed to cover. */}
+                {mapHidden && (
+                  <span className={`relative inline-flex ${aboutOpen ? "z-50" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => setAboutOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold leading-4 sm:px-2.5 sm:text-[11px]"
+                      style={{ borderColor: "var(--color-border-tag)", color: "var(--color-brand-green)" }}
+                    >
+                      <Info size={11} />
+                      เกี่ยวกับ
+                    </button>
+                    {aboutOpen && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label="ปิดข้อมูลสถานที่"
+                          onClick={() => setAboutOpen(false)}
+                          className="fixed inset-0 z-10 bg-black/35 backdrop-blur-[1px]"
+                        />
+                        <PlacePopup
+                          activity={activity}
+                          index={index}
+                          onClose={() => setAboutOpen(false)}
+                          variant="modal"
+                        />
+                      </>
+                    )}
+                  </span>
+                )}
                 {activity.category === "hotel" && (
                   <HotelBookingButton
                     name={activity.location?.name ?? activity.title}
@@ -3700,12 +3768,18 @@ function PlacePopup({
   onClose,
   openBelow,
   horizontalAlign = "center",
+  variant = "anchored",
 }: {
   activity: Activity;
   index: number;
   onClose: () => void;
   openBelow?: boolean;
   horizontalAlign?: "left" | "center" | "right";
+  /** "anchored" hangs the panel off whatever opened it (a map pin), which is
+   *  what openBelow/horizontalAlign steer. "modal" centres it in the viewport
+   *  instead, for openers too small to hang 34rem of panel from — an inline
+   *  button in a list row overflows the screen edge at every tablet width. */
+  variant?: "anchored" | "modal";
 }) {
   const placeId = activity.location?.googlePlaceId;
   const [details, setDetails] = useState<PlaceFullDetails | null>(null);
@@ -3770,6 +3844,7 @@ function PlacePopup({
         : [];
   const mapsUrl = details?.googleMapsUri || getGoogleMapsUrl(activity.location ?? { name: activity.title });
 
+  const isModal = variant === "modal";
   const horizontalClass =
     horizontalAlign === "right"
       ? "sm:right-0 sm:left-auto"
@@ -3785,54 +3860,69 @@ function PlacePopup({
       role="dialog"
       aria-modal={openBelow === undefined}
       aria-label={`ข้อมูลสถานที่ ${name}`}
-      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${horizontalClass} ${verticalClass}`}
+      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${
+        isModal
+          ? "sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2"
+          : `sm:absolute ${horizontalClass} ${verticalClass}`
+      }`}
       style={{ borderColor: "var(--color-border-tag)" }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="relative shrink-0 overflow-hidden px-4 pb-4 pt-2 sm:px-5 sm:pb-5 sm:pt-5" style={{ backgroundColor: "var(--color-sel-bg)" }}>
-        <span className="absolute -right-7 -top-8 h-24 w-24 rounded-full bg-white/40" aria-hidden="true" />
-        <span className="absolute -bottom-9 right-16 h-16 w-16 rounded-full bg-[var(--color-accent-mint)]/10" aria-hidden="true" />
+      {/* Plain white, no tinted band or decorative circles: the reference puts
+          the panel's weight on the place's own name and photo, and a coloured
+          header was competing with both. */}
+      <div className="relative shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pt-5">
+        <div className="relative mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--color-border-tag)] sm:hidden" aria-hidden="true" />
 
-        <div className="relative mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--color-brand-green)]/25 sm:hidden" aria-hidden="true" />
-
-        <div className="relative flex items-start gap-3">
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-extrabold text-white shadow-sm"
-            style={{ backgroundColor: "var(--color-brand-green)" }}
-          >
-            {index}
+        <div className="relative flex items-start gap-2.5">
+          {/* The stop's number in the same teardrop the map pins use, rather
+              than a rounded square — it is the one mark that ties this panel
+              back to a pin on the map. */}
+          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+            <MapPin
+              size={30}
+              fill="var(--color-brand-green)"
+              strokeWidth={0}
+              style={{ color: "var(--color-brand-green)" }}
+            />
+            <span className="absolute inset-x-0 top-[5px] text-center text-[11px] font-extrabold text-white">
+              {index}
+            </span>
           </span>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-brand-green)] sm:text-[11px]">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-muted)] sm:text-[11px]">
               จุดหมายในแผนของคุณ
             </p>
-            <h4 className="mt-0.5 min-w-0 break-words text-base font-extrabold leading-6 sm:text-lg">{name}</h4>
+            <h4 className="mt-0.5 min-w-0 break-words text-lg font-extrabold leading-6 sm:text-xl">{name}</h4>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="ปิดข้อมูลสถานที่"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] shadow-sm transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)] sm:h-9 sm:w-9"
-            style={{ borderColor: "var(--color-sel-border)" }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
+            style={{ borderColor: "var(--color-border-tag)" }}
           >
             <X size={16} strokeWidth={2.5} />
           </button>
         </div>
       </div>
 
-      <div className="relative z-[1] -mt-3 shrink-0 px-3 sm:px-4">
-        <div className="no-scrollbar relative flex min-w-0 items-center gap-1 overflow-x-auto rounded-full border bg-white p-1.5 shadow-md" style={{ borderColor: "var(--color-border-tag)" }}>
+      {/* Underlined tabs on a plain rule, per the reference — the floating
+          pill bar this replaces read as a control sitting on top of the panel
+          rather than the panel's own navigation. */}
+      <div className="relative z-[1] shrink-0 border-b px-4 sm:px-6" style={{ borderColor: "var(--color-border-tag)" }}>
+        <div className="no-scrollbar relative flex min-w-0 items-center gap-5 overflow-x-auto sm:gap-6">
           {PLACE_DETAIL_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
               aria-pressed={activeTab === tab.key}
-              className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold transition sm:px-3.5 sm:text-xs"
+              className="-mb-px shrink-0 border-b-2 pb-2.5 pt-1 text-sm font-bold transition-colors"
               style={
                 activeTab === tab.key
-                  ? { backgroundColor: "var(--color-brand-green)", color: "white" }
-                  : { color: "var(--color-muted)" }
+                  ? { borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" }
+                  : { borderColor: "transparent", color: "var(--foreground)" }
               }
             >
               {tab.label}
@@ -3871,18 +3961,18 @@ function PlacePopup({
           <div>
             <div className="flex flex-col gap-3 min-[380px]:flex-row min-[380px]:items-start">
               {description ? (
-                <p className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--foreground)] sm:text-sm sm:leading-6">
+                <p className="min-w-0 flex-1 break-words text-sm leading-6 text-[var(--foreground)] sm:text-[15px] sm:leading-7">
                   {description}
                 </p>
               ) : (
-                <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)] sm:text-sm">ยังไม่มีคำอธิบายสำหรับสถานที่นี้</p>
+                <p className="min-w-0 flex-1 text-sm text-[var(--color-muted)]">ยังไม่มีคำอธิบายสำหรับสถานที่นี้</p>
               )}
               {photos[0] && (
                 <button
                   type="button"
                   onClick={() => setLightboxIndex(0)}
                   aria-label={`ดูรูปของ ${name} แบบเต็มจอ`}
-                  className="group relative h-36 w-full shrink-0 overflow-hidden rounded-2xl bg-[var(--color-sel-bg)] min-[380px]:h-20 min-[380px]:w-24"
+                  className="group relative h-36 w-full shrink-0 overflow-hidden rounded-xl bg-[var(--color-sel-bg)] min-[380px]:h-28 min-[380px]:w-28"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photos[0]} alt={name} className="h-full w-full object-cover transition group-hover:scale-105" />
@@ -3894,41 +3984,41 @@ function PlacePopup({
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold sm:text-xs"
-                style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
-              >
-                <CategoryIcon size={12} />
-                {categoryName}
-              </span>
-              {rating != null && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#FDF0E7] px-2.5 py-1 text-[10px] font-bold text-[var(--color-accent-orange)] sm:text-xs">
-                  <Star size={14} fill="currentColor" />
-                  {rating.toFixed(1)}
-                  {details?.userRatingCount != null && (
-                    <span className="font-medium text-[var(--color-muted)]">
-                      ({details.userRatingCount.toLocaleString("th-TH")})
-                    </span>
-                  )}
-                </span>
-              )}
+              {/* Flat grey chips, per the reference: price level, then what the
+                  place is. The rating leaves this row entirely — it reads as a
+                  fact about the place, not another tag, and gets its own line
+                  below with the star and review count. */}
               {details?.priceLevel && PRICE_LEVEL_LABEL[details.priceLevel] && (
-                <span className="rounded-full border px-2.5 py-1 text-[10px] font-semibold text-[var(--color-muted)] sm:text-xs" style={{ borderColor: "var(--color-border-tag)" }}>
+                <span className="rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
                   {PRICE_LEVEL_LABEL[details.priceLevel]}
                 </span>
               )}
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
+                <CategoryIcon size={12} />
+                {categoryName}
+              </span>
               {activity.cost > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold text-[var(--color-muted)] sm:text-xs" style={{ borderColor: "var(--color-border-tag)" }}>
+                <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
                   <CircleDollarSign size={12} />
                   {formatTHB(activity.cost)}
                 </span>
               )}
             </div>
 
-            <div className="mt-3 grid gap-2 text-xs text-[var(--color-muted)] sm:text-sm">
+            {rating != null && (
+              <p className="mt-3 flex items-center gap-1.5 text-sm">
+                <Star size={16} fill="currentColor" className="shrink-0 text-[var(--color-accent-orange)]" />
+                <span className="font-extrabold text-[var(--foreground)]">{rating.toFixed(1)}</span>
+                {details?.userRatingCount != null && (
+                  <span className="text-[var(--color-muted)]">({details.userRatingCount.toLocaleString("th-TH")})</span>
+                )}
+              </p>
+            )}
+
+            <div className="mt-3 grid gap-2.5 text-sm text-[var(--color-muted)]">
               {openNow != null && (
                 <p className="flex items-start gap-2">
-                  <Clock size={14} className="mt-0.5 shrink-0" />
+                  <Clock size={16} className="mt-0.5 shrink-0" />
                   <span className={openNow ? "font-bold text-[var(--color-brand-green)]" : "font-bold text-[var(--color-danger)]"}>
                     {openNow ? "เปิดอยู่ตอนนี้" : "ปิดอยู่ตอนนี้"}
                   </span>
@@ -3936,27 +4026,27 @@ function PlacePopup({
               )}
               {details?.address && (
                 <p className="flex items-start gap-2">
-                  <MapPin size={14} className="mt-0.5 shrink-0" />
+                  <MapPin size={16} className="mt-0.5 shrink-0" />
                   <span>{details.address}</span>
                 </p>
               )}
               {phone && telPhone && (
                 <a href={`tel:${telPhone}`} className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
-                  <Phone size={14} className="mt-0.5 shrink-0" />
+                  <Phone size={16} className="mt-0.5 shrink-0" />
                   <span>{phone}</span>
                 </a>
               )}
               {details?.websiteUri && (
                 <a href={details.websiteUri} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
-                  <Globe2 size={14} className="mt-0.5 shrink-0" />
+                  <Globe2 size={16} className="mt-0.5 shrink-0" />
                   <span className="truncate">เว็บไซต์ของสถานที่</span>
                 </a>
               )}
             </div>
 
             {openingHours.length > 0 && (
-              <details className="mt-3 rounded-2xl bg-[var(--color-page-cream)] px-3 py-2 text-xs">
-                <summary className="cursor-pointer font-bold text-[var(--color-brand-green)]">ดูเวลาเปิด–ปิดทั้งหมด</summary>
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer font-semibold text-[#1a73e8]">แสดงเวลาเปิด</summary>
                 <div className="mt-2 grid gap-1 text-[var(--color-muted)]">
                   {openingHours.map((line) => <p key={line}>{line}</p>)}
                 </div>

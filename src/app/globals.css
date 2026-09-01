@@ -170,6 +170,100 @@ body {
   }
 }
 
+/*
+ * แพลนทริป's three blocks: the map, the day chips and the stop list.
+ *
+ * Compact stacks map → chips → list, per the supplied reference, and pins the
+ * map to a fixed height so the list is still reachable without scrolling past
+ * a full-height map. Desktop keeps the chips on their own row and sets the
+ * list beside the map, which is the layout this tab has always had there.
+ *
+ * Grid areas rather than flex `order`, because the map has to be ONE mounted
+ * panel at both breakpoints — it owns which pin is selected, and rendering a
+ * copy per breakpoint would let the two disagree.
+ */
+.trip-plan-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "map"
+    "days"
+    "list";
+}
+
+.trip-plan-layout--no-map {
+  grid-template-areas:
+    "days"
+    "list";
+}
+
+.trip-plan-layout__map {
+  grid-area: map;
+}
+
+.trip-plan-layout__map > * {
+  height: 15rem;
+  min-height: 0;
+}
+
+.trip-plan-layout__days {
+  grid-area: days;
+}
+
+.trip-plan-layout__list {
+  grid-area: list;
+}
+
+/* The list's own "ลำดับแพลน" header carries the show/hide-map toggle, which
+   the floating button replaces on compact — two controls for one piece of
+   state is two controls that can look like they disagree. */
+.trip-plan-list-header {
+  display: none;
+}
+
+.trip-plan-map-fab {
+  position: fixed;
+  right: 1rem;
+  /* Clears the tallest form of the pinned bottom bar (action row + social row)
+     plus the home indicator, so the button never lands on top of it. */
+  bottom: calc(7.5rem + env(safe-area-inset-bottom));
+  z-index: 30;
+}
+
+@media (min-width: 1025px) and (hover: hover) and (pointer: fine) {
+  .trip-plan-layout {
+    gap: 1.25rem;
+    grid-template-columns: 2fr 3fr;
+    grid-template-areas:
+      "days days"
+      "list map";
+  }
+
+  .trip-plan-layout--no-map {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "days"
+      "list";
+  }
+
+  /* 100%, not auto: the map is a grid item stretched to the list's row height
+     on desktop, and that full-height panel beside the list is the layout this
+     tab has always had. `auto` left the panel at its own min-height with the
+     rest of the column empty. */
+  .trip-plan-layout__map > * {
+    height: 100%;
+  }
+
+  .trip-plan-list-header {
+    display: flex;
+  }
+
+  .trip-plan-map-fab {
+    display: none;
+  }
+}
+
 /* /main's feed caps at four columns at every width. This used to break out to
    five columns past 1800px and drop the container's max-width entirely, which
    let the grid run the full width of an ultrawide display — cards got narrow
