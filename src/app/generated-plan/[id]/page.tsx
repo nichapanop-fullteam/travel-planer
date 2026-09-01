@@ -2078,6 +2078,7 @@ function OverviewTab({
         canEdit={canEdit}
         onSaveAccommodation={onSaveAccommodation}
         onEditActivity={onEditActivity}
+        onExploreRecommended={onExploreRecommended}
       />
 
       <ItineraryAccordion

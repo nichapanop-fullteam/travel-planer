@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Compass,
   Flag,
   LoaderCircle,
   MapPin,
@@ -1904,11 +1905,13 @@ export function AccommodationSection({
   canEdit,
   onSaveAccommodation,
   onEditActivity,
+  onExploreRecommended,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
+  onExploreRecommended: () => void;
 }) {
   // null, not a stand-in city. This used to fall back to
   // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
@@ -1927,6 +1930,7 @@ export function AccommodationSection({
       center={center}
       onSaveAccommodation={onSaveAccommodation}
       onEditActivity={onEditActivity}
+      onExploreRecommended={onExploreRecommended}
     />
   );
 }
@@ -1958,6 +1962,7 @@ function AccommodationAccordion({
   center,
   onSaveAccommodation,
   onEditActivity,
+  onExploreRecommended,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1966,12 +1971,19 @@ function AccommodationAccordion({
   // recommended-places carousel above already uses to set trip.accommodation.
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
+  // Opens RecommendPlacesFlow (filtered there to include hotels) when the
+  // trip has nowhere to stay yet — the picker path this section's own add
+  // paths point to, now that typing one in by hand (SHOW_ACCOMMODATION_SETUP_FORM)
+  // and the carousel above it (SHOW_PLACE_DISCOVERY_PANEL) are both off.
+  onExploreRecommended: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
 
-  // After the hook, so the hook order stays stable across renders.
-  if (!hasData) return null;
+  // Still rendered without data — canEdit gets a "pick one" CTA instead of
+  // the section just vanishing, since arriving here doesn't mean not needing
+  // a stay, only not having picked one yet.
+  if (!hasData && !canEdit) return null;
 
   return (
     <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
@@ -1996,7 +2008,28 @@ function AccommodationAccordion({
 
       {expanded && (
         <div className="flex flex-col gap-4 px-4 pb-4">
-          <AccommodationGallery trip={trip} canEdit={canEdit} onEditActivity={onEditActivity} />
+          {hasData ? (
+            <AccommodationGallery trip={trip} canEdit={canEdit} onEditActivity={onEditActivity} />
+          ) : (
+            <button
+              type="button"
+              onClick={onExploreRecommended}
+              className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed bg-white px-4 py-2 text-left"
+              style={{ borderColor: "var(--color-accent-orange)" }}
+            >
+              <span className="flex items-center gap-2.5">
+                <Compass size={16} style={{ color: "var(--color-accent-orange)" }} className="shrink-0" />
+                <span className="text-sm font-semibold">ยังไม่มีที่พัก ลองดูที่แนะนำ</span>
+              </span>
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1 text-xs font-bold text-white"
+                style={{ backgroundColor: "var(--color-accent-orange)" }}
+              >
+                เลือกที่พัก
+                <ChevronRight size={12} />
+              </span>
+            </button>
+          )}
           {canEdit && SHOW_ACCOMMODATION_SETUP_FORM && (
             <AccommodationSetupForm accommodation={trip.accommodation} center={center} onSave={onSaveAccommodation} />
           )}
