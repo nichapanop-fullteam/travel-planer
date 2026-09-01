@@ -1112,8 +1112,41 @@ function AddPlaceDialog({
 }) {
   const [selectedDayId, setSelectedDayId] = useState<string | null>(initialDayId ?? days[0]?.id ?? null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(initialCheckedIds);
-  const [drafts, setDrafts] = useState<Record<string, PlaceDraft>>({});
+  // Places arriving pre-checked (RecommendPlacesFlow's review step) need their
+  // draft already open too, since drafts otherwise only get created by the
+  // toggleChecked transition below.
+  const [drafts, setDrafts] = useState<Record<string, PlaceDraft>>(() => {
+    if (!showDetailsForm) return {};
+    const day = days.find((d) => d.id === (initialDayId ?? days[0]?.id ?? null));
+    let count = day?.activities.length ?? 0;
+    const initial: Record<string, PlaceDraft> = {};
+    for (const place of places) {
+      if (!initialCheckedIds.has(place.id)) continue;
+      const hour = Math.min(9 + count, 22);
+      initial[place.id] = {
+        time: `${String(hour).padStart(2, "0")}:00`,
+        category: EXTERNAL_TO_ACTIVITY_CATEGORY[place.category],
+        cost: "",
+        notes: "",
+      };
+      count += 1;
+    }
+    return initial;
+  });
+  // Which showDetailsForm cards have their เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form open —
+  // separate from checkedIds, since a place arrives already checked (selected
+  // back in the browse grid) but collapsed; the pencil expands it for editing.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const prevDayCountRef = useRef(days.length);
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Jump to the newly-created day once "+เพิ่มวัน" resolves — trip.days only
   // grows via the parent page's state update, so this reacts to that instead
@@ -1226,9 +1259,9 @@ function AddPlaceDialog({
                   <SelectedPlaceCard
                     key={place.id}
                     place={place}
-                    checked={checkedIds.has(place.id)}
+                    expanded={expandedIds.has(place.id)}
                     draft={drafts[place.id]}
-                    onToggle={() => toggleChecked(place.id)}
+                    onToggleExpand={() => toggleExpanded(place.id)}
                     onChangeDraft={(patch) => patchDraft(place.id, patch)}
                   />
                 ) : (
@@ -1253,13 +1286,18 @@ function AddPlaceDialog({
               </span>
               {checkedIds.size > 0 ? "สถานที่ที่เลือก" : "ยังไม่ได้เลือกสถานที่"}
             </span>
-            <button
-              type="button"
-              onClick={() => setCheckedIds(new Set())}
-              className="text-sm font-semibold underline text-[var(--color-muted)]"
-            >
-              ล้างที่เลือก
-            </button>
+            {/* showDetailsForm places arrive pre-checked with no per-card way
+                to re-check afterward, so clearing here would be a dead end —
+                "ย้อนกลับ" to the browse grid is the correction path instead. */}
+            {!showDetailsForm && (
+              <button
+                type="button"
+                onClick={() => setCheckedIds(new Set())}
+                className="text-sm font-semibold underline text-[var(--color-muted)]"
+              >
+                ล้างที่เลือก
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -1287,22 +1325,22 @@ function AddPlaceDialog({
   );
 }
 
-// Checked = the header row (photo/name/address/edit-pencil) plus an inline
-// เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form underneath, all inside one bordered card —
-// only used by AddPlaceDialog's showDetailsForm mode (the recommend-flow's
-// review step). Clicking the pencil (or the row) is what selects a place —
-// it isn't checked until then.
+// Always counted as selected (showDetailsForm places arrive pre-checked) —
+// the header row (photo/name/address/edit-pencil) is the collapsed default,
+// and the pencil expands an inline เวลา/ประเภท/ค่าใช้จ่าย/โน้ต form underneath,
+// all inside one bordered card. Only used by AddPlaceDialog's showDetailsForm
+// mode (the recommend-flow's review step).
 function SelectedPlaceCard({
   place,
-  checked,
+  expanded,
   draft,
-  onToggle,
+  onToggleExpand,
   onChangeDraft,
 }: {
   place: EnrichedPlace;
-  checked: boolean;
+  expanded: boolean;
   draft?: PlaceDraft;
-  onToggle: () => void;
+  onToggleExpand: () => void;
   onChangeDraft: (patch: Partial<PlaceDraft>) => void;
 }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -1312,8 +1350,8 @@ function SelectedPlaceCard({
       <div
         role="button"
         tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+        onClick={onToggleExpand}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggleExpand()}
         className="flex cursor-pointer items-center gap-3 text-left"
       >
         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl" style={{ backgroundColor: "var(--color-surface)" }}>
@@ -1336,10 +1374,10 @@ function SelectedPlaceCard({
           <p className="truncate text-sm font-bold">{place.name}</p>
           <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
         </div>
-        <Checkbox checked={checked} onClick={onToggle} />
+        <Checkbox checked={expanded} onClick={onToggleExpand} />
       </div>
 
-      {checked && draft && (
+      {expanded && draft && (
         <div className="flex flex-col gap-3 border-t pt-3" style={{ borderColor: "var(--color-border)" }}>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -1478,11 +1516,10 @@ export function RecommendPlacesFlow({
     return (
       <AddPlaceDialog
         places={stagedPlaces}
-        // Re-confirm, not carry-over — arriving here shows every staged place
-        // unchecked (count 0) even though it was already picked in the browse
-        // grid, so clicking the pencil to check it is a deliberate final
-        // step, not a rubber stamp.
-        initialCheckedIds={new Set()}
+        // Carry the browse-grid picks straight into review already checked —
+        // they were deliberately chosen there, so this step is for adjusting
+        // เวลา/ประเภท/ค่าใช้จ่าย before confirming, not re-picking from scratch.
+        initialCheckedIds={new Set(stagedPlaces.map((p) => p.id))}
         days={trip.days}
         initialDayId={initialDayId}
         title="รายละเอียดเพิ่มสถานที่"
