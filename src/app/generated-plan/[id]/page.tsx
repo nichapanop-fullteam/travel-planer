@@ -73,7 +73,7 @@ import {
   type PlaceFullDetails,
 } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
-import { addTripMediaFromPlace, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
+import { addTripMediaFromPlace, deleteTripMediaForActivity, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 import { Logo } from "@/components/common/Logo";
 
@@ -891,13 +891,22 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
   function handleDeleteActivity(dayId: string, activityId: string) {
     updateDay(dayId, (d) => ({ ...d, activities: d.activities.filter((a) => a.id !== activityId) }));
-    if (trip!.backendSynced && (trip!.backendItemIds ?? []).includes(activityId)) {
-      deleteTripItemOnServer(activityId, autoTravelCalculationEnabled)
-        .then(() => {
-          if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
-        })
-        .catch((err) => console.warn("ลบกิจกรรมจากเซิร์ฟเวอร์ไม่สำเร็จ", err));
-    }
+    if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(activityId)) return;
+
+    const tripId = trip!.id;
+    // Media rows still pointing at this activity (sourceActivityId) make
+    // DELETE /items/:id 500 instead of succeeding — the backend doesn't
+    // cascade this itself (confirmed live against a stuck item). Best-effort:
+    // still try deleting the item even if this fails, same as before.
+    deleteTripMediaForActivity(tripId, activityId)
+      .catch((err) => console.warn("ลบรูปภาพของกิจกรรมไม่สำเร็จ", err))
+      .then(() =>
+        deleteTripItemOnServer(activityId, autoTravelCalculationEnabled)
+          .then(() => {
+            if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+          })
+          .catch((err) => console.warn("ลบกิจกรรมจากเซิร์ฟเวอร์ไม่สำเร็จ", err))
+      );
   }
 
   // Drag-reordered stop order — PATCH /days/:dayId/items/order (see

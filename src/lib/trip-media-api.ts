@@ -85,6 +85,25 @@ export async function deleteTripMedia(tripId: string, mediaId: string): Promise<
   await throwOnError(response, "ลบรูปภาพ");
 }
 
+// Deletes every media row still pointing at one activity (sourceActivityId)
+// before that activity/item is removed. DELETE /items/:id 500s instead of
+// succeeding when a media row's foreign key still references it — confirmed
+// against a live item that had a photo attached — since the backend doesn't
+// cascade this itself. Paginates through the whole gallery since a match
+// could be on any page, not just the first.
+export async function deleteTripMediaForActivity(tripId: string, activityId: string): Promise<void> {
+  const firstPage = await getTripGallery(tripId, { page: 1, limit: 24 });
+  const items = [...firstPage.items];
+  const pageCount = Math.ceil(firstPage.total / firstPage.limit);
+  for (let page = 2; page <= pageCount; page += 1) {
+    const nextPage = await getTripGallery(tripId, { page, limit: firstPage.limit });
+    items.push(...nextPage.items);
+  }
+
+  const matching = items.filter((media) => media.sourceActivityId === activityId);
+  await Promise.all(matching.map((media) => deleteTripMedia(tripId, media.id)));
+}
+
 // #32 PUT /trips/:tripId/cover — returns the full trip, not just the media
 // object (see doc); loosely typed since callers only need coverImage/
 // mediaSummary out of it.
