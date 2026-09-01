@@ -9,9 +9,8 @@ import {
   getRecentSearches,
   removeRecentSearch,
 } from "@/lib/recent-searches";
-import { categoryIcon } from "@/lib/category-styles";
-import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
-import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
+import { type AutocompleteSuggestion } from "@/lib/external-places-api";
+import { usePlaceAutocomplete } from "@/hooks/usePlaceAutocomplete";
 import { deriveTrendingPlaces, type TrendingPlace } from "@/lib/top-destinations";
 import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { useAuth } from "@/providers/AuthProvider";
@@ -31,10 +30,6 @@ import { useAuth } from "@/providers/AuthProvider";
 // filtering already live — duplicating the grid here would mean two places to
 // keep in step.
 const TREND_LIMIT = 6;
-const PLACE_LIMIT = 8;
-// Long enough that a normal typing burst is one request, short enough that the
-// list still feels attached to the keyboard.
-const DEBOUNCE_MS = 300;
 
 export default function SearchPage() {
   const router = useRouter();
@@ -44,18 +39,7 @@ export default function SearchPage() {
   const [recents, setRecents] = useState<string[]>([]);
   const [trips, setTrips] = useState<BackendTripListItem[] | undefined>(undefined);
 
-  // Live place results from GET /api/places/search (see searchExternalPlaces),
-  // stored with the term they answer. Keeping the term alongside them is what
-  // makes a keystroke invalidate the previous results for free — the
-  // alternative, clearing state when the term changes, is a synchronous
-  // setState inside an effect and an extra render for something derivable.
-  const [result, setResult] = useState<{ term: string; places: ExternalSearchPlace[] } | null>(null);
-
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Guards against a slow early request landing after a faster later one and
-  // overwriting it — searchExternalPlaces takes no AbortSignal, so the stale
-  // response has to be discarded on arrival instead of cancelled in flight.
-  const requestSeq = useRef(0);
 
   // localStorage can't be read during render (no window on the server, and
   // seeding useState from it would hydrate a mismatched tree), so the first
@@ -94,27 +78,7 @@ export default function SearchPage() {
   const trends = useMemo(() => deriveTrendingPlaces(trips ?? [], TREND_LIMIT), [trips]);
 
   const trimmedTerm = term.trim();
-  useEffect(() => {
-    if (!trimmedTerm) return;
-    const seq = ++requestSeq.current;
-    const timer = setTimeout(() => {
-      searchExternalPlaces(trimmedTerm, PLACE_LIMIT)
-        .then((places) => {
-          if (requestSeq.current === seq) setResult({ term: trimmedTerm, places });
-        })
-        .catch(() => {
-          // The endpoint answers [] rather than erroring for a miss, so getting
-          // here means the request itself failed. "Nothing found" is the honest
-          // thing to show either way.
-          if (requestSeq.current === seq) setResult({ term: trimmedTerm, places: [] });
-        });
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [trimmedTerm]);
-
-  // undefined covers both "still typing" and "request in flight" — the skeleton
-  // is right for both, so they don't need telling apart.
-  const places = result?.term === trimmedTerm ? result.places : undefined;
+  const places = usePlaceAutocomplete(trimmedTerm);
 
   function runSearch(value: string) {
     const trimmed = value.trim();
@@ -178,7 +142,7 @@ export default function SearchPage() {
       <div className="px-4 pb-16">
         {trimmedTerm ? (
           <section className="pt-1">
-            <h2 className="mb-1 text-sm font-bold">สถานที่</h2>
+            <h2 className="mb-1 text-sm font-bold">จุดหมาย</h2>
 
             {places === undefined ? (
               <ul className="mt-3 space-y-4">
@@ -191,12 +155,12 @@ export default function SearchPage() {
               </ul>
             ) : places.length === 0 ? (
               <p className="py-8 text-center text-sm text-[var(--color-muted)]">
-                ไม่พบสถานที่ที่ตรงกับ “{trimmedTerm}”
+                ไม่พบจุดหมายที่ตรงกับ “{trimmedTerm}”
               </p>
             ) : (
               <ul>
                 {places.map((place) => (
-                  <PlaceRow key={place.id} place={place} onSelect={() => runSearch(place.name)} />
+                  <PlaceRow key={place.externalRef} place={place} onSelect={() => runSearch(place.description)} />
                 ))}
               </ul>
             )}
@@ -277,11 +241,14 @@ export default function SearchPage() {
   );
 }
 
-// One place from GET /api/places/search. Tapping it runs the place's name as a
-// feed search: the app has no standalone place page, and the feed is where a
-// destination actually leads somewhere.
-function PlaceRow({ place, onSelect }: { place: ExternalSearchPlace; onSelect: () => void }) {
-  const Icon = categoryIcon[EXTERNAL_TO_ACTIVITY_CATEGORY[place.category]] ?? MapPin;
+// One suggestion from GET /api/places/autocomplete, laid out like Create Trip's
+// destination list: the place on top, what disambiguates it underneath.
+//
+// Tapping it searches the feed for that destination — `description` is the full
+// free-text form the API returns (and the same string POST /trips stores as a
+// trip's destination), so it matches the way trips are named. The app has no
+// standalone place page to open instead.
+function PlaceRow({ place, onSelect }: { place: AutocompleteSuggestion; onSelect: () => void }) {
   return (
     <li>
       <button
@@ -289,11 +256,11 @@ function PlaceRow({ place, onSelect }: { place: ExternalSearchPlace; onSelect: (
         onClick={onSelect}
         className="flex w-full items-center gap-3 rounded-xl py-2.5 text-left transition-colors hover:bg-[var(--color-surface)]"
       >
-        <Icon size={18} className="shrink-0 text-[var(--color-primary)]" strokeWidth={2} />
+        <MapPin size={18} className="shrink-0 text-[var(--color-primary)]" strokeWidth={2} />
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[var(--foreground)]">{place.name}</span>
-          {place.address && (
-            <span className="block truncate text-xs text-[var(--color-muted)]">{place.address}</span>
+          <span className="block truncate text-sm font-semibold text-[var(--foreground)]">{place.mainText}</span>
+          {place.secondaryText && (
+            <span className="block truncate text-xs text-[var(--color-muted)]">{place.secondaryText}</span>
           )}
         </span>
       </button>
