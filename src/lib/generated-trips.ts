@@ -393,6 +393,24 @@ const CONSTRAINT_TO_CONDITION = invert(CONDITION_TO_CONSTRAINT);
 // useRemixTrip's buildRemixedTripShell) across a later GET/PATCH refetch —
 // the backend's own trip response only ever has the flat `sourceTripId`
 // (see BackendTrip in trips-api.ts), never the source's title or owner.
+// The backend's GET /trips/:id response never returns a flat travelNote —
+// only travelFromPrevious.notes (confirmed against a live trip: writes via
+// activityPatch/buildActivity's travelNotesFromPrev round-trip correctly,
+// but land there, not on the activity itself). Every reader in the app
+// (AddActivityDialog's "หมายเหตุการเดินทาง" included) reads activity.travelNote
+// directly, so without this backfill a saved note reads back empty on the
+// very next fetch.
+function hydrateTravelNotes(days: Day[]): Day[] {
+  return days.map((day) => ({
+    ...day,
+    activities: day.activities.map((activity) =>
+      activity.travelNote === undefined && activity.travelFromPrevious?.notes
+        ? { ...activity, travelNote: activity.travelFromPrevious.notes }
+        : activity
+    ),
+  }));
+}
+
 export function buildGeneratedTripFromBackendTrip(
   trip: BackendTrip,
   existingRemixedFrom?: GeneratedTrip["remixedFrom"]
@@ -455,7 +473,7 @@ export function buildGeneratedTripFromBackendTrip(
     conditionsLabel: conditions.length ? conditions.join(", ") : "ไม่มีเงื่อนไขพิเศษ",
     styles,
     status: trip.status === "confirmed" ? "confirmed" : "generated",
-    days: trip.days,
+    days: hydrateTravelNotes(trip.days),
     backendSynced: true,
     backendDayIds: trip.days.map((d) => d.id),
     backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
