@@ -1946,7 +1946,7 @@ function AccommodationAccordion({
   // is what actually fills trip.accommodation in.
   onExploreRecommended: () => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   // trip.accommodation alone isn't enough to pick "gallery" here — merely
   // toggling "จองแล้ว"/"ยังไม่จอง" in the setup form below saves a non-empty
   // accommodation object (patch's `{ name: "", amenities: [], ... }`) before
