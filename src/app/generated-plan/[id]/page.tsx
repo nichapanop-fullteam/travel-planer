@@ -254,16 +254,6 @@ function reanchorDayDates(days: Day[], startDateIso: string): Day[] {
 const EDIT_COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
 const EDIT_MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
 
-// Free-text fallback for the older `travelNote` display spots — kept in sync
-// with `travelFromPrevious` so both stay readable even where the structured
-// object isn't rendered yet.
-function summarizeTravelNote(travel: TravelFromPrevious): string {
-  const parts: string[] = [];
-  if (travel.durationMin !== undefined) parts.push(`~${travel.durationMin} นาที`);
-  if (travel.distanceKm !== undefined) parts.push(`${travel.distanceKm} กม.`);
-  return parts.join(" · ");
-}
-
 export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boolean } = {}) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -287,7 +277,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // always defaulting to day 1 — each day's own "+ สถานที่" button still opens
   // the plain manual-entry form via activityDialogRequest above. See
   // RecommendPlacesFlow's onAddManually for the way back to that form too.
-  const [recommendRequest, setRecommendRequest] = useState<{ dayId: string } | null>(null);
+  const [recommendRequest, setRecommendRequest] = useState<{ dayId: string; onlyHotels?: boolean } | null>(null);
   const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
@@ -821,6 +811,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     };
   }
 
+  // Deliberately leaves travelNotesFromPrev untouched — unlike the rest of
+  // this patch, that field now carries the traveler's own "หมายเหตุการเดินทาง"
+  // text from AddActivityDialog (see activityPatch below), not something tied
+  // to the travel leg itself, so dismissing/clearing the leg shouldn't wipe it.
   function clearedTravelPatch(): UpdateTripItemRequest {
     return {
       travelTypeFromPrev: null,
@@ -829,7 +823,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       travelDistanceFromPrevKm: null,
       travelCostFromPrevAmount: null,
       travelCostFromPrevCurrency: null,
-      travelNotesFromPrev: null,
     };
   }
 
@@ -843,6 +836,12 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       costCurrency: "THB",
       notes: activity.notes ?? null,
       ...(activity.travelFromPrevious ? travelPatch(activity.travelFromPrevious) : {}),
+      // Placed after the travelPatch spread so it always wins: AddActivityDialog's
+      // "หมายเหตุการเดินทาง" writes to activity.travelNote directly, and this is
+      // the only place that persists it — nothing else in this file's PATCH
+      // payloads ever sent it to the backend at all (travelPatch above only
+      // forwards travelFromPrevious.notes, a separate, still-unused field).
+      travelNotesFromPrev: activity.travelNote ?? null,
     };
   }
 
@@ -971,7 +970,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           ? {
               ...a,
               travelFromPrevious: travel,
-              travelNote: summarizeTravelNote(travel),
+              // travelNote used to get overwritten with summarizeTravelNote(travel)
+              // here, back when it was purely an auto-synced mirror. It's now also
+              // where AddActivityDialog's "หมายเหตุการเดินทาง" free text lives, so
+              // recalculating the travel leg must leave it alone.
               dismissedTravelSegmentId: undefined,
             }
           : a
@@ -1019,7 +1021,9 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           return {
             ...activity,
             travelFromPrevious: undefined,
-            travelNote: undefined,
+            // travelNote is left as-is — same reasoning as
+            // handleUpdateActivityTravel above, dismissing the travel leg
+            // shouldn't touch the traveler's own "หมายเหตุการเดินทาง" text.
             dismissedTravelSegmentId: estimatedSegmentId,
           };
         }),
@@ -1277,6 +1281,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               onConfirm={handleConfirm}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
+              onExploreRecommendedAccommodation={() => setRecommendRequest({ dayId: trip.days[0].id, onlyHotels: true })}
               onEditActivity={(dayId, activity) => setActivityDialogRequest({ dayId, activity })}
               onDeleteActivity={handleDeleteActivity}
               onAddActivityDirect={handleSaveActivity}
@@ -1342,6 +1347,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         <RecommendPlacesFlow
           trip={trip}
           initialDayId={recommendRequest.dayId}
+          lockToCategory={recommendRequest.onlyHotels ? "hotel" : undefined}
           onAddDay={handleAddDay}
           onClose={() => setRecommendRequest(null)}
           onAddActivityDirect={handleSaveActivity}
@@ -2403,6 +2409,7 @@ function OverviewTab({
   onConfirm,
   onAddActivity,
   onExploreRecommended,
+  onExploreRecommendedAccommodation,
   onEditActivity,
   onDeleteActivity,
   onAddActivityDirect,
@@ -2428,6 +2435,10 @@ function OverviewTab({
   // to day 1), distinct from onAddActivity which opens the plain manual-entry
   // form for a specific day's own "+ สถานที่" button.
   onExploreRecommended: () => void;
+  // Same modal, but locked to the "ที่พัก" filter with the category tabs
+  // hidden entirely — AccommodationSection's "สำรวจที่พัก" only ever wants a
+  // hotel, so there's nothing to sort/switch away from here.
+  onExploreRecommendedAccommodation: () => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
   onDeleteActivity: (dayId: string, activityId: string) => void;
   onAddActivityDirect: (dayId: string, activity: Activity) => void;
@@ -2464,7 +2475,13 @@ function OverviewTab({
       {/* Above ตารางแพลน on purpose: where you sleep anchors the days, so it
           reads first. Returns null when the trip has no stay yet, and the
           flex gap collapses with it — no empty band left behind. */}
-      <AccommodationSection trip={trip} canEdit={canEdit} onSaveAccommodation={onSaveAccommodation} />
+      <AccommodationSection
+        trip={trip}
+        canEdit={canEdit}
+        onSaveAccommodation={onSaveAccommodation}
+        onEditActivity={onEditActivity}
+        onExploreRecommended={onExploreRecommendedAccommodation}
+      />
 
       <ItineraryAccordion
         trip={trip}
