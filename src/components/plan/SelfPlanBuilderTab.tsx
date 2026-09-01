@@ -1709,6 +1709,7 @@ function RecommendPlaceCard({
 
 interface AccommodationOption {
   key: string;
+  dayId: string;
   dayNumber: number;
   hotel: Activity;
 }
@@ -1726,15 +1727,26 @@ function collectAccommodationOptions(trip: GeneratedTrip): AccommodationOption[]
     const key = hotel.location?.name || hotel.title;
     if (seen.has(key)) continue;
     seen.add(key);
-    options.push({ key, dayNumber: day.dayNumber, hotel });
+    options.push({ key, dayId: day.id, dayNumber: day.dayNumber, hotel });
   }
   return options;
 }
 
-// Read-only gallery of the hotel stops already sitting in the itinerary —
-// separate from the booking form below it, which is for describing/adding
-// one. Renders nothing until at least one day actually has a hotel stop.
-function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
+// Gallery of the hotel stops already sitting in the itinerary — separate
+// from the booking form below it, which is for describing/adding one.
+// Renders nothing until at least one day actually has a hotel stop. Editing
+// reuses the same AddActivityDialog every other itinerary row edits through
+// (onEditActivity), rather than a dedicated accommodation dialog — a hotel
+// stop is just an Activity with category "hotel".
+function AccommodationGallery({
+  trip,
+  canEdit,
+  onEditActivity,
+}: {
+  trip: GeneratedTrip;
+  canEdit: boolean;
+  onEditActivity: (dayId: string, activity: Activity) => void;
+}) {
   const options = useMemo(() => collectAccommodationOptions(trip), [trip]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selected = options.find((o) => o.key === selectedKey) ?? options[0];
@@ -1811,16 +1823,29 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
               <p className="text-base font-bold sm:text-lg">{name}</p>
               <p className="text-xs text-[var(--color-muted)] sm:text-sm">{description}</p>
             </div>
-            <div className="shrink-0 text-right">
-              {pricePerNight ? (
-                <>
-                  <p className="text-lg font-extrabold sm:text-xl">{formatTHB(pricePerNight)}/คืน</p>
-                  <p className="text-xs text-[var(--color-muted)]">
-                    {nights} คืน · รวม {formatTHB(pricePerNight * nights)}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-[var(--color-muted)]">ราคาตามช่วงวันที่เข้าพัก</p>
+            <div className="flex shrink-0 items-start gap-2">
+              <div className="text-right">
+                {pricePerNight ? (
+                  <>
+                    <p className="text-lg font-extrabold sm:text-xl">{formatTHB(pricePerNight)}/คืน</p>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      {nights} คืน · รวม {formatTHB(pricePerNight * nights)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-[var(--color-muted)]">ราคาตามช่วงวันที่เข้าพัก</p>
+                )}
+              </div>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEditActivity(selected.dayId, selected.hotel)}
+                  aria-label={`แก้ไข ${name}`}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  style={{ backgroundColor: "var(--color-surface)" }}
+                >
+                  <Pencil size={14} />
+                </button>
               )}
             </div>
           </div>
@@ -1850,6 +1875,7 @@ function AccommodationGallery({ trip }: { trip: GeneratedTrip }) {
               />
               <button
                 type="button"
+                onClick={canEdit ? () => onEditActivity(selected.dayId, selected.hotel) : undefined}
                 className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white"
                 style={{ backgroundColor: "var(--color-accent-orange)" }}
               >
@@ -1877,10 +1903,12 @@ export function AccommodationSection({
   trip,
   canEdit,
   onSaveAccommodation,
+  onEditActivity,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
+  onEditActivity: (dayId: string, activity: Activity) => void;
 }) {
   // null, not a stand-in city. This used to fall back to
   // DEFAULT_RECOMMENDATION_CENTER, so a trip whose destinationPlace was
@@ -1893,7 +1921,13 @@ export function AccommodationSection({
     : null;
 
   return (
-    <AccommodationAccordion trip={trip} canEdit={canEdit} center={center} onSaveAccommodation={onSaveAccommodation} />
+    <AccommodationAccordion
+      trip={trip}
+      canEdit={canEdit}
+      center={center}
+      onSaveAccommodation={onSaveAccommodation}
+      onEditActivity={onEditActivity}
+    />
   );
 }
 
@@ -1923,6 +1957,7 @@ function AccommodationAccordion({
   canEdit,
   center,
   onSaveAccommodation,
+  onEditActivity,
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
@@ -1930,6 +1965,7 @@ function AccommodationAccordion({
   // Backs the "จองแล้ว"/"ยังไม่จอง" setup form below — same callback the
   // recommended-places carousel above already uses to set trip.accommodation.
   onSaveAccommodation: (accommodation: TripAccommodation) => void;
+  onEditActivity: (dayId: string, activity: Activity) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasData = collectAccommodationOptions(trip).length > 0 || !!trip.accommodation;
@@ -1960,7 +1996,7 @@ function AccommodationAccordion({
 
       {expanded && (
         <div className="flex flex-col gap-4 px-4 pb-4">
-          <AccommodationGallery trip={trip} />
+          <AccommodationGallery trip={trip} canEdit={canEdit} onEditActivity={onEditActivity} />
           {canEdit && SHOW_ACCOMMODATION_SETUP_FORM && (
             <AccommodationSetupForm accommodation={trip.accommodation} center={center} onSave={onSaveAccommodation} />
           )}

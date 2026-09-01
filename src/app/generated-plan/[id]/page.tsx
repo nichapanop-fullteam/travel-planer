@@ -2069,7 +2069,12 @@ function OverviewTab({
       {/* Above ตารางแพลน on purpose: where you sleep anchors the days, so it
           reads first. Returns null when the trip has no stay yet, and the
           flex gap collapses with it — no empty band left behind. */}
-      <AccommodationSection trip={trip} canEdit={canEdit} onSaveAccommodation={onSaveAccommodation} />
+      <AccommodationSection
+        trip={trip}
+        canEdit={canEdit}
+        onSaveAccommodation={onSaveAccommodation}
+        onEditActivity={onEditActivity}
+      />
 
       <ItineraryAccordion
         trip={trip}
