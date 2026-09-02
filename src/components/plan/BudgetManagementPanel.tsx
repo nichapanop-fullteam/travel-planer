@@ -531,7 +531,15 @@ function DayAccordionRow({
             ) : (
               filteredItems.map((item, i) => (
                 <ExpenseRow
-                  key={item.id}
+                  // item.id alone isn't guaranteed unique here: it comes
+                  // straight from GET /trips/:id/budget (see getTripBudget —
+                  // no client-side remapping), and that response mixes four
+                  // different sources (activity/travel/accommodation/expense)
+                  // that don't share one id space. An activity's own cost and
+                  // the travel leg arriving at it can land in the same list
+                  // with the same id, which crashed React here with a
+                  // duplicate-key warning. source narrows it back to unique.
+                  key={`${item.source}-${item.id}`}
                   item={item}
                   showDivider={i > 0}
                   onDelete={

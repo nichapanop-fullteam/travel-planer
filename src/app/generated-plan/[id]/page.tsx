@@ -154,6 +154,11 @@ type TabKey = "overview" | "plan" | "weather" | "budget" | "chat";
 // anyone who didn't create the trip in this same browser. See OverviewTab,
 // which now renders the same accommodation/place-discovery/itinerary layout
 // for every trip, gated only by canEdit/isOwner.
+// Gates the ส่วนตัว / เผยแพร่ switch and its explanatory line (VisibilityControl,
+// VisibilityHint, and the handleChangeVisibility wiring behind them). Same
+// pattern as AI_MODE_ENABLED on create-trip.
+const VISIBILITY_CONTROL_ENABLED = true;
+
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "ภาพรวมทริป" },
   { key: "plan", label: "แพลนทริป" },
@@ -380,6 +385,11 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
         //   SelfPlanBuilderTab has no centre to search around.
         // - accommodation / expenses / generationNotice have no backend
         //   representation on this endpoint at all.
+        // - day.travelSegments: GET /trips/:id doesn't embed these (only the
+        //   additive GET /days/:dayId/travel-segments does, and nothing here
+        //   calls it), so a day with no fresh segments in this response falls
+        //   back to whatever the local copy already had instead of going
+        //   blank on every reload.
         //
         // ??= rather than = so that if the backend starts returning any of
         // these, the server's value wins instead of a stale local one.
@@ -393,8 +403,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           const localActivities = new Map(
             local.days.flatMap((day) => day.activities).map((activity) => [activity.id, activity])
           );
+          const localDaysById = new Map(local.days.map((day) => [day.id, day]));
           loaded.days = loaded.days.map((day) => ({
             ...day,
+            travelSegments: day.travelSegments ?? localDaysById.get(day.id)?.travelSegments,
             activities: day.activities.map((activity) => ({
               ...activity,
               dismissedTravelSegmentId:
@@ -1302,7 +1314,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           trip={trip}
           isOwner={isOwner}
           visibilitySaving={visibilitySaving}
-          onChangeVisibility={trip.backendSynced ? handleChangeVisibility : undefined}
+          onChangeVisibility={!readOnly && trip.backendSynced ? handleChangeVisibility : undefined}
           onShareClick={canShare ? handleShareClick : undefined}
           sharePreparing={sharePreparing}
           canRemix={canRemix}
@@ -2081,7 +2093,7 @@ function TripAttributionBar({
                 )}
               </div>
             )}
-            {isOwner && onChangeVisibility && (
+            {VISIBILITY_CONTROL_ENABLED && isOwner && onChangeVisibility && (
               <VisibilityControl
                 visibility={trip.visibility ?? "private"}
                 saving={visibilitySaving}
@@ -2089,7 +2101,11 @@ function TripAttributionBar({
               />
             )}
           </div>
-          {isOwner && onChangeVisibility && <VisibilityHint visibility={trip.visibility ?? "private"} />}
+          {/* The hint goes with the switch: it is that control's caption, and
+              on its own it would state a setting with no way to reach it. */}
+          {VISIBILITY_CONTROL_ENABLED && isOwner && onChangeVisibility && (
+            <VisibilityHint visibility={trip.visibility ?? "private"} />
+          )}
         </div>
       </div>
     </div>
