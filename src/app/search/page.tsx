@@ -126,6 +126,19 @@ export default function SearchPage() {
                 aria-label="ค้นหาทริป จุดหมาย หรือสไตล์การเที่ยว"
                 className="min-w-0 flex-1 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
               />
+              {term && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTerm("");
+                    inputRef.current?.focus();
+                  }}
+                  aria-label="ล้างการค้นหา"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)]"
+                >
+                  <X size={14} />
+                </button>
+              )}
               <button
                 type="submit"
                 aria-label="ค้นหา"
