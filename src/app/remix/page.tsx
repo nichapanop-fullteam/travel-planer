@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bookmark, ChevronLeft, ChevronRight, MapPin, Menu, Repeat2, Search, SearchX } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, MapPin, Menu, Repeat2, Search, SearchX, X } from "lucide-react";
 import { RealTripCard } from "@/components/consumer/RealTripCard";
 import { TRIP_GRID_CLASS } from "@/lib/feed-layout";
 import { getMyTrips, listTrips, type BackendTripListItem } from "@/lib/trips-api";
@@ -232,6 +232,16 @@ export default function RemixDiscoveryPage() {
             placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
             className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)]"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="ล้างการค้นหา"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)]"
+            >
+              <X size={14} />
+            </button>
+          )}
           <button
             type="submit"
             aria-label="ค้นหา"
