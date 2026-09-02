@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Search } from "lucide-react";
+import { MapPin, Search, X } from "lucide-react";
 import {
   fetchAutocompleteSuggestions,
   fetchExternalPlaceDetails,
@@ -198,6 +198,20 @@ export function DestinationSearch({
           onFocus={() => suggestions.length > 0 && setIsOpen(true)}
           className="w-full bg-transparent text-sm text-[var(--foreground)] placeholder:text-[var(--color-muted)] focus:outline-none"
         />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSuggestions([]);
+              setIsOpen(false);
+            }}
+            aria-label="ล้างการค้นหา"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)]"
+          >
+            <X size={13} />
+          </button>
+        )}
       </div>
 
       {isOpen && (suggestions.length > 0 || isLoading || noResults) && (

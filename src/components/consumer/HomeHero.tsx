@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, MapPin, Search } from "lucide-react";
+import { ArrowRight, MapPin, Search, X } from "lucide-react";
 import { usePlaceAutocomplete } from "@/hooks/usePlaceAutocomplete";
 import { FrostedTopNav } from "@/components/consumer/FrostedTopNav";
 import { useAppShell } from "@/components/layout/AppShell";
@@ -272,6 +272,16 @@ export function HomeHero({
                   // looked right at rest and wrong the moment anyone used it.
                   className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--color-muted)] min-[640px]:text-[13px] min-[1025px]:text-sm"
                 />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => onQueryChange("")}
+                    aria-label="ล้างการค้นหา"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)] min-[640px]:h-8 min-[640px]:w-8"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
                 <button
                   type="submit"
                   aria-label="ค้นหาทริป"

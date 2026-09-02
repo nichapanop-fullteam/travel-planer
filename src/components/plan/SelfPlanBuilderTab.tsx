@@ -1650,6 +1650,16 @@ export function RecommendPlacesFlow({
               placeholder="ค้นหาชื่อที่ ย่าน หรือประเภท"
               className="w-full bg-transparent text-sm focus:outline-none"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="ล้างการค้นหา"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)]"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
 
           {!lockToCategory && (
