@@ -78,7 +78,7 @@ export function RealTripCard({
   function handleToggleSaved(e: React.MouseEvent) {
     e.preventDefault();
     if (!backendUser) {
-      router.push(`/login?redirect=${encodeURIComponent("/main")}`);
+      router.push(`/login?redirect=${encodeURIComponent("/")}`);
       return;
     }
     if (saving) return;
@@ -110,7 +110,7 @@ export function RealTripCard({
   function handleToggleLiked(e: React.MouseEvent) {
     e.preventDefault();
     if (!backendUser) {
-      router.push(`/login?redirect=${encodeURIComponent("/main")}`);
+      router.push(`/login?redirect=${encodeURIComponent("/")}`);
       return;
     }
     if (liking) return;

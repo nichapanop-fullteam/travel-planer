@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
       "วางแผนทริป แชร์กับเพื่อน และเก็บทุกไอเดียการเดินทางไว้ในที่เดียว",
     lang: "th",
     dir: "ltr",
-    start_url: "/main",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

@@ -23,7 +23,7 @@ export default function SharedTripNotFound() {
         ลิงก์อาจถูกยกเลิก หมดอายุ หรือไม่ถูกต้อง ลองขอลิงก์ใหม่จากผู้ที่แชร์ให้คุณ
       </p>
       <Link
-        href="/main"
+        href="/"
         className="mt-2 inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
       >
         ไปหน้าสำรวจทริป

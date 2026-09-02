@@ -78,9 +78,10 @@ PuntokIcon.displayName = "NavPuntokIcon";
 //
 // Home and Profile use the exported design assets. The other two exported
 // icons — a magnifier and a shuffle — belong to the reference's Discovery and
-// Remix tabs, which this bar does not have: /main *is* the discovery feed, and
-// remixing starts from a public plan's own page (POST /trips/:sourceTripId/remix
-// needs a source, so there is no standalone route). My Trips and Saved keep
+// Remix tabs, which this bar does not have: the home feed at "/" *is* the
+// discovery feed, and remixing starts from a public plan's own page
+// (POST /trips/:sourceTripId/remix needs a source, so there is no standalone
+// route). My Trips and Saved keep
 // lucide glyphs rather than borrowing an icon that would name the wrong place.
 //
 // Shown up to 1024px inclusive so it covers iPad in both orientations, the
@@ -88,7 +89,7 @@ PuntokIcon.displayName = "NavPuntokIcon";
 // in step matters: at widths where one applied and the other didn't, the layout
 // was neither the app treatment nor the desktop one.
 const DESTINATIONS: { key: NavKey; label: string; icon: NavIcon; href: string }[] = [
-  { key: "home", label: "Home", icon: HomeIcon, href: "/main" },
+  { key: "home", label: "Home", icon: HomeIcon, href: "/" },
   { key: "myTrips", label: "My Trip", icon: MyTripsIcon, href: "/my-trips" },
   { key: "puntok", label: "Puntok", icon: PuntokIcon, href: "/puntok" },
 ];
@@ -101,7 +102,7 @@ export function MobileBottomNav({ active }: { active?: NavKey }) {
   // highlights correctly.
   const resolved: NavKey | undefined =
     active ??
-    (pathname === "/main"
+    (pathname === "/"
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"

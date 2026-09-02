@@ -10,9 +10,9 @@ import { CreateTripButton } from "@/components/ui/CreateTripButton";
 type NavKey = "home" | "myTrips" | "puntok" | "saved" | "messages";
 
 // Sidebar nav, restyled to match the "Discover your next journey" reference
-// layout — every visible entry now links somewhere real (see app/main,
+// layout — every visible entry now links somewhere real (see app/page.tsx,
 // app/my-trips, app/saved). "Explore" used to sit between Home and My Trips
-// as a dead placeholder: it had no href at all, and /main is itself the
+// as a dead placeholder: it had no href at all, and the home feed is itself the
 // explore feed (its own heading reads "สำรวจทริปของคุณ"), so the two were
 // the same destination under two names. Messages is hidden rather than
 // deleted — see navItems below. The previous "Groups Trip"/"ทริปของฉัน"
@@ -22,7 +22,7 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
   const pathname = usePathname();
   const resolvedActive: NavKey | undefined =
     active ??
-    (pathname === "/main"
+    (pathname === "/"
       ? "home"
       : pathname?.startsWith("/my-trips")
         ? "myTrips"
@@ -40,7 +40,7 @@ export function Sidebar({ active, onClose }: { active?: NavKey; onClose?: () => 
   // Messages, which has no backend yet (its "2" badge was always a mock).
   // Drop the flag to bring it back once there's something real behind it.
   const navItems: { key: NavKey; label: string; icon: typeof Home; href?: string; badge?: number; hidden?: boolean }[] = [
-    { key: "home", label: "Home", icon: Home, href: "/main" },
+    { key: "home", label: "Home", icon: Home, href: "/" },
     { key: "myTrips", label: "My Trips", icon: Briefcase, href: "/my-trips" },
     // Same destination the bottom bar's Puntok tab points at, so the two navs
     // reach the same set of pages.

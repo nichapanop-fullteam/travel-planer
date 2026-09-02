@@ -264,6 +264,53 @@ body {
   }
 }
 
+/*
+ * PlacePopup's two presentations, and which device gets which.
+ *
+ * These are classes rather than Tailwind's `sm:` because a width breakpoint is
+ * not a reliable device signal in an installed PWA — the same standalone
+ * layout-viewport quirk that hid the bottom bar makes `sm:` (640px) evaluate
+ * true on a phone. That turned the panel into `position: absolute` anchored to
+ * a list-row button, which the row's own overflow-hidden then clipped: the
+ * panel appeared sliced down its left edge, mid-card.
+ *
+ * So the split is device capability, not width, and it fails toward the sheet:
+ * anything that is not clearly a mouse-driven desktop gets the full-width
+ * bottom sheet, which is correct at every size even when it is not ideal.
+ */
+.trip-place-sheet {
+  display: block;
+}
+
+.trip-place-anchored {
+  display: none;
+}
+
+@media (min-width: 1025px) and (hover: hover) and (pointer: fine) {
+  .trip-place-sheet {
+    display: none;
+  }
+
+  .trip-place-anchored {
+    display: block;
+  }
+
+  /* Centred dialog instead of a bottom sheet, for the modal variant. Every
+     one of these would have been an `sm:` utility; they live here so the
+     switch happens on the same query as the two classes above. */
+  .trip-place-modal {
+    inset-inline: auto;
+    left: 50%;
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: min(38rem, calc(100vh - 2rem));
+    border-radius: 1.5rem;
+    border-width: 1px;
+  }
+}
+
 /* /main's feed caps at four columns at every width. This used to break out to
    five columns past 1800px and drop the container's max-width entirely, which
    let the grid run the full width of an ultrawide display — cards got narrow

@@ -17,7 +17,7 @@ import { useAppShell } from "@/components/layout/AppShell";
 // the same real routes the Sidebar lists; see the note in the handover about
 // that duplication.
 const NAV_TABS: { href: string; label: string; icon: typeof Luggage }[] = [
-  { href: "/main", label: "แพ็กเกจทริป", icon: Luggage },
+  { href: "/", label: "แพ็กเกจทริป", icon: Luggage },
   { href: "/my-trips", label: "ทริปของฉัน", icon: MapPinned },
 ];
 
@@ -55,7 +55,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           >
             <Menu size={18} />
           </button>
-          <Link href="/main" className="text-xl font-extrabold tracking-[-0.03em] text-[var(--color-primary)] md:hidden">
+          <Link href="/" className="text-xl font-extrabold tracking-[-0.03em] text-[var(--color-primary)] md:hidden">
             PunGuide
           </Link>
         </div>

@@ -16,17 +16,17 @@ import { listTrips, type BackendTripListItem } from "@/lib/trips-api";
 import { useAuth } from "@/providers/AuthProvider";
 
 // The full-screen search surface for phones and tablets. A route rather than an
-// overlay on /main: it gets real back-button behaviour for free, and the mock's
+// overlay on the home feed: it gets real back-button behaviour for free, and the mock's
 // own back chevron then means the same thing as the system gesture.
 //
 // Nothing here is a mock. "ค้นหาล่าสุด" is this browser's own history
 // (lib/recent-searches.ts — localStorage, since there is no search-history
 // endpoint), and "Search Trend" ranks the destinations that real published
 // trips actually go to (deriveTrendingPlaces over GET /trips), the same way
-// /main's Top Destination rail does. A destination only appears once somebody
+// the home feed's Top Destination rail does. A destination only appears once somebody
 // has published a trip to it.
 //
-// Running a search hands the term to /main, which is where the feed and all its
+// Running a search hands the term to "/", which is where the feed and all its
 // filtering already live — duplicating the grid here would mean two places to
 // keep in step.
 const TREND_LIMIT = 6;
@@ -56,7 +56,7 @@ export default function SearchPage() {
     inputRef.current?.focus();
   }, []);
 
-  // Same auth gate as /main's feed fetch: listTrips attaches the backend token
+  // Same auth gate as the home feed's fetch: listTrips attaches the backend token
   // when there is one, and that token only exists after restoreBackendSession
   // settles (see lib/backend-user.ts). Firing on mount would send it
   // unauthenticated for no reason.
@@ -84,7 +84,7 @@ export default function SearchPage() {
     const trimmed = value.trim();
     if (!trimmed) return;
     addRecentSearch(trimmed);
-    router.push(`/main?q=${encodeURIComponent(trimmed)}`);
+    router.push(`/?q=${encodeURIComponent(trimmed)}`);
   }
 
   return (

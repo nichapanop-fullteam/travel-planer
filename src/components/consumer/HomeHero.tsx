@@ -13,7 +13,7 @@ import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 const SEARCH_ID = "home-search";
 const SUGGESTIONS_ID = "home-search-suggestions";
 
-// /main's hero — the frosted app bar, the page's one <h1>, and the feed search.
+// The home feed's hero — the frosted app bar, the page's one <h1>, and the feed search.
 // Replaces the old white sticky HomeNavbar + tinted FeedSearchBar band: the
 // wordmark, menu, account and search all lived in that bar, and they all have a
 // home here now (search below, the rest inside FrostedTopNav).
@@ -33,12 +33,13 @@ export function HomeHero({
   query: string;
   onQueryChange: (next: string) => void;
   /** Small line above the heading — /my-trips' "ยินดีต้อนรับกลับมา". Omitted
-   *  on /main, where the heading stands on its own. */
+   *  on the home feed, where the heading stands on its own. */
   eyebrow?: string;
   title?: string;
   searchPlaceholder?: string;
-  /** Where the compact layout hands searching off to. /main sends people to
-   *  /search, the full-screen surface with recent terms and trends. A page
+  /** Where the compact layout hands searching off to. The home feed sends
+   *  people to /search, the full-screen surface with recent terms and trends.
+   *  A page
    *  whose field filters a list already on screen (/my-trips) passes null:
    *  there is nothing to hand off to, so the live field stays at every width
    *  and the app bar grows no search icon. */

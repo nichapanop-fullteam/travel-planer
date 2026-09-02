@@ -191,7 +191,7 @@ export default async function SharedTripPage({ params }: PageProps) {
           >
             <p className="text-sm text-[var(--color-muted)]">อยากวางแผนทริปของตัวเอง?</p>
             <Link
-              href="/main"
+              href="/"
               className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
             >
               เริ่มใช้ PunGuide

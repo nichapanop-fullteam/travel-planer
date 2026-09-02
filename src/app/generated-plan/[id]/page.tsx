@@ -305,6 +305,16 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const [likeOverride, setLikeOverride] = useState<{ liked: boolean; count: number } | null>(null);
   const [liking, setLiking] = useState(false);
   const segmentBackfillRequestedRef = useRef(new Set<string>());
+  // Hero's own hero-photo gallery is fetched once per trip.id (see its
+  // getTripGallery effect) and never re-fetched just because trip.coverImage
+  // patched in — so picking a new cover here updated the trip object but the
+  // carousel kept showing photos in their old order until a manual reload.
+  // Tracked as a ref rather than reacting to onCoverChanged directly: the
+  // dialog can be opened, a cover picked, then changed again before closing,
+  // and a full reload on every pick would tear the gallery dialog down
+  // mid-session. Reloading once when it actually closes, only if something
+  // changed, gets the same "shows the latest data" outcome without that.
+  const coverDidChangeRef = useRef(false);
   const { backendUser, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
   const remix = useRemixTrip();
@@ -520,7 +530,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="text-lg font-bold">ไม่พบแผนทริปนี้</p>
         <Link
-          href="/main"
+          href="/"
           className="rounded-full px-6 py-2.5 text-sm font-semibold text-white"
           style={{ backgroundColor: "var(--color-brand-green)" }}
         >
@@ -697,6 +707,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       return { ...prev, ...patch };
     });
   }
+
 
   function handleAutoTravelCalculationChange(enabled: boolean) {
     if (enabled) segmentBackfillRequestedRef.current.clear();
@@ -1250,8 +1261,17 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       {galleryDialogOpen && (
         <TripGalleryDialog
           tripId={trip.id}
-          onClose={() => setGalleryDialogOpen(false)}
-          onCoverChanged={(coverImage, mediaSummary) => applyPatch({ coverImage, mediaSummary })}
+          onClose={() => {
+            setGalleryDialogOpen(false);
+            if (coverDidChangeRef.current) {
+              coverDidChangeRef.current = false;
+              window.location.reload();
+            }
+          }}
+          onCoverChanged={(coverImage, mediaSummary) => {
+            applyPatch({ coverImage, mediaSummary });
+            coverDidChangeRef.current = true;
+          }}
         />
       )}
 
@@ -3690,7 +3710,7 @@ function TripMapPanel({ day }: { day: Day }) {
           style={{ left: pos.x, top: pos.y }}
         >
           {selected && isSelected && (
-            <div className="hidden sm:block">
+            <div className="trip-place-anchored">
               <PlacePopup
                 key={selected.id}
                 activity={selected}
@@ -3714,7 +3734,7 @@ function TripMapPanel({ day }: { day: Day }) {
       })}
 
       {selected && selectedIndex >= 0 && (
-        <div className="sm:hidden">
+        <div className="trip-place-sheet">
           <button
             type="button"
             aria-label="ปิดข้อมูลสถานที่"
@@ -3788,11 +3808,15 @@ function PlacePopup({
   const [activeTab, setActiveTab] = useState<PlaceDetailTab>("about");
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // The phone layout behaves like an app bottom sheet. Preventing the page
+  // The sheet layout behaves like an app bottom sheet. Preventing the page
   // behind it from scrolling avoids the map moving while users browse details.
+  //
+  // Matched on the same device query the stylesheet uses (see
+  // .trip-place-sheet), not a width — in an installed PWA a width query
+  // reports the wrong thing and the lock was being skipped on real phones.
   useEffect(() => {
-    const phoneViewport = window.matchMedia("(max-width: 639px)");
-    if (!phoneViewport.matches) return;
+    const isSheet = !window.matchMedia("(min-width: 1025px) and (hover: hover) and (pointer: fine)").matches;
+    if (!isSheet) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -3860,10 +3884,13 @@ function PlacePopup({
       role="dialog"
       aria-modal={openBelow === undefined}
       aria-label={`ข้อมูลสถานที่ ${name}`}
-      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${
+      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl ${
         isModal
-          ? "sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2"
-          : `sm:absolute ${horizontalClass} ${verticalClass}`
+          ? // Geometry comes from the stylesheet, not sm: utilities — see
+            // .trip-place-modal for why a width breakpoint can't be trusted
+            // to tell a phone from a desktop here.
+            "trip-place-modal"
+          : `sm:absolute sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${horizontalClass} ${verticalClass}`
       }`}
       style={{ borderColor: "var(--color-border-tag)" }}
       onClick={(e) => e.stopPropagation()}

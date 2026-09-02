@@ -198,7 +198,7 @@ export default function RemixDiscoveryPage() {
             <Menu size={16} />
           </button>
         </div>
-        <Link href="/main" className="text-lg font-extrabold text-[var(--foreground)]">
+        <Link href="/" className="text-lg font-extrabold text-[var(--foreground)]">
           PunGuide
         </Link>
         <div className="flex items-center gap-2">

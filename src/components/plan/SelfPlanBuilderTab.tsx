@@ -699,7 +699,7 @@ function AddPlacesAccordion({
           </button>
         ) : (
           <Link
-            href="/main"
+            href="/"
             className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold"
             style={{ borderColor: "var(--color-border)" }}
           >
@@ -1194,6 +1194,31 @@ function AddPlaceDialog({
     setDrafts((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], ...patch } } : prev));
   }
 
+  // Only reachable from showDetailsForm's list (RecommendPlacesFlow's review
+  // step) — that list renders every checked place with no way to drop one
+  // individually, only "ล้างที่เลือก" for all of them at once. Unchecking
+  // alone wouldn't do it either: the list there doesn't filter by checkedIds,
+  // it renders every entry in `places` as already-selected (see the comment
+  // on SelectedPlaceCard) — so this also needs the list to filter below.
+  function removePlace(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setDrafts((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
   function handleConfirm() {
     const day = days.find((d) => d.id === selectedDayId);
     const chosen = places.filter((p) => checkedIds.has(p.id));
@@ -1269,7 +1294,7 @@ function AddPlaceDialog({
               </div>
             ) : (
               <div className={showDetailsForm ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>
-                {places.map((place) =>
+                {(showDetailsForm ? places.filter((p) => checkedIds.has(p.id)) : places).map((place) =>
                   showDetailsForm ? (
                     <SelectedPlaceCard
                       key={place.id}
@@ -1278,6 +1303,7 @@ function AddPlaceDialog({
                       draft={drafts[place.id]}
                       onToggleExpand={() => toggleExpanded(place.id)}
                       onChangeDraft={(patch) => patchDraft(place.id, patch)}
+                      onRemove={() => removePlace(place.id)}
                     />
                   ) : (
                     <PlaceCheckCard
@@ -1347,12 +1373,16 @@ function SelectedPlaceCard({
   draft,
   onToggleExpand,
   onChangeDraft,
+  onRemove,
 }: {
   place: EnrichedPlace;
   expanded: boolean;
   draft?: PlaceDraft;
   onToggleExpand: () => void;
   onChangeDraft: (patch: Partial<PlaceDraft>) => void;
+  // Drops this place from the review list entirely — the only other way to
+  // shrink it is "ล้างที่เลือก", which clears every place at once.
+  onRemove: () => void;
 }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
 
@@ -1386,6 +1416,18 @@ function SelectedPlaceCard({
           <p className="line-clamp-2 text-xs text-[var(--color-muted)]">{place.address}</p>
         </div>
         <Checkbox checked={expanded} onClick={onToggleExpand} />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          aria-label={`เอา ${place.name} ออก`}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
+          style={{ backgroundColor: "var(--color-danger-bg)", borderColor: "var(--color-danger-border)", color: "var(--color-danger)" }}
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
 
       {expanded && draft && (

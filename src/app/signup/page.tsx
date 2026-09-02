@@ -24,7 +24,7 @@ export default function SignupPage() {
       setError(result.error);
       return;
     }
-    router.push("/main");
+    router.push("/");
   }
 
   return (

@@ -12,7 +12,7 @@ import { loginWithEmail } from "@/lib/auth";
 // URL in ?redirect= must never be followed (open-redirect risk).
 function safeRedirectTarget(raw: string | null): string {
   if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
-  return "/main";
+  return "/";
 }
 
 // Static prerendering of this page requires useSearchParams (used here for
