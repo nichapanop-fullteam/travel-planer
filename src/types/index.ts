@@ -299,7 +299,7 @@ export interface GeneratedTrip {
   // buildGeneratedTripFromBackendTrip in lib/generated-trips.ts) — absent for
   // local-only/never-synced trips, which are always the current browser's own.
   ownerId?: string;
-  creator?: { id: string; name: string; avatarUrl?: string };
+  creator?: { id: string; name: string; avatarUrl?: string; groupSize?: number };
   planMode?: string;
   saveCount?: number;
   remixCount?: number;

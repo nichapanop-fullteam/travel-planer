@@ -185,11 +185,8 @@ async function uploadActivityImages(
 }
 
 // Per-day estimated baht per person — used only to derive a rough
-// budgetLimit (amount × days) when the draft picked a preset tier instead of
-// typing a custom number. Matches BUDGET_PRESET_LABEL in
-// lib/generated-trips.ts. The traveler count is deliberately NOT a factor:
-// budgetLimit is a per-person cap, matching the per-person amounts the
-// budget tab writes (see BudgetManagementPanel).
+// budgetLimit when the draft picked a preset tier instead of typing a custom
+// number. Matches BUDGET_PRESET_LABEL in lib/generated-trips.ts.
 const BUDGET_TIER_DAILY_AMOUNT: Record<string, number> = {
   economy: 800,
   comfort: 3000,
@@ -285,18 +282,25 @@ function buildTransportAndConstraints(draft?: TripDraft): {
 // leaving it undefined for draftless trips.
 const DEFAULT_BUDGET_TIER: BudgetTier = "economy";
 
-function buildBudget(draft: TripDraft | undefined, durationDays: number) {
+// Both sources of a budget figure here are baht per person per day — the
+// wizard's "ระบุเอง" field and the preset tiers alike — but budgetLimit is a
+// cap on the whole trip for the whole group, so the traveler count is part of
+// the conversion, not just the day count.
+function buildBudget(draft: TripDraft | undefined, durationDays: number, numPeople: number) {
   if (!draft?.budget) return { budgetTier: DEFAULT_BUDGET_TIER, budgetLimit: undefined };
 
   if (draft.budget === "custom") {
-    const perDay = Number(draft.customBudget.replace(/[^\d]/g, ""));
-    const budgetLimit = Number.isFinite(perDay) && perDay > 0 ? perDay * durationDays : undefined;
+    const perPersonPerDay = Number(draft.customBudget.replace(/[^\d]/g, ""));
+    const budgetLimit =
+      Number.isFinite(perPersonPerDay) && perPersonPerDay > 0
+        ? perPersonPerDay * durationDays * numPeople
+        : undefined;
     return { budgetTier: "custom" as BudgetTier, budgetLimit };
   }
 
   const tier = BUDGET_KEY_TO_TIER[draft.budget] ?? DEFAULT_BUDGET_TIER;
-  const perDay = BUDGET_TIER_DAILY_AMOUNT[tier];
-  const budgetLimit = perDay ? perDay * durationDays : undefined;
+  const perPersonPerDay = BUDGET_TIER_DAILY_AMOUNT[tier];
+  const budgetLimit = perPersonPerDay ? perPersonPerDay * durationDays * numPeople : undefined;
   return { budgetTier: tier, budgetLimit };
 }
 
@@ -345,7 +349,7 @@ export function buildCreateTripRequest(
   // even for draftless trips (see buildBudget/buildStylesAndCustom comments
   // for the same "required, not just validated-if-present" pattern).
   const numPeople = draft ? Math.min(Math.max(draft.adults + draft.children, 1), 50) : 1;
-  const { budgetTier, budgetLimit } = buildBudget(draft, durationDays);
+  const { budgetTier, budgetLimit } = buildBudget(draft, durationDays, numPeople);
 
   return {
     title: trip.title || trip.destination,

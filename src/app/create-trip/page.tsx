@@ -47,25 +47,7 @@ import { generatePlan, GeneratePlanError } from "@/lib/generate-plan-api";
 import { buildGeneratePlanRequest } from "@/lib/generate-plan-mapping";
 import { createDraftTripOnServer } from "@/lib/trips-draft-api";
 import { createTripDayOnServer } from "@/lib/trips-update-api";
-import type {
-  Activity,
-  ActivityCategory,
-  Destination,
-  GeneratedTrip,
-  PlaceCategory,
-  TripCreationMode,
-  TripDraft,
-} from "@/types";
-
-// ai mode: places picked on the recommended-places step have no day chosen —
-// they're all folded into day 1 once the AI response comes back (see
-// withAiRecommendations). This is the 3-value PlaceCategory bucket the old
-// CATEGORY_SECTIONS UI groups places into, not the external API's 7-value one.
-const PLACE_TO_ACTIVITY_CATEGORY: Record<PlaceCategory, ActivityCategory> = {
-  hotel: "hotel",
-  restaurant: "food",
-  attraction: "sightseeing",
-};
+import type { Destination, PlaceCategory, TripCreationMode, TripDraft } from "@/types";
 
 interface StyleOption {
   tag: string;
@@ -106,10 +88,10 @@ const MORE_HOTEL_STYLE_OPTIONS = ["อพาร์ทเมนท์", "แค�
 const HOTEL_GRADE_OPTIONS = ["1★", "2★", "3★", "4★", "5★"];
 const MORE_HOTEL_GRADE_OPTIONS = ["ไม่ระบุ", "หรูหราพิเศษ"];
 
-// "PunGuide จัดแพลนให้ (AI)" is hidden for now — the form runs in self mode
-// only, so the ModeToggle is not rendered and ?mode= is ignored. Flip this back
-// to true to bring the AI mode (and its step 2) back.
-const AI_MODE_ENABLED = false;
+// Gates "PunGuide จัดแพลนให้ (AI)": the ModeToggle, step 2 (recommended
+// places), and whether ?mode= is honoured at all. Set to false to run the form
+// in self mode only.
+const AI_MODE_ENABLED = true;
 
 const COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
 const MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
@@ -262,37 +244,6 @@ function CreateTripForm() {
         ? prev.filter((s) => s.place.googlePlaceId !== place.googlePlaceId)
         : [...prev, { place, category }]
     );
-  }
-
-  // Appends whatever the user picked on the recommended-places step as extra
-  // day-1 activities — the trip is built from the draft's preferences alone,
-  // not this selection, so it's merged in afterward. ai mode doesn't know
-  // the real Day[] until the API responds, so everything lands on day 1.
-  function withAiRecommendations(trip: GeneratedTrip): GeneratedTrip {
-    if (selectedRecommendations.length === 0 || trip.days.length === 0) return trip;
-
-    const firstDay = trip.days[0];
-    const startingCount = firstDay.activities.length;
-    const extraActivities: Activity[] = selectedRecommendations.map(({ place, category }, i) => ({
-      id: crypto.randomUUID(),
-      time: `${String(Math.min(9 + startingCount + i, 22)).padStart(2, "0")}:00`,
-      title: place.name,
-      category: PLACE_TO_ACTIVITY_CATEGORY[category],
-      location: {
-        name: place.name,
-        lat: place.latitude,
-        lng: place.longitude,
-        rating: place.rating,
-        imageUrl: place.imageUrl,
-        googlePlaceId: place.googlePlaceId,
-      },
-      cost: 0,
-    }));
-
-    return {
-      ...trip,
-      days: [{ ...firstDay, activities: [...firstDay.activities, ...extraActivities] }, ...trip.days.slice(1)],
-    };
   }
 
   function submit(isSkip: boolean) {
@@ -462,9 +413,13 @@ function CreateTripForm() {
       return;
     }
 
-    generatePlan(buildGeneratePlanRequest(draft))
+    // The places picked on the recommended-places step go into the request as
+    // selectedPlaceIds rather than being appended to the response: the API
+    // guarantees each one is in the plan it builds, on a day and at a time it
+    // chose, instead of them all landing on day 1 after the fact.
+    generatePlan(buildGeneratePlanRequest(draft, selectedRecommendations.map((s) => s.place.googlePlaceId)))
       .then((response) => {
-        const generatedTrip = withAiRecommendations(buildGeneratedTripFromApiResponse(draft, response));
+        const generatedTrip = buildGeneratedTripFromApiResponse(draft, response);
         saveGeneratedTrip(generatedTrip);
         clearLastCreateTripSearch();
         router.push(`/generated-plan/${generatedTrip.id}?edit=1`);
@@ -477,6 +432,12 @@ function CreateTripForm() {
         // trips server-side). The user has to manually resubmit.
         isSubmittingRef.current = false;
         setStatus("error");
+        // Anything that isn't a GeneratePlanError got thrown while mapping a
+        // *successful* response (a changed field name in the draft, say), and
+        // the generic message below makes that look identical to the service
+        // being down. Log the real error so the difference is visible in
+        // devtools instead of only as a stuck form.
+        if (!(err instanceof GeneratePlanError)) console.error("Failed to build trip from generated plan", err);
         setErrorMessage(err instanceof GeneratePlanError ? err.message : "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
       });
   }

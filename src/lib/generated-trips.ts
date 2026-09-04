@@ -1,5 +1,12 @@
-import type { Day, GeneratedTrip, TripDraft } from "@/types";
-import type { GeneratePlanResponse, Intensity } from "./generate-plan-api";
+import type { ActivityCategory, Day, GeneratedTrip, TripDraft } from "@/types";
+import type { ExternalPlaceCategory } from "./external-places-api";
+import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "./place-mock-metadata";
+import type {
+  GeneratePlanDraft,
+  GeneratePlanDraftItem,
+  GeneratePlanResponse,
+  Intensity,
+} from "./generate-plan-api";
 import type { BackendTrip } from "./trips-api";
 import {
   BUDGET_KEY_TO_TIER,
@@ -7,9 +14,21 @@ import {
   PACE_TO_INTENSITY,
   STYLE_TAG_TO_ENUM,
 } from "./generate-plan-mapping";
+import { toPerPersonAmount } from "./budget-units";
 import { formatTHB } from "./trip-utils";
 
 const STORAGE_KEY = "punguide.generatedTrips";
+
+// "activity" is in both taxonomies and resolves the same way in each, so the
+// overlap costs nothing — EXTERNAL_TO_ACTIVITY_CATEGORY is consulted first.
+const ACTIVITY_CATEGORIES: ActivityCategory[] = [
+  "transport",
+  "food",
+  "hotel",
+  "sightseeing",
+  "activity",
+  "other",
+];
 
 // No backend yet — generated plans are persisted client-side only, same
 // pattern as lib/trip-drafts.ts.
@@ -314,24 +333,53 @@ export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
 // authoritative numbers it actually used, but this app doesn't have a
 // "resolved brief" UI yet, so the draft-derived labels stay the source of
 // truth for display for now.
+// The generation service is inconsistent across deployments about what it
+// calls a day's stops (`activities` vs the documented `items`) and their time
+// and cost fields (`time`/`cost` vs `startTime`/`costAmount`). Read both, and
+// fall back to an empty list rather than indexing into undefined: a shape this
+// doesn't recognise has to degrade to an empty day, not throw — a throw here
+// lands in create-trip's .catch() and strands the traveler on the form with a
+// generic error, even though the plan generated fine server-side.
+function normalizeDraftItems(day: GeneratePlanDraft["days"][number]): GeneratePlanDraftItem[] {
+  const items = day.activities ?? day.items;
+  return Array.isArray(items) ? items : [];
+}
+
+// A generated item's category arrives in the `places` table's taxonomy
+// (attraction/restaurant/cafe/…), not this app's ActivityCategory, because
+// that's what every other place-returning endpoint uses. Passing "restaurant"
+// straight through would satisfy nobody downstream: getTripPlaceStats counts
+// "food", the icon lookup keys off ActivityCategory, and the header's
+// ที่เที่ยว/ร้านอาหาร/ที่พัก counts would all read 0. Both taxonomies are
+// accepted so the service can send whichever it has.
+function normalizeCategory(category: GeneratePlanDraftItem["category"]): ActivityCategory {
+  if (!category) return "activity";
+  if (category in EXTERNAL_TO_ACTIVITY_CATEGORY) {
+    return EXTERNAL_TO_ACTIVITY_CATEGORY[category as ExternalPlaceCategory];
+  }
+  return ACTIVITY_CATEGORIES.includes(category as ActivityCategory)
+    ? (category as ActivityCategory)
+    : "activity";
+}
+
 export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: GeneratePlanResponse): GeneratedTrip {
   const { draft: apiDraft, generation } = response;
-  const days: Day[] = apiDraft.days.map((day) => ({
+  const days: Day[] = (apiDraft.days ?? []).map((day) => ({
     id: crypto.randomUUID(),
     dayNumber: day.dayNumber,
     date: day.date ?? "",
-    activities: day.items.map((item) => ({
+    activities: normalizeDraftItems(day).map((item) => ({
       id: crypto.randomUUID(),
-      time: item.startTime ?? "",
+      time: item.startTime ?? item.time ?? "",
       title: item.title ?? item.customName ?? "สถานที่แนะนำ",
-      category: item.category ?? "activity",
+      category: normalizeCategory(item.category),
       location: item.location
         ? { ...item.location, googlePlaceId: item.placeId }
         : item.placeId
           ? { name: item.title ?? "สถานที่แนะนำ", googlePlaceId: item.placeId }
           : undefined,
       notes: item.notes,
-      cost: item.costAmount ?? 0,
+      cost: item.costAmount ?? item.cost ?? 0,
       travelNote:
         item.travelTimeFromPrevMin != null
           ? `~${item.travelTimeFromPrevMin} นาที${item.travelDistanceFromPrevKm != null ? ` · ${item.travelDistanceFromPrevKm} กม.` : ""}`
@@ -358,13 +406,19 @@ export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: Ge
     styles: draft.styles,
     status: "generated",
     days,
-    generationNotice: generation.resolvedWithoutErrors
-      ? undefined
-      : {
-          resolvedWithoutErrors: generation.resolvedWithoutErrors,
-          modelWarnings: generation.modelWarnings,
-          violations: generation.violations,
-        },
+    // resolvedWithoutErrors alone isn't enough to decide whether to warn:
+    // a place the traveler explicitly picked that didn't fit in the plan
+    // comes back as a *warning*, so the response still resolves cleanly while
+    // something the traveler asked for is missing. That one has to be shown.
+    generationNotice:
+      generation.resolvedWithoutErrors &&
+      !generation.violations.some((v) => v.code === "missing_picked_place")
+        ? undefined
+        : {
+            resolvedWithoutErrors: generation.resolvedWithoutErrors,
+            modelWarnings: generation.modelWarnings,
+            violations: generation.violations,
+          },
   };
 }
 
@@ -429,8 +483,13 @@ export function buildGeneratedTripFromBackendTrip(
   // budgetLimit (the numeric cap set via EditTripDialog's "งบประมาณ" field)
   // wins over the preset budgetTier — it's the more specific, more recently
   // editable value; a tier is just what create-trip's wizard started from.
-  const budgetLabel = trip.budgetLimit
-    ? `${formatTHB(trip.budgetLimit)} / วัน`
+  //
+  // It arrives as a whole-trip cap for the whole group and is shown, like
+  // every other figure in this app, per person (see lib/budget-units.ts).
+  const budgetGoal =
+    trip.budgetLimit != null ? toPerPersonAmount(trip.budgetLimit, trip.customer?.groupSize) : undefined;
+  const budgetLabel = budgetGoal
+    ? `${formatTHB(budgetGoal)} / คน`
     : budgetKey
       ? (BUDGET_PRESET_LABEL[budgetKey] ?? budgetKey)
       : "ยังไม่ระบุ";
@@ -469,7 +528,7 @@ export function buildGeneratedTripFromBackendTrip(
     paceLabel: pace ? `${pace} ${PACE_DESCRIPTION[pace] ?? ""}`.trim() : "ยังไม่ระบุ",
     pace: brief?.intensity as Intensity | undefined,
     budgetLabel,
-    budgetGoal: trip.budgetLimit,
+    budgetGoal,
     conditionsLabel: conditions.length ? conditions.join(", ") : "ไม่มีเงื่อนไขพิเศษ",
     styles,
     status: trip.status === "confirmed" ? "confirmed" : "generated",
@@ -479,7 +538,12 @@ export function buildGeneratedTripFromBackendTrip(
     backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
     ownerId: trip.ownerId,
     creator: trip.customer
-      ? { id: trip.customer.id, name: trip.customer.name, avatarUrl: trip.customer.avatarUrl }
+      ? {
+          id: trip.customer.id,
+          name: trip.customer.name,
+          avatarUrl: trip.customer.avatarUrl,
+          groupSize: trip.customer.groupSize,
+        }
       : undefined,
     planMode: trip.planMode,
     saveCount: trip.saveCount,

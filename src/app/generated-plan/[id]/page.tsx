@@ -133,6 +133,7 @@ import {
   getTripPlaceStats,
   getTripTotalCost,
 } from "@/lib/trip-utils";
+import { toWholeTripAmount } from "@/lib/budget-units";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
@@ -606,7 +607,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       durationDays: current.days.length,
       durationNights: Math.max(current.days.length - 1, 0),
       pace: current.pace,
-      budgetLimit: current.budgetGoal,
+      // budgetGoal is per person like every other figure in the app; the
+      // API's cap covers the whole group (see lib/budget-units.ts).
+      budgetLimit:
+        current.budgetGoal != null ? toWholeTripAmount(current.budgetGoal, current.creator?.groupSize) : undefined,
       specialNotes: current.conditionsLabel.slice(0, 2000),
     });
 
@@ -1565,8 +1569,14 @@ function Hero({
   // of whatever day a previous visit to the plan tab left this on.
   planDayIndex: number;
 }) {
+  // A flexible-date trip ("3 วัน 2 คืน", no calendar dates chosen) has an empty
+  // date on every day — the AI generation response returns date: null for all
+  // of them. formatSlashDateRange gives back "" for that, so the duration is
+  // shown on its own rather than the whole line disappearing along with the
+  // dates it couldn't format.
   const dateRangeLabel =
-    trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : undefined;
+    trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : "";
+  const scheduleLabel = [dateRangeLabel, trip.durationLabel].filter(Boolean).join(" · ");
   // GeneratedTripStatus has no "active" state of its own — a confirmed trip
   // (i.e. locked in, not just an AI draft) is what the design calls "Active".
   const statusLabel = trip.status === "confirmed" ? "Active" : "แบบร่าง";
@@ -1596,11 +1606,28 @@ function Hero({
   // "รวมงบ/วัน" on overview is the trip's spend averaged over its planned
   // days; on the plan tab, now that this is per-day, it's just that one day's
   // own total — no averaging needed since there's nothing left to average.
+  //
+  // trip.totalBudget is the server-computed GROUP total (activity + travel
+  // costs × travelers — see BackendTrip.totalBudget in lib/trips-api.ts), so
+  // it has to be divided back down by groupSize before averaging over days,
+  // same as RealTripCard's perPersonBudget. Without this, the figure jumps
+  // by a factor of the traveler count the moment a trip first syncs to the
+  // backend, even though every other budget figure in the app (activity
+  // costs, budgetGoal, BudgetManagementPanel) is per person — the API's own
+  // budgetLimit is the group total behind it, converted in
+  // lib/budget-units.ts. The
+  // getTripTotalCost fallback (pre-sync, or groupSize unknown) is already
+  // per-person since activity.cost is entered that way.
   const costPerDay = useMemo(() => {
     if (selectedDay) return getDayTotalCost(selectedDay);
     const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
     if (plannedDays === 0) return 0;
-    return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
+    const groupSize = trip.creator?.groupSize;
+    const totalPerPerson =
+      trip.totalBudget != null && groupSize && groupSize > 0
+        ? trip.totalBudget / groupSize
+        : (trip.totalBudget ?? getTripTotalCost(trip));
+    return Math.round(totalPerPerson / plannedDays);
   }, [trip, selectedDay]);
   // A day's own "ที่พัก" is whether it has a check-in stop — trip.accommodation
   // is a whole-trip concept (one chosen stay for the entire itinerary) and
@@ -1615,7 +1642,7 @@ function Hero({
     { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
     { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
     { key: "stays", label: "ที่พัก", value: `${staysCount}` },
-    { key: "budget", label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
+    { key: "budget", label: "งบ/วัน/คน", value: formatTHB(costPerDay) },
     { key: "distance", label: "Total Distance", value: `${distanceKm} km` },
   ];
 
@@ -1795,10 +1822,10 @@ function Hero({
             The remaining tabs keep the badges. */}
         {showSummaryStats ? (
           <>
-            {dateRangeLabel && (
+            {scheduleLabel && (
               <p className="flex items-center gap-1.5 text-sm font-medium text-white">
                 <CalendarDays size={16} className="shrink-0" />
-                {dateRangeLabel} · {trip.durationLabel}
+                {scheduleLabel}
               </p>
             )}
             <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
@@ -1815,10 +1842,10 @@ function Hero({
           </>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {dateRangeLabel && (
+            {scheduleLabel && (
               <p className="flex items-center gap-1.5 text-sm font-medium text-white">
                 <CalendarDays size={16} className="shrink-0" />
-                {dateRangeLabel} · {trip.durationLabel}
+                {scheduleLabel}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
@@ -1838,12 +1865,18 @@ function Hero({
   );
 }
 
+// "" when either end is missing or unparseable — new Date("") is an Invalid
+// Date whose getDate()/getMonth()/getFullYear() are all NaN, which used to
+// render literally as "NaN/NaN/NaN - NaN/NaN/NaN" in the trip header.
 function formatSlashDateRange(startDate: string, endDate: string): string {
-  return `${formatSlashDate(startDate)} - ${formatSlashDate(endDate)}`;
+  const start = formatSlashDate(startDate);
+  const end = formatSlashDate(endDate);
+  return start && end ? `${start} - ${end}` : "";
 }
 
 function formatSlashDate(dateStr: string): string {
   const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}/${d.getFullYear()}`;
@@ -4469,7 +4502,7 @@ function EditTripDialog({
       durationLabel: durationLabelFor(days),
       pace,
       paceLabel,
-      budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / วัน` : "ยังไม่ระบุ",
+      budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / คน` : "ยังไม่ระบุ",
       budgetGoal: budgetAmount ? Number(budgetAmount) : undefined,
       conditionsLabel: conditionsText.trim() || "ไม่มีเงื่อนไขพิเศษ",
     });
@@ -4503,7 +4536,13 @@ function EditTripDialog({
         </div>
       </div>
 
-      <EditNumberField label="งบประมาณ" value={budgetAmount} onChange={setBudgetAmount} placeholder="เช่น 3000" suffix="/ วัน" />
+      <EditNumberField
+        label="งบประมาณทั้งทริป"
+        value={budgetAmount}
+        onChange={setBudgetAmount}
+        placeholder="เช่น 9000"
+        suffix="/ คน"
+      />
 
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เงื่อนไข / ข้อจำกัด</label>

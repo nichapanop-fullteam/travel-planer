@@ -1,4 +1,5 @@
 import type { Activity } from "@/types";
+import type { ExternalPlaceCategory } from "./external-places-api";
 
 export type GroupType = "solo" | "couple" | "family" | "friends" | "business";
 export type TravelStyle =
@@ -16,6 +17,13 @@ export type Intensity = "slow_life" | "chill" | "balance" | "active" | "hardcore
 export type TransportMode = "private_car" | "rental_car" | "motorbike" | "public_transit" | "recommend";
 export type BudgetTier = "economy" | "comfort" | "premium" | "luxury" | "custom";
 export type AccommodationStatus = "booked" | "not_booked";
+// Hotel tier. NOT a star count — the wizard's 1★–5★ chips have to be mapped
+// onto this before they're sent (see HOTEL_GRADE_TAG_TO_ENUM in
+// generate-plan-mapping.ts); sending "3★" through is a 400.
+export type AccommodationGrade = "hostel" | "budget" | "midscale" | "upscale" | "luxury";
+// Hotel style — a separate axis from AccommodationGrade, not a finer version
+// of it ("hostel" is the one value that appears in both).
+export type AccommodationStyle = "boutique" | "resort" | "hotel" | "homestay" | "villa" | "hostel";
 export type Constraint = "seniors" | "wheelchair" | "limited_walking" | "young_children";
 
 export interface GeneratePlanDestinationPlace {
@@ -44,7 +52,11 @@ export interface GeneratePlanAccommodation {
   attachmentIds?: string[];
   checkIn?: string;
   checkOut?: string;
-  grade?: string;
+  grade?: AccommodationGrade;
+  // Max 6. Free-text entries from the style row's "+ เพิ่มเติม" go to
+  // customStyles instead (max 5, 60 characters each).
+  styles?: AccommodationStyle[];
+  customStyles?: string[];
   preferredArea?: string;
   notes?: string;
 }
@@ -69,18 +81,35 @@ export interface GeneratePlanRequest {
   };
   locale?: "th" | "en";
   currency?: string;
+  // `places` table ids (the `id` from GET /places/suggest/sections) of the
+  // cards the traveler tapped "+ เพิ่มแผน" on. Not a plan lock: the AI has to
+  // include every one of them and then fills the rest of the plan itself.
+  // Max 40, and an id with no row in `places` is a 400 that names the id —
+  // ours come straight from the suggest response, so they always exist.
+  //
+  // Picking more than the plan has room for is a warning, not an error: the
+  // response still resolves, and generation.violations carries a
+  // missing_picked_place entry per place that didn't make it in.
+  selectedPlaceIds?: string[];
 }
 
+// Two field namings are in play across deployments — `startTime`/`costAmount`
+// (the documented contract) and `time`/`cost` (what the live service actually
+// returns). Both are optional and both are read, newest-observed first, so
+// whichever one a deployment sends comes through. See normalizeDraftItems in
+// lib/generated-trips.ts.
 export interface GeneratePlanDraftItem {
   placeId?: string;
   customName?: string;
   orderIndex?: number;
   startTime?: string;
+  time?: string;
   endTime?: string;
   estimatedDurationMin?: number;
   travelTimeFromPrevMin?: number;
   travelDistanceFromPrevKm?: number;
   costAmount?: number;
+  cost?: number;
   costCurrency?: string;
   bookingStatus?: string;
   bookingLeadUrl?: string;
@@ -89,7 +118,12 @@ export interface GeneratePlanDraftItem {
   // Some deployments include hydrated display data in the draft. These
   // fields are optional because the documented contract only guarantees ids.
   title?: string;
-  category?: Activity["category"];
+  // Either taxonomy is accepted: the `places` table's own 7 values (what the
+  // rest of the external API returns — see ExternalPlaceCategory) or this
+  // app's 6 ActivityCategory values. normalizeCategory in lib/generated-trips.ts
+  // folds the former into the latter, so the service can send whichever it
+  // already has without a client change.
+  category?: ExternalPlaceCategory | Activity["category"];
   location?: Activity["location"];
 }
 
@@ -112,10 +146,16 @@ export interface GeneratePlanDraft {
   groupType?: GroupType;
   days: {
     dayNumber: number;
-    date?: string;
+    // Explicitly nullable: a flexible-date trip comes back with `date: null`
+    // on every day rather than with the key omitted.
+    date?: string | null;
     fatigueLevel?: string;
     daySummary?: string;
-    items: GeneratePlanDraftItem[];
+    // Same story as the item field names above — `items` is the documented
+    // key, `activities` is what the live service sends. Exactly one of the two
+    // is present on any given response.
+    items?: GeneratePlanDraftItem[];
+    activities?: GeneratePlanDraftItem[];
   }[];
 }
 

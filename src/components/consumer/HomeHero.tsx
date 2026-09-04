@@ -218,20 +218,44 @@ export function HomeHero({
                 opening a keyboard under a 45px app bar. Desktop keeps the live
                 field: there is room for it, and no page to send anyone to. */}
             {compactSearchHref && (
-            <Link
-              href={compactSearchHref}
-              className="mt-4 flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 min-[640px]:gap-1.5 min-[1025px]:hidden"
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)] min-[640px]:h-7 min-[640px]:w-7">
-                <Search strokeWidth={2.5} className="h-[15px] w-[15px]" />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)] min-[640px]:text-[13px]">
-                {query.trim() || searchPlaceholder}
-              </span>
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white min-[640px]:h-8 min-[640px]:w-8">
-                <ArrowRight strokeWidth={2.5} className="h-4 w-4" />
-              </span>
-            </Link>
+            // The clear button is a sibling laid over the pill, not a child of
+            // the Link: a <button> inside an <a> is invalid markup, and the
+            // link would swallow the tap. Without it a compact layout had no
+            // way out of a search at all — the field here is a link, not an
+            // input, so there was nothing to select and delete, and the only
+            // escape was the empty state's "ล้างตัวกรอง", which only appears
+            // when the search happens to match nothing.
+            <div className="relative mt-4 min-[1025px]:hidden">
+              <Link
+                href={compactSearchHref}
+                className="flex items-center gap-1 rounded-full bg-white p-1 ring-2 ring-white/25 min-[640px]:gap-1.5"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-accent-orange)] min-[640px]:h-7 min-[640px]:w-7">
+                  <Search strokeWidth={2.5} className="h-[15px] w-[15px]" />
+                </span>
+                <span
+                  className={`min-w-0 flex-1 truncate text-xs min-[640px]:text-[13px] ${
+                    query.trim() ? "text-[var(--foreground)]" : "text-[var(--color-muted)]"
+                  } ${query.trim() ? "pr-7" : ""}`}
+                >
+                  {query.trim() || searchPlaceholder}
+                </span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111111] text-white min-[640px]:h-8 min-[640px]:w-8">
+                  <ArrowRight strokeWidth={2.5} className="h-4 w-4" />
+                </span>
+              </Link>
+
+              {query.trim() && (
+                <button
+                  type="button"
+                  onClick={() => onQueryChange("")}
+                  aria-label="ล้างการค้นหา"
+                  className="absolute right-9 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--foreground)] min-[640px]:right-10 min-[640px]:h-8 min-[640px]:w-8"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             )}
 
             <form
