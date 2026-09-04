@@ -140,7 +140,6 @@ import { PlaceDiscoveryPanel, AccommodationSection, DayTab, TravelConnectorRow, 
 import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
@@ -286,7 +285,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   // undefined `activity` = add mode (AddActivityDialog starts blank); set =
   // edit mode (pre-filled, day-switching hidden, id preserved on save).
@@ -1107,7 +1105,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
   async function handleShareClick() {
     if (trip!.backendSynced) {
-      setShareDialogOpen(true);
+      shareTripViewLink(trip!.id);
       return;
     }
     setSharePreparing(true);
@@ -1118,10 +1116,28 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     const synced = await syncTripToServer(trip!);
     setSharePreparing(false);
     if (synced?.backendSynced) {
-      setShareDialogOpen(true);
+      shareTripViewLink(synced.id);
     } else {
       showToast("เตรียมทริปสำหรับแชร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     }
+  }
+
+  // Shares a plain link to the read-only /view/trip/[id] page — replaces the
+  // old ShareTripDialog flow (POST /trips/:id/share + its shareToken), which
+  // is still fully implemented (see lib/share-api.ts and
+  // /shared-trips/[shareToken]) but no longer wired to this button per
+  // product decision: a trip-id link can't be revoked or reissued the way a
+  // share token could, only ever deleted along with the trip itself.
+  function shareTripViewLink(tripId: string) {
+    const url = `${window.location.origin}/view/trip/${tripId}`;
+    if (navigator.share) {
+      navigator.share({ title: trip!.title || trip!.destination, url }).catch(() => {});
+      return;
+    }
+    navigator.clipboard
+      .writeText(url)
+      .then(() => showToast("คัดลอกลิงก์ทริปแล้ว"))
+      .catch(() => showToast("คัดลอกลิงก์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
   }
 
   // Room under the content for however many bars are pinned to the bottom edge
@@ -1218,11 +1234,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       .finally(() => setLiking(false));
   }
 
-  // Shares the page itself, never a managed share link — deliberately, even
-  // for the owner. ShareTripDialog creates, disables and reissues real links,
-  // which are writes, and TripSocialBar only exists on the read-only page
-  // where writes are off (see canShare, which is false whenever readOnly is).
-  // The owner still manages links from the editor's own แชร์ button.
+  // Shares whatever page it's actually on (e.g. /view-trip/[id]) rather than
+  // shareTripViewLink's fixed /view/trip/[id] target — TripSocialBar only
+  // exists on the read-only page, so this never needs the sync-first step
+  // shareTripViewLink does for a trip that isn't backend-synced yet.
   //
   // The OS sheet where there is one, the clipboard otherwise.
   function handleSocialShare() {
@@ -1286,8 +1301,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           }}
         />
       )}
-
-      {shareDialogOpen && <ShareTripDialog tripId={trip.id} onClose={() => setShareDialogOpen(false)} />}
 
       <div className="relative rounded-t-[28px] bg-white">
         {/* The tab bar can't live inside Hero and still stick: `sticky` is
@@ -1967,7 +1980,7 @@ function TripAttributionBar({
   isOwner: boolean;
   onShareClick?: () => void;
   // True while handleShareClick is syncing an unsynced trip to the server
-  // before it can open ShareTripDialog — see canShare's comment.
+  // before it can share its /view/trip/[id] link — see canShare's comment.
   sharePreparing?: boolean;
   visibilitySaving: boolean;
   onChangeVisibility?: (next: "private" | "public") => void;
