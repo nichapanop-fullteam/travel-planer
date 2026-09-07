@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { MapPin, Navigation, Star } from "lucide-react";
+import { Clock, MapPin, Navigation, Star } from "lucide-react";
 import { categoryIcon, categoryLabel } from "@/lib/category-styles";
-import type { SharedTripActivity, SharedTripDay } from "@/lib/share-api";
+import type { SharedTripActivity, SharedTripDay, SharedTripOpeningHours } from "@/lib/share-api";
+import { formatTHB } from "@/lib/trip-utils";
 import type { ActivityCategory } from "@/types";
 
 // The day selector + itinerary list, borrowed wholesale from ActivityCard on
@@ -82,6 +83,17 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
   );
 }
 
+// Google orders weekdayDescriptions Monday-first; JS Date#getDay is
+// Sunday-first (0-6). Returns undefined rather than guessing when the array
+// is shorter than expected — a live third-party payload, not a fixed shape
+// we control.
+function todaysHours(openingHours?: SharedTripOpeningHours): string | undefined {
+  const days = openingHours?.weekdayDescriptions;
+  if (!days?.length) return undefined;
+  const mondayFirstIndex = (new Date().getDay() + 6) % 7;
+  return days[mondayFirstIndex];
+}
+
 function SharedActivityCard({ activity, index }: { activity: SharedTripActivity; index: number }) {
   const category = asCategory(activity.category);
   const CategoryIcon = categoryIcon[category];
@@ -100,6 +112,8 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
   const showPlaceName = activity.place?.name && activity.place.name !== activity.title;
   const imageUrl = activity.place?.imageUrl ?? "/images/luang-prabang.jpg";
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.place?.name || activity.title)}`;
+  const openingHours = activity.place?.openingHours;
+  const hoursLine = todaysHours(openingHours);
 
   return (
     <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
@@ -123,17 +137,19 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
           </span>
         </div>
 
-        {(activity.time || travelSummary) && (
+        {(activity.time || travelSummary || activity.cost > 0) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
             {/* The live payload sends time: "" for stops with no set time, so
                 this needs a truthiness check rather than a null check. */}
             {activity.time && <span style={{ color: "var(--color-accent-orange)" }}>{activity.time}</span>}
             {activity.time && travelSummary && <span>·</span>}
             {travelSummary && <span>{travelSummary}</span>}
+            {(activity.time || travelSummary) && activity.cost > 0 && <span>·</span>}
+            {activity.cost > 0 && <span>{formatTHB(activity.cost)}</span>}
           </div>
         )}
 
-        {(showPlaceName || activity.place?.rating != null) && (
+        {(showPlaceName || activity.place?.rating != null || activity.place?.address) && (
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-sm text-[var(--color-muted)]">
             {showPlaceName && (
               <span className="inline-flex min-w-0 items-center gap-1">
@@ -147,7 +163,34 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
                 {activity.place.rating}
               </span>
             )}
+            {/* Address is a separate line from the place name above — the
+                name identifies the stop, the address is where it actually
+                is, and they read oddly squeezed onto one line together. */}
+            {activity.place?.address && (
+              <span className="block min-w-0 basis-full break-words pl-[22px] text-xs text-[var(--color-muted)]">
+                {activity.place.address}
+              </span>
+            )}
           </div>
+        )}
+
+        {/* Opening hours and description come from a live Google lookup, not
+            from anything the trip owner wrote — see SharedTripActivity's doc
+            comment in lib/share-api.ts. Absent for a hand-typed stop or when
+            that lookup failed, so both are rendered only when present. */}
+        {openingHours && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 text-xs font-semibold"
+            style={{ color: openingHours.openNow ? "var(--color-brand-green)" : "var(--color-muted)" }}
+          >
+            <Clock size={13} className="shrink-0" />
+            {openingHours.openNow != null && <span>{openingHours.openNow ? "เปิดอยู่" : "ปิดอยู่ตอนนี้"}</span>}
+            {hoursLine && <span className="font-normal text-[var(--color-muted)]">{hoursLine}</span>}
+          </div>
+        )}
+
+        {activity.place?.description && (
+          <p className="text-sm leading-relaxed text-[var(--foreground)]">{activity.place.description}</p>
         )}
 
         {activity.travelNote && (
