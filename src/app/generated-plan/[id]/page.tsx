@@ -72,7 +72,13 @@ import {
   type PlaceFullDetails,
 } from "@/lib/external-places-api";
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
-import { addTripMediaFromPlace, deleteTripMediaForActivity, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
+import {
+  addTripMediaFromPlace,
+  deleteTripMediaForActivity,
+  getTripGallery,
+  importTripPlacePhotos,
+  resolveCoverImageUrl,
+} from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
 import { Logo } from "@/components/common/Logo";
 import { MapIcon } from "@/components/common/MapIcon";
@@ -269,6 +275,10 @@ function reanchorDayDates(days: Day[], startDateIso: string): Day[] {
 // still accepts anything not covered by a chip.
 const EDIT_COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
 const EDIT_MORE_COND_OPTIONS = ["มังสวิรัติ", "ฮาลาล", "แพ้อาหารทะเล", "ไม่ขึ้นที่สูง", "งบจำกัดเข้ม", "เดินทางคนเดียว"];
+
+// Trips whose place photos this tab has already imported. Outside the
+// component on purpose — see the effect that reads it.
+const importedPlacePhotosFor = new Set<string>();
 
 export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boolean } = {}) {
   const params = useParams<{ id: string }>();
@@ -538,6 +548,51 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, trip?.backendSynced, backendUser, authLoading]);
+
+  // Fills the gallery with one photo per place, once, for a trip that has just
+  // been saved. Runs after the plan is on screen rather than inside
+  // POST /trips/create: each photo is downloaded, re-encoded and re-uploaded
+  // server-side, so folding it into creation would add seconds to a wait the
+  // traveller has already sat through once for generation.
+  //
+  // Silent. The gallery is decoration on a trip that is already saved, and it
+  // has its own empty state — a toast about photos would be noise on top of a
+  // plan the traveller is reading.
+  useEffect(() => {
+    if (!trip || !trip.backendSynced || !backendUser) return;
+    // Module-level, NOT a ref: React remounts this component in development,
+    // which builds a fresh ref and let the import run a second time. The two
+    // runs then raced each other's read-then-insert and the gallery came back
+    // holding every photo twice. The backend has its own unique index now, but
+    // paying for a dozen downloads twice is worth avoiding on this side too.
+    if (importedPlacePhotosFor.has(trip.id)) return;
+
+    const tripId = trip.id;
+    importedPlacePhotosFor.add(tripId);
+    void importTripPlacePhotos(tripId)
+      .then((result) => {
+        // The import may have given the trip its cover, which lives on the trip
+        // row rather than in the gallery — the copy on screen predates it, so
+        // re-read the one field that changed instead of leaving the card on its
+        // fallback image until the next reload.
+        if (!result.coverSet) return;
+        return getTrip(tripId).then((fresh) => {
+          if (!fresh) return;
+          const rebuilt = buildGeneratedTripFromBackendTrip(fresh);
+          applyPatch({
+            coverImage: rebuilt.coverImage,
+            coverImageUrl: rebuilt.coverImageUrl,
+          });
+        });
+      })
+      .catch((error) => {
+        // Let a later mount try again — a failed import left the gallery empty,
+        // and refusing to retry would keep it that way for the session.
+        importedPlacePhotosFor.delete(tripId);
+        console.warn("นำเข้ารูปภาพสถานที่ไม่สำเร็จ", error);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.backendSynced, backendUser]);
 
   // A leg whose routing call failed keeps null numbers forever: the backend
   // swallows the provider error on purpose (an outage must not break Add
@@ -1377,6 +1432,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       {galleryDialogOpen && (
         <TripGalleryDialog
           tripId={trip.id}
+          ready={Boolean(trip.backendSynced)}
           onClose={() => {
             setGalleryDialogOpen(false);
             if (coverDidChangeRef.current) {
@@ -1755,6 +1811,9 @@ function Hero({
   const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
   useEffect(() => {
     let cancelled = false;
+    // Same rule as the gallery dialog: a trip that is still local has an id no
+    // media route knows, and asking anyway turns a save in progress into a 404.
+    if (!trip.backendSynced) return;
     getTripGallery(trip.id, { page: 1, limit: 12 })
       .then((gallery) => {
         if (cancelled) return;
@@ -1772,7 +1831,9 @@ function Hero({
     return () => {
       cancelled = true;
     };
-  }, [trip.id]);
+    // backendSynced belongs here as well as trip.id: a trip saved while this
+    // view is open has to load its gallery then, not on the next navigation.
+  }, [trip.id, trip.backendSynced]);
 
   const fallback = trip.coverImage?.urls.large ?? resolveCoverImageUrl(trip, "large");
   const images = galleryImages && galleryImages.length > 0 ? galleryImages : fallback ? [fallback] : [];
