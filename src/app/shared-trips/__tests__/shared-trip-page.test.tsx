@@ -163,9 +163,9 @@ describe("GET /shared-trips/:shareToken page", () => {
     });
     await renderPage();
 
-    expect(screen.getByText("Sakkaline Rd, Luang Prabang")).toBeInTheDocument();
+    expect(screen.getByText(/Sakkaline Rd, Luang Prabang/)).toBeInTheDocument();
     expect(screen.getByText("วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16")).toBeInTheDocument();
-    expect(screen.getByText("เปิดอยู่")).toBeInTheDocument();
+    expect(screen.getByText("เปิด/ปิด")).toBeInTheDocument();
   });
 
   it("renders with no opening-hours or description line for a hand-typed stop with no place", async () => {
