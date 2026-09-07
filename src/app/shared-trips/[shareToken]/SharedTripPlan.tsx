@@ -119,18 +119,22 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
 
   const travelType = activity.travelFromPrevious?.type ? asTravelType(activity.travelFromPrevious.type) : undefined;
   const TravelIcon = travelType ? travelTypeIcon[travelType] : undefined;
-  // travelNote is a real authored tip from the backend — only that goes in
-  // the "Trip hack" callout below. This is plain "how you got here" context,
-  // not a tip, so it sits in the ordinary meta row instead.
-  const travelSummary = travelType
-    ? [
-        travelTypeLabel[travelType],
-        activity.travelFromPrevious?.durationMin != null ? `${activity.travelFromPrevious.durationMin} นาที` : null,
-        activity.travelFromPrevious?.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : undefined;
+  // `activity.travelNote` is NOT a real authored tip — the backend's own doc
+  // comment on buildTravelNote says it's "kept for clients that still render
+  // the original display-only field", built from nothing but
+  // travelFromPrevious.durationMin/distanceKm. This meta row already shows
+  // that same data (plus the travel mode, which travelNote doesn't have), so
+  // travelNote is never rendered anywhere on this card — showing both would
+  // just repeat "~15 นาที" twice, once correctly labeled and once mislabeled
+  // as a "Trip hack".
+  const travelSummary =
+    [
+      travelType ? travelTypeLabel[travelType] : null,
+      activity.travelFromPrevious?.durationMin != null ? `${activity.travelFromPrevious.durationMin} นาที` : null,
+      activity.travelFromPrevious?.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
 
   const imageUrl = activity.place?.imageUrl ?? "/images/luang-prabang.jpg";
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.place?.name || activity.title)}`;
@@ -221,16 +225,6 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
 
         {activity.place?.description && (
           <p className="text-sm leading-relaxed text-[var(--foreground)]">{activity.place.description}</p>
-        )}
-
-        {activity.travelNote && (
-          <div
-            className="rounded-xl px-3 py-2 text-xs font-medium"
-            style={{ backgroundColor: "var(--color-cat-sightseeing-bg, #EAF6EE)", color: "var(--color-brand-green)" }}
-          >
-            <span className="font-bold">Trip hack </span>
-            {activity.travelNote}
-          </div>
         )}
 
         <div className="flex items-center justify-end pt-1">
