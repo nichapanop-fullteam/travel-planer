@@ -92,14 +92,25 @@ export async function deleteShareLink(tripId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 // Deliberately narrower than BackendTrip: no ids anywhere (not the trip's, nor
-// any day/activity/place/media id), no money, no free-text notes, no booking
-// fields, no accommodations/expenses, no owner identifiers beyond a display
-// name, and no workflow status. Days are addressed by `dayNumber` and
-// activities by `order` — those are the React keys here.
+// any day/activity/place/media id), no money, no booking fields, no
+// accommodations/expenses, no owner identifiers beyond a display name, and no
+// workflow status. Days are addressed by `dayNumber` and activities by
+// `order` — those are the React keys here. `SharedTripActivity.notes` is the
+// one free-text field that IS published — the owner's own note about that
+// stop, on purpose (see its field comment below).
 //
 // Don't try to recover a trip id from this to call GET /trips/:id: the whole
 // point of the feature is that `shareToken` is the only key, and the only one
 // the owner can revoke. A trip id can't be revoked.
+/** `openingHours` comes from a live Google Place Details call the backend
+ *  makes per place (not from anything persisted on the trip), so it's absent
+ *  for a hand-typed stop or when that call failed — always treat it as
+ *  optional, never assume it'll be there. */
+export interface SharedTripOpeningHours {
+  openNow?: boolean;
+  weekdayDescriptions: string[];
+}
+
 export interface SharedTripActivity {
   /** 0-based within its day. */
   order: number;
@@ -108,9 +119,24 @@ export interface SharedTripActivity {
   category: string;
   /** `imageUrl` isn't in the API doc's example but the live payload sends it
    *  (a Google place photo), and it's what the activity thumbnails use. */
-  place?: { name: string; lat?: number; lng?: number; rating?: number; imageUrl?: string };
+  place?: {
+    name: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+    rating?: number;
+    imageUrl?: string;
+    openingHours?: SharedTripOpeningHours;
+  };
+  /** The trip owner's own note about this stop, written when they added it —
+   *  not sourced from Google. Published on the public payload on purpose;
+   *  see PublicActivityDto's field comment on the backend. */
+  notes?: string;
   travelNote?: string;
   travelFromPrevious?: { type: string; durationMin?: number; distanceKm?: number };
+  /** THB, for the whole group — the one money field this payload publishes;
+   *  see PublicSharedTripResponseDto's header comment on the backend. */
+  cost: number;
 }
 
 export interface SharedTripDay {

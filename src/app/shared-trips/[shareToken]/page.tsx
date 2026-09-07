@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarDays, Link2 } from "lucide-react";
+import { CalendarDays, Heart, Link2, Repeat2 } from "lucide-react";
 import { Logo } from "@/components/common/Logo";
 import { getSharedTrip } from "@/lib/share-api";
 import { SharedTripPlan } from "@/app/shared-trips/[shareToken]/SharedTripPlan";
@@ -64,31 +64,6 @@ export default async function SharedTripPage({ params }: PageProps) {
   const statLabel = activityCount > 0 ? `${activityCount} จุดเช็คอิน` : durationLabel;
 
   const dateRange = formatDateRange(trip.schedule?.startDate, trip.schedule?.endDate);
-  const attractionCount = days.reduce(
-    (total, day) => total + day.activities.filter((activity) => activity.category === "sightseeing").length,
-    0,
-  );
-  const restaurantCount = days.reduce(
-    (total, day) => total + day.activities.filter((activity) => activity.category === "food").length,
-    0,
-  );
-  const stayCount = days.reduce(
-    (total, day) => total + day.activities.filter((activity) => activity.category === "hotel").length,
-    0,
-  );
-  const totalDistance = days.reduce(
-    (total, day) =>
-      total +
-      day.activities.reduce((sum, activity) => sum + (activity.travelFromPrevious?.distanceKm ?? 0), 0),
-    0,
-  );
-  const summaryStats = [
-    { label: "ที่เที่ยว", value: attractionCount },
-    { label: "ร้านอาหาร", value: restaurantCount },
-    { label: "ที่พัก", value: stayCount },
-    { label: "จุดเช็คอิน", value: activityCount },
-    { label: "Total Distance", value: `${Math.round(totalDistance * 10) / 10} km` },
-  ];
 
   return (
     <div className="min-h-screen bg-white">
@@ -132,14 +107,14 @@ export default async function SharedTripPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto mt-auto flex w-full max-w-[var(--container-max)] flex-col gap-2 px-4 pb-5 sm:px-6 sm:pb-6 lg:px-10">
+        <div className="relative z-10 mx-auto my-auto flex w-full max-w-[var(--container-max)] flex-col items-center gap-2 px-4 text-center sm:px-6 lg:px-10">
           <h1 className="line-clamp-2 text-2xl font-extrabold leading-tight text-white sm:text-4xl">{trip.title}</h1>
 
           {/* `owner` is absent entirely when the creator never set a display
               name — there's no username fallback by design, so the byline goes
               away rather than showing something like "@user_28f1". */}
           {(trip.owner || statLabel) && (
-            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-white">
+            <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-white">
               {trip.owner && (
                 <>
                   {trip.owner.avatarUrl ? (
@@ -159,21 +134,13 @@ export default async function SharedTripPage({ params }: PageProps) {
           )}
 
           {dateRange && (
-            <p className="flex items-center gap-1.5 text-sm font-medium text-white">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-white">
               <CalendarDays size={16} className="shrink-0" />
               {dateRange}{durationLabel ? ` · ${durationLabel}` : ""}
             </p>
           )}
 
           <p className="text-xs font-medium text-white/90">{trip.destination}</p>
-          <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
-            {summaryStats.map((stat) => (
-              <div key={stat.label} className="flex flex-col items-center gap-0.5 rounded-2xl bg-black/35 px-2 py-2 text-center text-white backdrop-blur-sm">
-                <span className="text-sm font-extrabold sm:text-base">{stat.value}</span>
-                <span className="text-[10px] font-medium text-white/85">{stat.label}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -183,6 +150,38 @@ export default async function SharedTripPage({ params }: PageProps) {
           tab row would promise content that cannot exist. */}
       <div className="relative bg-white">
         <div className="mx-auto w-full max-w-[var(--container-max)] px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
+          {/* Borrowed straight from view/trip/[id]'s Trip Overview section —
+              same heading, same description sentence, same count badges —
+              minus anything clickable: those numbers are read-only here, not
+              buttons, and Bookmark isn't in this payload (see SharedTrip) so
+              likeCount stands in for it instead. */}
+          <div className="mb-6 flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold">Trip Overview</h2>
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold text-[var(--color-muted)]"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <Repeat2 size={13} />
+                  {new Intl.NumberFormat("th-TH").format(trip.remixCount ?? 0)} Remixes
+                </span>
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold text-[var(--color-muted)]"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <Heart size={13} />
+                  {new Intl.NumberFormat("th-TH").format(trip.likeCount ?? 0)}
+                </span>
+              </div>
+            </div>
+            <p className="text-base leading-relaxed text-[var(--color-muted)]">
+              แพลนเที่ยว{trip.destination} {durationLabel ?? ""} รวม {activityCount} จุดเช็คอิน
+            </p>
+          </div>
+
+          <div className="mb-6 h-px w-full" style={{ backgroundColor: "var(--color-border)" }} />
+
           <SharedTripPlan days={days} />
 
           <footer
@@ -191,7 +190,7 @@ export default async function SharedTripPage({ params }: PageProps) {
           >
             <p className="text-sm text-[var(--color-muted)]">อยากวางแผนทริปของตัวเอง?</p>
             <Link
-              href="/main"
+              href="/"
               className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-deep-green)]"
             >
               เริ่มใช้ PunGuide

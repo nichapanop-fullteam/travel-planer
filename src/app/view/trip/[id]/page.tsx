@@ -16,6 +16,7 @@ import {
   Bookmark,
   CalendarDays,
   ChevronDown,
+  Coins,
   Loader2,
   Map as MapIcon,
   Menu,
@@ -444,10 +445,14 @@ export default function ViewTripPage() {
           </div>
         </div>
 
-        <p className="text-sm leading-relaxed text-[var(--color-muted)]">
+        <p className="text-base leading-relaxed text-[var(--color-muted)]">
           แพลนเที่ยว{trip.destination} {durationDays} วัน {durationNights} คืน รวม {activityCount} จุดเช็คอิน
           {perPersonBudget != null && <> งบประมาณรวม {formatTHB(perPersonBudget)} ต่อคน</>}
         </p>
+      </div>
+
+      <div className="mx-auto mt-4 w-full max-w-5xl px-4 sm:px-6">
+        <div className="h-px w-full" style={{ backgroundColor: "var(--color-border)" }} />
       </div>
 
       {/* ─── Day tabs ─── */}
@@ -530,10 +535,18 @@ function ActivityCard({ activity, index }: { activity: Activity; index: number }
   const image = activityImage(activity);
   const travel = activity.travelFromPrevious;
   const TravelIcon = travel ? travelTypeIcon[travel.type] : undefined;
+  const hasMetaRow = Boolean(activity.time || travel || activity.cost > 0);
+  // "Opening hours" isn't in this row yet — Location carries no such field on
+  // this page (no Google Places lookup here, unlike the public shared-trips
+  // page). Only location and the owner's own note render below the divider
+  // until that data exists.
+  const hasDetailBlock = Boolean(activity.location?.name || activity.notes);
 
   return (
-    <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
-      <div className="relative h-40 w-full sm:h-48">
+    <div className="flex overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
+      {/* Image on the left, alongside the content column, rather than
+          stacked above it — matches the public shared-trips card. */}
+      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={image} alt="" className="h-full w-full object-cover" />
@@ -542,40 +555,54 @@ function ActivityCard({ activity, index }: { activity: Activity; index: number }
             <CategoryIcon size={28} className="text-[var(--color-muted)]" />
           </div>
         )}
-        <span className="absolute left-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
+        <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
           {index}
-        </span>
-        <span
-          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold backdrop-blur"
-          style={{ color: "var(--color-brand-green)" }}
-        >
-          <CategoryIcon size={12} />
-          {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
         </span>
       </div>
 
-      <div className="flex flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
-          {activity.time && <span>{activity.time}</span>}
-          {travel && TravelIcon && (
-            <span className="flex items-center gap-1">
-              <TravelIcon size={13} />
-              {travelTypeLabel[travel.type]}
-              {travel.durationMin != null && ` · ${travel.durationMin} นาที`}
-            </span>
-          )}
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            <CategoryIcon size={12} />
+            {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
+          </span>
         </div>
 
-        <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+        {hasMetaRow && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
+            {activity.time && <span style={{ color: "var(--color-accent-orange)" }}>{activity.time}</span>}
+            {activity.time && travel && <span>·</span>}
+            {travel && TravelIcon && (
+              <span className="inline-flex items-center gap-1">
+                <TravelIcon size={13} />
+                {travelTypeLabel[travel.type]}
+                {travel.durationMin != null && ` · ${travel.durationMin} นาที`}
+              </span>
+            )}
+            {(activity.time || travel) && activity.cost > 0 && <span>·</span>}
+            {activity.cost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Coins size={13} />
+                {formatTHB(activity.cost)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {hasMetaRow && hasDetailBlock && <div className="h-px" style={{ backgroundColor: "var(--color-border)" }} />}
 
         {activity.location?.name && (
           <a
             href={getGoogleMapsUrl(activity.location)}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:underline"
+            className="flex items-start gap-1.5 text-sm text-[var(--color-muted)] hover:underline"
           >
-            <MapPin size={14} className="shrink-0" />
+            <MapPin size={14} className="mt-0.5 shrink-0" />
             {activity.location.name}
           </a>
         )}
@@ -589,14 +616,13 @@ function ActivityCard({ activity, index }: { activity: Activity; index: number }
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-1">
-          {activity.cost > 0 && <span className="text-sm font-semibold">{formatTHB(activity.cost)}</span>}
+        <div className="flex items-center justify-end pt-1">
           {activity.location?.name && (
             <a
               href={getGoogleMapsUrl(activity.location)}
               target="_blank"
               rel="noreferrer"
-              className="ml-auto inline-flex items-center gap-1 rounded-full bg-[#1F2A24] px-3 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex items-center gap-1 rounded-full bg-[#1F2A24] px-3 py-1.5 text-xs font-semibold text-white"
             >
               <MapIcon size={13} />
               Map

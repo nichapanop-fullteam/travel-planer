@@ -28,6 +28,7 @@ const sharedTrip: SharedTrip = {
           title: "วัดเชียงทอง",
           category: "sightseeing",
           place: { name: "วัดเชียงทอง", rating: 4.6 },
+          cost: 0,
         },
       ],
     },
@@ -52,7 +53,7 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(screen.getByText("หลวงพระบาง, ลาว")).toBeInTheDocument();
     // Byline is just the name, matching generated-plan's Hero.
     expect(screen.getByText("นุ้ย")).toBeInTheDocument();
-    expect(screen.getByText("ลำดับแพลน")).toBeInTheDocument();
+    expect(screen.getByText("Trip Overview")).toBeInTheDocument();
     expect(screen.getByText("วัดเชียงทอง")).toBeInTheDocument();
   });
 
@@ -104,7 +105,7 @@ describe("GET /shared-trips/:shareToken page", () => {
       ...sharedTrip,
       days: [
         sharedTrip.days![0],
-        { dayNumber: 2, date: "2026-09-11", activities: [{ order: 0, title: "น้ำตกตาดกวางสี", category: "sightseeing" }] },
+        { dayNumber: 2, date: "2026-09-11", activities: [{ order: 0, title: "น้ำตกตาดกวางสี", category: "sightseeing", cost: 0 }] },
       ],
     });
     await renderPage();
@@ -117,5 +118,94 @@ describe("GET /shared-trips/:shareToken page", () => {
     await renderPage("q5LMr_f1tphUYZUJD71BehvN-HtOqnBFLjUL544MPio");
 
     expect(mockedGetSharedTrip).toHaveBeenCalledWith("q5LMr_f1tphUYZUJD71BehvN-HtOqnBFLjUL544MPio");
+  });
+
+  // cost, address, openingHours and notes are the fields added on top of the
+  // original narrow payload — each renders only when present, since a
+  // hand-typed stop, a failed Google lookup, or a stop with no note means
+  // some of them are absent.
+  it("shows the per-stop price tag when cost is greater than zero", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [{ ...sharedTrip.days![0], activities: [{ ...sharedTrip.days![0].activities[0], cost: 1500 }] }],
+    });
+    await renderPage();
+
+    expect(screen.getByText("฿1,500")).toBeInTheDocument();
+  });
+
+  it("omits the price tag entirely for a free stop rather than showing ฿0", async () => {
+    mockedGetSharedTrip.mockResolvedValue(sharedTrip);
+    await renderPage();
+
+    expect(screen.queryByText(/฿0/)).not.toBeInTheDocument();
+  });
+
+  it("shows the place's address, opening hours and the owner's note when the backend supplies them", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [
+        {
+          ...sharedTrip.days![0],
+          activities: [
+            {
+              ...sharedTrip.days![0].activities[0],
+              notes: "วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16",
+              place: {
+                name: "วัดเชียงทอง",
+                address: "Sakkaline Rd, Luang Prabang",
+                rating: 4.6,
+                openingHours: { openNow: true, weekdayDescriptions: ["a", "b", "c", "d", "e", "f", "g"] },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    await renderPage();
+
+    expect(screen.getByText(/Sakkaline Rd, Luang Prabang/)).toBeInTheDocument();
+    expect(screen.getByText("วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16")).toBeInTheDocument();
+    expect(screen.getByText("เปิด/ปิด")).toBeInTheDocument();
+  });
+
+  it("renders with no opening-hours or note line for a hand-typed stop with no place and no note", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [{ ...sharedTrip.days![0], activities: [{ order: 0, title: "จุดพักรถ", category: "other", cost: 0 }] }],
+    });
+    await renderPage();
+
+    expect(screen.getByText("จุดพักรถ")).toBeInTheDocument();
+    expect(screen.queryByText("เปิดอยู่")).not.toBeInTheDocument();
+    expect(screen.queryByText("ปิดอยู่ตอนนี้")).not.toBeInTheDocument();
+  });
+
+  // travelNote is never an authored tip — it's the same durationMin/distanceKm
+  // already shown (with the travel mode) in the meta row, formatted as
+  // "~15 นาที" server-side purely for legacy clients (see buildTravelNote's
+  // doc comment on the backend). Rendering it here as a "Trip hack" would
+  // repeat that number under a misleading label.
+  it("never renders travelNote — it would just repeat the meta row's duration under a misleading label", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [
+        {
+          ...sharedTrip.days![0],
+          activities: [
+            {
+              ...sharedTrip.days![0].activities[0],
+              travelNote: "~15 นาที",
+              travelFromPrevious: { type: "bicycle", durationMin: 15 },
+            },
+          ],
+        },
+      ],
+    });
+    await renderPage();
+
+    expect(screen.queryByText("Trip hack")).not.toBeInTheDocument();
+    // The duration still shows, just once, in the meta row with its travel mode.
+    expect(screen.getByText("จักรยาน · 15 นาที")).toBeInTheDocument();
   });
 });

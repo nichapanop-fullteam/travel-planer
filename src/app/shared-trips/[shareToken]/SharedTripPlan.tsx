@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, MapPin, Maximize2, Navigation, Star } from "lucide-react";
-import { categoryColorVar, categoryIcon, categoryLabel } from "@/lib/category-styles";
-import type { SharedTripActivity, SharedTripDay } from "@/lib/share-api";
-import type { ActivityCategory } from "@/types";
+import { Clock, Coins, MapPin, Navigation, Star } from "lucide-react";
+import { categoryIcon, categoryLabel } from "@/lib/category-styles";
+import type { SharedTripActivity, SharedTripDay, SharedTripOpeningHours } from "@/lib/share-api";
+import { formatTHB } from "@/lib/trip-utils";
+import { travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
+import type { ActivityCategory, TravelType } from "@/types";
 
-// The day selector + "ลำดับแพลน" panel, styled to match PlanTab's own day
-// tabs and PlanActivityRow in generated-plan/[id] so a shared plan reads like
-// the real trip page rather than a separate, plainer thing.
+// The day selector + itinerary list, borrowed wholesale from ActivityCard on
+// view/trip/[id] (the Remix Trip page) so a shared plan reads like the real
+// trip page rather than a separate, plainer thing — minus every button that
+// adds, removes, or otherwise writes anything (Remix, follow, bookmark): this
+// page has no owner-scoped actions to offer, only the plan itself. "นำทาง"
+// stays because it's a plain outbound Google Maps link, not a write.
 //
 // Client-side only for the day switcher; everything it renders comes from the
 // server-fetched payload, so no request happens here (GET
@@ -21,6 +26,14 @@ const KNOWN_CATEGORIES: ActivityCategory[] = ["transport", "food", "hotel", "sig
 // backend adds later lands on "other" instead of crashing the icon lookup.
 function asCategory(value: string): ActivityCategory {
   return (KNOWN_CATEGORIES as string[]).includes(value) ? (value as ActivityCategory) : "other";
+}
+
+const KNOWN_TRAVEL_TYPES: TravelType[] = ["walk", "bicycle", "tuk_tuk", "private_transfer", "rental_car", "boat", "train", "airplane", "other"];
+
+// Same guard as asCategory, for the same reason: the shared payload types
+// travelFromPrevious.type as a plain string.
+function asTravelType(value: string): TravelType {
+  return (KNOWN_TRAVEL_TYPES as string[]).includes(value) ? (value as TravelType) : "other";
 }
 
 export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
@@ -36,10 +49,11 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 sm:gap-6">
-      <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>
-      <div className="flex flex-col gap-4 rounded-2xl p-2.5 sm:gap-5 sm:rounded-3xl sm:p-5" style={{ backgroundColor: "#FAF8F5" }}>
-      {/* Same pill-in-a-tray treatment as PlanTab's day switcher. */}
+    <div className="flex flex-col gap-5">
+      {/* Same pill-in-a-tray day switcher as PlanTab's, copied verbatim
+          (down to the class names) rather than reinvented — this is the one
+          day-switcher style the app actually uses, not view/trip/[id]'s
+          separate underline tabs. */}
       {days.length > 1 && (
         <div
           className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
@@ -50,7 +64,6 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
               key={d.dayNumber}
               type="button"
               onClick={() => setDayIndex(i)}
-              aria-pressed={i === dayIndex}
               className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
               style={
                 i === dayIndex
@@ -64,140 +77,171 @@ export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
         </div>
       )}
 
-      <div className="min-w-0 overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
-        <div
-          className="flex items-center justify-between gap-3 rounded-t-2xl px-4 py-3"
-          style={{ backgroundColor: "var(--color-sel-bg)" }}
-        >
-          <h2 className="text-base font-bold" style={{ color: "var(--color-brand-green)" }}>
-            ลำดับแพลน
-          </h2>
-          {day.date && <span className="text-xs font-semibold text-[var(--color-muted)]">{formatThaiDate(day.date)}</span>}
-        </div>
-
-        <div className="flex flex-col gap-3 px-2 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4">
-          {day.activities.length === 0 ? (
-            <p className="py-6 text-center text-xs text-[var(--color-muted)]">ยังไม่มีกิจกรรมในวันนี้</p>
-          ) : (
-            day.activities.map((activity, i) => (
-              // Keyed by `order` — this payload carries no ids at all, by
-              // design (see SharedTrip in lib/share-api.ts).
-              <SharedActivityRow key={activity.order} activity={activity} index={i + 1} />
-            ))
-          )}
-        </div>
-      </div>
+      <div className="flex flex-col gap-5">
+        {day.activities.length === 0 ? (
+          <p className="py-10 text-center text-sm text-[var(--color-muted)]">ยังไม่มีกิจกรรมในวันนี้</p>
+        ) : (
+          day.activities.map((activity, i) => (
+            // Keyed by `order` — this payload carries no ids at all, by
+            // design (see SharedTrip in lib/share-api.ts).
+            <SharedActivityCard key={activity.order} activity={activity} index={i + 1} />
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-function SharedActivityRow({ activity, index }: { activity: SharedTripActivity; index: number }) {
-  const [expanded, setExpanded] = useState(true);
-  const category = asCategory(activity.category);
-  const Icon = categoryIcon[category];
-  const color = categoryColorVar[category];
+// Google orders weekdayDescriptions Monday-first; JS Date#getDay is
+// Sunday-first (0-6). Returns undefined rather than guessing when the array
+// is shorter than expected — a live third-party payload, not a fixed shape
+// we control.
+function todaysHours(openingHours?: SharedTripOpeningHours): string | undefined {
+  const days = openingHours?.weekdayDescriptions;
+  if (!days?.length) return undefined;
+  const mondayFirstIndex = (new Date().getDay() + 6) % 7;
+  return days[mondayFirstIndex];
+}
 
-  // Same "how did we get here" line PlanActivityRow shows, rebuilt from
-  // travelFromPrevious when the backend didn't send a ready-made travelNote.
-  const travelText =
-    activity.travelNote ||
+// Google's Thai weekday descriptions come as "วันจันทร์: 08:00–17:00" — the
+// day name is redundant next to an explicit "เปิด/ปิด" label, so this drops
+// everything up to and including the first ": ". Falls back to the whole
+// string if that separator isn't there, rather than guessing at a format a
+// live third-party payload doesn't guarantee.
+function stripWeekdayPrefix(line: string): string {
+  const separatorIndex = line.indexOf(": ");
+  return separatorIndex === -1 ? line : line.slice(separatorIndex + 2);
+}
+
+function SharedActivityCard({ activity, index }: { activity: SharedTripActivity; index: number }) {
+  const category = asCategory(activity.category);
+  const CategoryIcon = categoryIcon[category];
+
+  const travelType = activity.travelFromPrevious?.type ? asTravelType(activity.travelFromPrevious.type) : undefined;
+  const TravelIcon = travelType ? travelTypeIcon[travelType] : undefined;
+  // `activity.travelNote` is NOT a real authored tip — the backend's own doc
+  // comment on buildTravelNote says it's "kept for clients that still render
+  // the original display-only field", built from nothing but
+  // travelFromPrevious.durationMin/distanceKm. This meta row already shows
+  // that same data (plus the travel mode, which travelNote doesn't have), so
+  // travelNote is never rendered anywhere on this card — showing both would
+  // just repeat "~15 นาที" twice, once correctly labeled and once mislabeled
+  // as a "Trip hack".
+  const travelSummary =
     [
-      activity.travelFromPrevious?.durationMin != null ? `~${activity.travelFromPrevious.durationMin} นาที` : null,
+      travelType ? travelTypeLabel[travelType] : null,
+      activity.travelFromPrevious?.durationMin != null ? `${activity.travelFromPrevious.durationMin} นาที` : null,
       activity.travelFromPrevious?.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
     ]
       .filter(Boolean)
-      .join(" · ") ||
-    null;
+      .join(" · ") || undefined;
 
-  const isHighlight = category === "sightseeing";
-  const showPlaceName = activity.place?.name && activity.place.name !== activity.title;
   const imageUrl = activity.place?.imageUrl ?? "/images/luang-prabang.jpg";
-  const hasDetails = Boolean(travelText || showPlaceName || activity.place?.rating != null);
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.place?.name || activity.title)}`;
+  const openingHours = activity.place?.openingHours;
+  const hoursLine = todaysHours(openingHours);
+  const hasMetaRow = Boolean(activity.time || travelSummary || activity.cost > 0);
+  const hasDetailBlock = Boolean(openingHours || activity.place?.address || activity.notes);
 
   return (
-    <div className="rounded-2xl border bg-white p-2.5 sm:p-3" style={{ borderColor: "var(--color-border-tag)" }}>
-      <div className="flex items-start gap-2.5 sm:gap-3">
-        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl sm:h-16 sm:w-16">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-          <span className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--foreground)] text-[9px] font-bold text-white sm:h-5 sm:w-5 sm:text-[10px]">
-            {index}
-          </span>
-          <span className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 sm:h-5 sm:w-5">
-            <Maximize2 size={10} />
+    <div className="flex overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
+      {/* Image sits on the left, alongside the content column, rather than
+          stacked above it — align-items: stretch (the flex row default)
+          keeps it matched to the content column's height, however tall. */}
+      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
+          {index}
+        </span>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            <CategoryIcon size={12} />
+            {categoryLabel[category]}
           </span>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <p className="min-w-0 break-words text-sm font-bold sm:text-[15px]">{activity.title}</p>
-              {isHighlight && (
-                <span
-                  className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
-                  style={{ backgroundColor: "var(--color-accent-orange)" }}
-                >
-                  สถานที่ห้ามพลาด
-                </span>
-              )}
-              </div>
-            </div>
-            {hasDetails && (
-              <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 sm:text-xs" style={{ backgroundColor: "#FAF8F5" }}>
-                <span className="hidden sm:inline">{expanded ? "ย่อละเอียด" : "ดูละเอียด"}</span>
-                {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </button>
-            )}
-          </div>
-
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-              {/* The live payload sends time: "" for stops with no set time, so
-                  this needs a truthiness check rather than a null check. */}
-              {activity.time && (
-                <span className="shrink-0" style={{ color: "var(--color-accent-orange)" }}>
-                  {activity.time}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold sm:px-2.5 sm:py-1 sm:text-xs" style={{ color, borderColor: "var(--color-border-tag)" }}>
-                <Icon size={12} />
-                {categoryLabel[category]}
+        {hasMetaRow && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
+            {/* The live payload sends time: "" for stops with no set time, so
+                this needs a truthiness check rather than a null check. */}
+            {activity.time && <span style={{ color: "var(--color-accent-orange)" }}>{activity.time}</span>}
+            {activity.time && travelSummary && <span>·</span>}
+            {travelSummary && (
+              <span className="inline-flex items-center gap-1">
+                {TravelIcon && <TravelIcon size={13} />}
+                {travelSummary}
               </span>
-            </div>
-
-            {expanded && travelText && <p className="mt-1.5 break-words text-xs leading-relaxed text-[var(--color-muted)] sm:text-sm">{travelText}</p>}
-            {expanded && (showPlaceName || activity.place?.rating != null) && (
-              <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[var(--color-muted)]">
-                {showPlaceName && (
-                  <span className="inline-flex min-w-0 items-center gap-1">
-                    <MapPin size={11} className="shrink-0" />
-                    <span className="min-w-0 break-words">{activity.place?.name}</span>
-                  </span>
-                )}
-                {activity.place?.rating != null && (
-                  <span className="inline-flex shrink-0 items-center gap-1">
-                    <Star size={11} />
-                    {activity.place.rating}
-                  </span>
-                )}
-              </div>
             )}
-            {expanded && (
-              <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-accent-orange)] px-2.5 py-1 text-[11px] font-bold text-white">
-                <Navigation size={11} />
-                นำทาง
-              </a>
+            {travelSummary && activity.cost > 0 && <span>·</span>}
+            {activity.cost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Coins size={13} />
+                {formatTHB(activity.cost)}
+              </span>
             )}
           </div>
+        )}
+
+        {/* One hairline rule between "how to get here / what it costs" and
+            "what this place actually is" — mirrors the reference layout and
+            keeps the two kinds of meta from blurring into one block. */}
+        {hasMetaRow && hasDetailBlock && <div className="h-px" style={{ backgroundColor: "var(--color-border)" }} />}
+
+        {/* Opening hours and address come from a live Google lookup, not from
+            anything the trip owner wrote — see SharedTripActivity's doc
+            comment in lib/share-api.ts. Absent for a hand-typed stop or when
+            that lookup failed, so each renders only when present. `notes`
+            below is the opposite: the owner's own words, never Google's. */}
+        {openingHours && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 text-xs font-semibold"
+            style={{ color: openingHours.openNow ? "var(--color-brand-green)" : "var(--color-muted)" }}
+          >
+            <Clock size={13} className="shrink-0" />
+            <span>เปิด/ปิด</span>
+            {hoursLine && <span className="font-normal text-[var(--color-muted)]">· {stripWeekdayPrefix(hoursLine)}</span>}
+          </div>
+        )}
+
+        {activity.place?.address && (
+          <div className="flex items-start gap-1.5 text-sm text-[var(--color-muted)]">
+            <MapPin size={14} className="mt-0.5 shrink-0" />
+            <span className="min-w-0 break-words">
+              {activity.place.address}
+              {activity.place.rating != null && (
+                <span className="ml-1.5 inline-flex items-center gap-0.5 whitespace-nowrap">
+                  <Star size={12} className="inline" />
+                  {activity.place.rating}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
+        {activity.notes && (
+          <p className="text-sm leading-relaxed text-[var(--foreground)]">{activity.notes}</p>
+        )}
+
+        <div className="flex items-center justify-end pt-1">
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-full bg-[#1F2A24] px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            <Navigation size={13} />
+            นำทาง
+          </a>
         </div>
+      </div>
     </div>
   );
-}
-
-function formatThaiDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
