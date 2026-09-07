@@ -179,4 +179,32 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(screen.queryByText("เปิดอยู่")).not.toBeInTheDocument();
     expect(screen.queryByText("ปิดอยู่ตอนนี้")).not.toBeInTheDocument();
   });
+
+  // travelNote is never an authored tip — it's the same durationMin/distanceKm
+  // already shown (with the travel mode) in the meta row, formatted as
+  // "~15 นาที" server-side purely for legacy clients (see buildTravelNote's
+  // doc comment on the backend). Rendering it here as a "Trip hack" would
+  // repeat that number under a misleading label.
+  it("never renders travelNote — it would just repeat the meta row's duration under a misleading label", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [
+        {
+          ...sharedTrip.days![0],
+          activities: [
+            {
+              ...sharedTrip.days![0].activities[0],
+              travelNote: "~15 นาที",
+              travelFromPrevious: { type: "bicycle", durationMin: 15 },
+            },
+          ],
+        },
+      ],
+    });
+    await renderPage();
+
+    expect(screen.queryByText("Trip hack")).not.toBeInTheDocument();
+    // The duration still shows, just once, in the meta row with its travel mode.
+    expect(screen.getByText("จักรยาน · 15 นาที")).toBeInTheDocument();
+  });
 });
