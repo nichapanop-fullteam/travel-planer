@@ -40,7 +40,6 @@ import {
   Pencil,
   Phone,
   Plus,
-  RefreshCcw,
   Repeat2,
   Share2,
   Sparkles,
@@ -93,15 +92,12 @@ const ACTIVITY_ICON_OVERRIDE: Record<string, typeof Anchor> = {
 };
 import {
   buildGeneratedTripFromBackendTrip,
-  confirmGeneratedTrip,
   DEMO_LUANG_PRABANG_ID,
-  generateTripFromDraft,
   getGeneratedTrip,
   getOrCreateDemoLuangPrabangTrip,
   INTENSITY_TO_PACE,
   PACE_DESCRIPTION,
   replaceGeneratedTripId,
-  saveGeneratedTrip,
   updateGeneratedTrip,
 } from "@/lib/generated-trips";
 import { PACE_TO_INTENSITY } from "@/lib/generate-plan-mapping";
@@ -117,13 +113,13 @@ import {
   createTripItemOnServer,
   deleteTripItemOnServer,
   getDayTravelSegments,
+  retryFailedTravelSegments,
   reorderTripItemsOnServer,
   updateTripDayOnServer,
   updateTripItemOnServer,
   updateTripOnServer,
   type UpdateTripItemRequest,
 } from "@/lib/trips-update-api";
-import { getTripDrafts } from "@/lib/trip-drafts";
 import {
   formatTHB,
   getDayRouteEstimate,
@@ -133,6 +129,7 @@ import {
   getTripPlaceStats,
   getTripTotalCost,
 } from "@/lib/trip-utils";
+import { toWholeTripAmount } from "@/lib/budget-units";
 import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
@@ -283,7 +280,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // in Hero for why "ภาพรวมทริป" and "แพลนทริป" no longer show the same numbers.
   const [planDayIndex, setPlanDayIndex] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [generationNoticeDismissed, setGenerationNoticeDismissed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   // undefined `activity` = add mode (AddActivityDialog starts blank); set =
@@ -405,11 +402,26 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           loaded.days = loaded.days.map((day) => ({
             ...day,
             travelSegments: day.travelSegments ?? localDaysById.get(day.id)?.travelSegments,
-            activities: day.activities.map((activity) => ({
-              ...activity,
-              dismissedTravelSegmentId:
-                localActivities.get(activity.id)?.dismissedTravelSegmentId,
-            })),
+            activities: day.activities.map((activity) => {
+              const localActivity = localActivities.get(activity.id);
+              return {
+                ...activity,
+                dismissedTravelSegmentId: localActivity?.dismissedTravelSegmentId,
+                // planTravelEstimate and travelNote are what the generated plan
+                // reckoned each leg costs. Neither has a column: the trip is
+                // rebuilt from GET /trips/:id here, so both were being wiped by
+                // the first refetch — the traveller watched the photos arrive
+                // and the travel figures vanish in the same breath, and every
+                // connector row fell back to "+ เพิ่มการเดินทาง" for a leg the
+                // plan had already worked out.
+                //
+                // ?? rather than =, so a real value from the server always
+                // wins if these ever gain columns.
+                planTravelEstimate:
+                  activity.planTravelEstimate ?? localActivity?.planTravelEstimate,
+                travelNote: activity.travelNote ?? localActivity?.travelNote,
+              };
+            }),
           }));
         }
         if (local) updateGeneratedTrip(loaded.id, loaded);
@@ -472,6 +484,97 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip, backendUser]);
+
+  // An AI plan lands here with nothing on the server: /trips/plan/generate
+  // deliberately writes nothing, so until now the trip existed only in this
+  // browser's localStorage and was pushed to the backend lazily, by whichever
+  // edit happened to fire syncTripToServer first. A traveler who generated a
+  // plan and simply read it therefore had no trip at all — losing it to a
+  // cleared cache, a second device, or a private window, after waiting ~20s and
+  // spending a model call on it.
+  //
+  // So persist it as soon as it is on screen, which is also what self mode has
+  // always done (POST /trips before the first screen). Both flows then share one
+  // model: a real backend id, and per-action autosave on top of it.
+  //
+  // Deliberately silent. It is a background save of something the traveler
+  // already sees, and a failure is not a dead end — the trip stays in local
+  // storage and the existing lazy sync still runs on their first edit.
+  //
+  // NOT silent, unlike the per-action autosave it reuses. That one is a
+  // best-effort extra on top of a trip that already exists; this is the only
+  // thing that makes the trip exist at all, and everything downstream — travel
+  // segments, media, sharing — needs the row it creates. A plan that failed to
+  // save looks exactly like one that saved, right until the traveller loses it.
+  const autoPersistedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!trip || authLoading) return;
+    // The demo trip is a fixture, not somebody's plan.
+    if (trip.id === DEMO_LUANG_PRABANG_ID) return;
+    if (trip.backendSynced) return;
+    if (autoPersistedRef.current === trip.id) return;
+
+    // POST /trips/create takes its owner from the token, so there is nothing to
+    // save against while signed out. Worth saying out loud: without an account
+    // the plan lives in this browser and nowhere else, which is also why its
+    // travel segments and photos never appear.
+    if (!backendUser) {
+      if (autoPersistedRef.current !== `anon:${trip.id}`) {
+        autoPersistedRef.current = `anon:${trip.id}`;
+        showToast("แพลนนี้เก็บอยู่ในเครื่องนี้เท่านั้น เข้าสู่ระบบเพื่อบันทึกและคำนวณเส้นทาง");
+      }
+      return;
+    }
+
+    autoPersistedRef.current = trip.id;
+    void (async () => {
+      const saved = await syncTripToServer(trip);
+      if (!saved) {
+        // Clear the guard so a later render can try again, rather than pinning
+        // the failure for the life of the page.
+        autoPersistedRef.current = null;
+        showToast("บันทึกแพลนไม่สำเร็จ เส้นทางและรูปจะยังไม่ขึ้นจนกว่าจะบันทึกได้");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.backendSynced, backendUser, authLoading]);
+
+  // A leg whose routing call failed keeps null numbers forever: the backend
+  // swallows the provider error on purpose (an outage must not break Add
+  // Place) and nothing ever revisited the row — which is why 39 of the 92
+  // legs in the database are empty, 37 of them with full coordinates on both
+  // ends. Asking once per trip on open is what heals them.
+  //
+  // Not gated on the "คำนวณการเดินทาง" toggle: that switch is about
+  // recalculating legs the traveller has just changed, whereas this is
+  // finishing work the trip was already supposed to have. The call is cheap
+  // when there is nothing to fix — the backend touches only days carrying a
+  // failed leg — and silent when it isn't, since the plan is perfectly usable
+  // without it.
+  const segmentRetryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!trip || !trip.backendSynced || !backendUser) return;
+    if (segmentRetryRef.current === trip.id) return;
+    const hasFailedLeg = trip.days.some((day) =>
+      (day.travelSegments ?? []).some((segment) => segment.routeStatus === "FAILED")
+    );
+    if (!hasFailedLeg) return;
+
+    segmentRetryRef.current = trip.id;
+    void (async () => {
+      try {
+        const segments = await retryFailedTravelSegments(trip.id);
+        const byDay = new Map<string, typeof segments>();
+        for (const segment of segments) {
+          byDay.set(segment.dayId, [...(byDay.get(segment.dayId) ?? []), segment]);
+        }
+        for (const [dayId, daySegments] of byDay) replaceDayTravelSegments(dayId, daySegments);
+      } catch (error) {
+        console.warn("คำนวณเส้นทางที่ค้างอยู่ไม่สำเร็จ", error);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.backendSynced, backendUser]);
 
   useEffect(() => {
     if (remix.status !== "success" || !remix.newTripId) return;
@@ -579,12 +682,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     setRemixDialogOpen(true);
   }
 
-  function handleConfirm() {
-    confirmGeneratedTrip(trip!.id);
-    setTrip({ ...trip!, status: "confirmed" });
-    setTab("plan");
-  }
-
   // Pushes the current in-memory trip to the granular PATCH endpoints
   // instead of POST /trips/create, for a trip that already has a real
   // backend row (see GeneratedTrip.backendSynced). There's no per-field
@@ -604,7 +701,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       durationDays: current.days.length,
       durationNights: Math.max(current.days.length - 1, 0),
       pace: current.pace,
-      budgetLimit: current.budgetGoal,
+      // budgetGoal is per person like every other figure in the app; the
+      // API's cap covers the whole group (see lib/budget-units.ts).
+      budgetLimit:
+        current.budgetGoal != null ? toWholeTripAmount(current.budgetGoal, current.creator?.groupSize) : undefined,
       specialNotes: current.conditionsLabel.slice(0, 2000),
     });
 
@@ -697,17 +797,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // the first click does what the label says.
   function handleEditTripClick() {
     setEditDialogOpen(true);
-  }
-
-  function handleRegenerate() {
-    const draft = getTripDrafts().find((d) => d.id === trip!.draftId);
-    if (!draft) return;
-    setRegenerating(true);
-    window.setTimeout(() => {
-      const regenerated = generateTripFromDraft(draft);
-      saveGeneratedTrip(regenerated);
-      router.replace(`/generated-plan/${regenerated.id}`);
-    }, 900);
   }
 
   function applyPatch(patch: Partial<GeneratedTrip>) {
@@ -1342,7 +1431,12 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
         <div className={`${SHELL} py-5 sm:py-8`}>
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
-          {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
+          {trip.generationNotice && !generationNoticeDismissed && (
+            <GenerationNoticeBanner
+              notice={trip.generationNotice}
+              onDismiss={() => setGenerationNoticeDismissed(true)}
+            />
+          )}
 
           {tab === "overview" && (
             <OverviewTab
@@ -1350,10 +1444,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               isConfirmed={isConfirmed}
               canEdit={canEdit}
               bannerDismissed={bannerDismissed}
-              regenerating={regenerating}
               onDismissBanner={() => setBannerDismissed(true)}
-              onRegenerate={handleRegenerate}
-              onConfirm={handleConfirm}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
               onExploreRecommendedAccommodation={() => setRecommendRequest({ dayId: trip.days[0].id, onlyHotels: true })}
@@ -1578,8 +1669,14 @@ function Hero({
   // of whatever day a previous visit to the plan tab left this on.
   planDayIndex: number;
 }) {
+  // A flexible-date trip ("3 วัน 2 คืน", no calendar dates chosen) has an empty
+  // date on every day — the AI generation response returns date: null for all
+  // of them. formatSlashDateRange gives back "" for that, so the duration is
+  // shown on its own rather than the whole line disappearing along with the
+  // dates it couldn't format.
   const dateRangeLabel =
-    trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : undefined;
+    trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : "";
+  const scheduleLabel = [dateRangeLabel, trip.durationLabel].filter(Boolean).join(" · ");
   // GeneratedTripStatus has no "active" state of its own — a confirmed trip
   // (i.e. locked in, not just an AI draft) is what the design calls "Active".
   const statusLabel = trip.status === "confirmed" ? "Active" : "แบบร่าง";
@@ -1609,11 +1706,28 @@ function Hero({
   // "รวมงบ/วัน" on overview is the trip's spend averaged over its planned
   // days; on the plan tab, now that this is per-day, it's just that one day's
   // own total — no averaging needed since there's nothing left to average.
+  //
+  // trip.totalBudget is the server-computed GROUP total (activity + travel
+  // costs × travelers — see BackendTrip.totalBudget in lib/trips-api.ts), so
+  // it has to be divided back down by groupSize before averaging over days,
+  // same as RealTripCard's perPersonBudget. Without this, the figure jumps
+  // by a factor of the traveler count the moment a trip first syncs to the
+  // backend, even though every other budget figure in the app (activity
+  // costs, budgetGoal, BudgetManagementPanel) is per person — the API's own
+  // budgetLimit is the group total behind it, converted in
+  // lib/budget-units.ts. The
+  // getTripTotalCost fallback (pre-sync, or groupSize unknown) is already
+  // per-person since activity.cost is entered that way.
   const costPerDay = useMemo(() => {
     if (selectedDay) return getDayTotalCost(selectedDay);
     const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
     if (plannedDays === 0) return 0;
-    return Math.round((trip.totalBudget ?? getTripTotalCost(trip)) / plannedDays);
+    const groupSize = trip.creator?.groupSize;
+    const totalPerPerson =
+      trip.totalBudget != null && groupSize && groupSize > 0
+        ? trip.totalBudget / groupSize
+        : (trip.totalBudget ?? getTripTotalCost(trip));
+    return Math.round(totalPerPerson / plannedDays);
   }, [trip, selectedDay]);
   // A day's own "ที่พัก" is whether it has a check-in stop — trip.accommodation
   // is a whole-trip concept (one chosen stay for the entire itinerary) and
@@ -1628,7 +1742,7 @@ function Hero({
     { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
     { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
     { key: "stays", label: "ที่พัก", value: `${staysCount}` },
-    { key: "budget", label: "รวมงบ/วัน", value: formatTHB(costPerDay) },
+    { key: "budget", label: "งบ/วัน/คน", value: formatTHB(costPerDay) },
     { key: "distance", label: "Total Distance", value: `${distanceKm} km` },
   ];
 
@@ -1808,10 +1922,10 @@ function Hero({
             The remaining tabs keep the badges. */}
         {showSummaryStats ? (
           <>
-            {dateRangeLabel && (
+            {scheduleLabel && (
               <p className="flex items-center gap-1.5 text-sm font-medium text-white">
                 <CalendarDays size={16} className="shrink-0" />
-                {dateRangeLabel} · {trip.durationLabel}
+                {scheduleLabel}
               </p>
             )}
             <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
@@ -1828,10 +1942,10 @@ function Hero({
           </>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {dateRangeLabel && (
+            {scheduleLabel && (
               <p className="flex items-center gap-1.5 text-sm font-medium text-white">
                 <CalendarDays size={16} className="shrink-0" />
-                {dateRangeLabel} · {trip.durationLabel}
+                {scheduleLabel}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
@@ -1851,12 +1965,18 @@ function Hero({
   );
 }
 
+// "" when either end is missing or unparseable — new Date("") is an Invalid
+// Date whose getDate()/getMonth()/getFullYear() are all NaN, which used to
+// render literally as "NaN/NaN/NaN - NaN/NaN/NaN" in the trip header.
 function formatSlashDateRange(startDate: string, endDate: string): string {
-  return `${formatSlashDate(startDate)} - ${formatSlashDate(endDate)}`;
+  const start = formatSlashDate(startDate);
+  const end = formatSlashDate(endDate);
+  return start && end ? `${start} - ${end}` : "";
 }
 
 function formatSlashDate(dateStr: string): string {
   const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}/${d.getFullYear()}`;
@@ -2280,17 +2400,13 @@ function MobileActionBar({ primary, secondary, caption }: MobileActionBarProps) 
   );
 }
 
-function ConfirmBanner({
-  regenerating,
-  onDismiss,
-  onRegenerate,
-  onConfirm,
-}: {
-  regenerating: boolean;
-  onDismiss: () => void;
-  onRegenerate: () => void;
-  onConfirm: () => void;
-}) {
+// Informational only. Both of its buttons are gone: "นำไปปรับเป็นทริปของฉัน"
+// because the plan is now saved the moment it opens (see the auto-persist
+// effect), and "สร้างใหม่ทั้งหมด" because re-rolling a whole plan spent another
+// model completion plus a fresh round of place searches every time it was
+// pressed — the single largest multiplier on what this feature costs. Editing
+// the plan that was generated is the supported way to change it.
+function ConfirmBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div
       className="flex flex-col items-start gap-4 rounded-2xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
@@ -2305,34 +2421,30 @@ function ConfirmBanner({
           <X size={14} />
         </button>
         <p className="text-sm">
-          <strong className="font-bold">ชอบแผนนี้ไหม?</strong> ถ้ายัง เราสร้างใหม่ให้ทั้งแผนได้เลย
+          <strong className="font-bold">แพลนฉบับร่างโดย PunGuide</strong> แก้ได้ทุกอย่าง
+          เพิ่ม ลบ สลับวันได้ตามใจ ทุกการแก้ไขถูกบันทึกให้อัตโนมัติ
         </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onRegenerate}
-          disabled={regenerating}
-          className="inline-flex items-center gap-1.5 rounded-full border bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <RefreshCcw size={14} className={regenerating ? "animate-spin" : ""} />
-          สร้างใหม่ทั้งหมด
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="rounded-full px-5 py-2.5 text-sm font-semibold text-white"
-          style={{ backgroundColor: "var(--color-brand-green)" }}
-        >
-          นำไปปรับเป็นทริปของฉัน
-        </button>
       </div>
     </div>
   );
 }
 
-function GenerationNoticeBanner({ notice }: { notice: NonNullable<GeneratedTrip["generationNotice"]> }) {
+// Dismissable, like the draft banner above it. The findings are worth showing
+// once — they are the only place a traveller learns that a place they picked
+// did not fit, or that two stops are scheduled closer together than the drive
+// between them — but they describe a plan the traveller is about to edit
+// anyway, and a warning that cannot be closed just becomes furniture.
+//
+// Closed for this viewing only, deliberately not written to the trip: the
+// findings are still true, and reopening the plan tomorrow should say so again
+// rather than hiding a real problem forever on the strength of one click.
+function GenerationNoticeBanner({
+  notice,
+  onDismiss,
+}: {
+  notice: NonNullable<GeneratedTrip["generationNotice"]>;
+  onDismiss: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const errorCount = notice.violations.filter((v) => v.severity === "error").length;
 
@@ -2356,6 +2468,15 @@ function GenerationNoticeBanner({ notice }: { notice: NonNullable<GeneratedTrip[
           style={{ color: "#B8860B" }}
         >
           {expanded ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="ปิดคำเตือนเกี่ยวกับแผนนี้"
+          className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2"
+          style={{ color: "#B8860B" }}
+        >
+          <X size={16} />
         </button>
       </div>
 
@@ -2468,10 +2589,7 @@ function OverviewTab({
   isConfirmed,
   canEdit,
   bannerDismissed,
-  regenerating,
   onDismissBanner,
-  onRegenerate,
-  onConfirm,
   onAddActivity,
   onExploreRecommended,
   onExploreRecommendedAccommodation,
@@ -2491,10 +2609,7 @@ function OverviewTab({
   isConfirmed: boolean;
   canEdit: boolean;
   bannerDismissed: boolean;
-  regenerating: boolean;
   onDismissBanner: () => void;
-  onRegenerate: () => void;
-  onConfirm: () => void;
   onAddActivity: (dayId: string) => void;
   // "ยังไม่รู้จะไปไหน?" banner — opens the recommend-grid modal (defaulting
   // to day 1), distinct from onAddActivity which opens the plain manual-entry
@@ -2530,10 +2645,7 @@ function OverviewTab({
 
       {canEdit && showConfirmBanner && !isConfirmed && !bannerDismissed && (
         <ConfirmBanner
-          regenerating={regenerating}
           onDismiss={onDismissBanner}
-          onRegenerate={onRegenerate}
-          onConfirm={onConfirm}
         />
       )}
 
@@ -3045,8 +3157,13 @@ function ItineraryRow({
           </p>
         )}
         <p className="truncate text-sm font-bold">{activity.title}</p>
-        {(activity.notes || activity.travelNote) && (
-          <p className="truncate text-xs text-[var(--color-muted)]">{activity.notes || activity.travelNote}</p>
+        {/* travelNote is deliberately NOT a fallback here any more: it holds
+            the plan's own travel estimate, which now renders on the connector
+            row above this stop. Printing it here too showed the same leg twice
+            — once as a number under the stop, once as an empty
+            "+ เพิ่มการเดินทาง" prompt — with the two appearing to disagree. */}
+        {activity.notes && (
+          <p className="truncate text-xs text-[var(--color-muted)]">{activity.notes}</p>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -4482,7 +4599,7 @@ function EditTripDialog({
       durationLabel: durationLabelFor(days),
       pace,
       paceLabel,
-      budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / วัน` : "ยังไม่ระบุ",
+      budgetLabel: budgetAmount ? `${formatTHB(Number(budgetAmount))} / คน` : "ยังไม่ระบุ",
       budgetGoal: budgetAmount ? Number(budgetAmount) : undefined,
       conditionsLabel: conditionsText.trim() || "ไม่มีเงื่อนไขพิเศษ",
     });
@@ -4516,7 +4633,13 @@ function EditTripDialog({
         </div>
       </div>
 
-      <EditNumberField label="งบประมาณ" value={budgetAmount} onChange={setBudgetAmount} placeholder="เช่น 3000" suffix="/ วัน" />
+      <EditNumberField
+        label="งบประมาณทั้งทริป"
+        value={budgetAmount}
+        onChange={setBudgetAmount}
+        placeholder="เช่น 9000"
+        suffix="/ คน"
+      />
 
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-[var(--color-muted)]">เงื่อนไข / ข้อจำกัด</label>

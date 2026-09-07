@@ -231,15 +231,18 @@ export function RealTripCard({
   const durationDays = trip.schedule?.durationDays ?? null;
 
   return (
-    // The white card panel is back: the pluno reference frames the cover in a
-    // rounded, shadowed card with the title, meta line and creator/stats
-    // footer inside it, rather than letting the cover sit bare on the page.
+    // No panel of its own: the card carries the feed's background and no
+    // shadow, so the rounded cover reads as sitting directly on the page and
+    // the only edges in the grid are the covers themselves. `transparent`
+    // rather than repeating #fbfdfc — whatever the feed paints behind the grid
+    // shows through, so the two can never drift apart.
+    //
     // h-full + the footer's mt-auto pin the creator line to the bottom of
     // every card in a grid row, so a card carrying a price line doesn't push
     // its footer 20px below its neighbour's. Both are scoped to >=1025px:
     // under the masonry layout there's no equal-height row to stretch to, and
     // stretching there would defeat the stagger this is all for.
-    <article className="group flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.08)] transition-shadow hover:shadow-[0_6px_20px_rgba(16,24,40,0.12)] min-[1025px]:h-full">
+    <article className="group flex flex-col bg-transparent min-[1025px]:h-full">
       {/* Both links go to the read-only /view-trip/[id], not the
           /generated-plan/[id] working surface — a card is a browse affordance,
           so tapping one should open the trip to look at, never to edit. */}

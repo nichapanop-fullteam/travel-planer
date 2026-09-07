@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, SearchX } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -62,7 +62,20 @@ function MainFeed() {
   // search box writes to this state directly, and mirroring it back into the
   // URL would fight the field on every keystroke.
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+
+  // Clearing the field has to clear the URL too. `q` is read once, as the
+  // initial value, so the field and the address bar drift apart the moment
+  // anyone edits it — harmless while typing, but if the search is cleared and
+  // ?q= stays behind, the next reload (or the installed app relaunching on its
+  // last URL) restores a search the user just dismissed. Only the empty case is
+  // mirrored back: writing on every keystroke would fight the field and spam
+  // history.
+  useEffect(() => {
+    if (query.trim() || !searchParams.get("q")) return;
+    router.replace("/", { scroll: false });
+  }, [query, searchParams, router]);
   const [category, setCategory] = useState<"forYou" | Category>("forYou");
   const [destinationsExpanded, setDestinationsExpanded] = useState(false);
 

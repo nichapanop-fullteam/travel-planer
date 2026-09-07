@@ -222,6 +222,21 @@ export async function getDayTravelSegments(dayId: string): Promise<TravelSegment
   return response.json();
 }
 
+// POST /trips/:tripId/travel-segments/retry — recalculates the legs whose
+// routing call failed and were then never looked at again, and hands back
+// every segment in the trip.
+//
+// Safe to call on open: the backend only re-routes days that are actually
+// carrying a failed leg, and a leg whose stop has no coordinates never reaches
+// the provider at all. A trip with nothing broken costs one query.
+export async function retryFailedTravelSegments(tripId: string): Promise<TravelSegment[]> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/travel-segments/retry`, {
+    method: "POST",
+  });
+  await throwOnError(response, "คำนวณเส้นทางที่ค้างอยู่");
+  return response.json();
+}
+
 // PATCH /travel-segments/:id/travel-mode. DRIVE is the only mode enabled by
 // the backend today, but the union mirrors the additive API contract.
 export async function updateTravelSegmentMode(

@@ -185,11 +185,8 @@ async function uploadActivityImages(
 }
 
 // Per-day estimated baht per person — used only to derive a rough
-// budgetLimit (amount × days) when the draft picked a preset tier instead of
-// typing a custom number. Matches BUDGET_PRESET_LABEL in
-// lib/generated-trips.ts. The traveler count is deliberately NOT a factor:
-// budgetLimit is a per-person cap, matching the per-person amounts the
-// budget tab writes (see BudgetManagementPanel).
+// budgetLimit when the draft picked a preset tier instead of typing a custom
+// number. Matches BUDGET_PRESET_LABEL in lib/generated-trips.ts.
 const BUDGET_TIER_DAILY_AMOUNT: Record<string, number> = {
   economy: 800,
   comfort: 3000,
@@ -285,18 +282,25 @@ function buildTransportAndConstraints(draft?: TripDraft): {
 // leaving it undefined for draftless trips.
 const DEFAULT_BUDGET_TIER: BudgetTier = "economy";
 
-function buildBudget(draft: TripDraft | undefined, durationDays: number) {
+// Both sources of a budget figure here are baht per person per day — the
+// wizard's "ระบุเอง" field and the preset tiers alike — but budgetLimit is a
+// cap on the whole trip for the whole group, so the traveler count is part of
+// the conversion, not just the day count.
+function buildBudget(draft: TripDraft | undefined, durationDays: number, numPeople: number) {
   if (!draft?.budget) return { budgetTier: DEFAULT_BUDGET_TIER, budgetLimit: undefined };
 
   if (draft.budget === "custom") {
-    const perDay = Number(draft.customBudget.replace(/[^\d]/g, ""));
-    const budgetLimit = Number.isFinite(perDay) && perDay > 0 ? perDay * durationDays : undefined;
+    const perPersonPerDay = Number(draft.customBudget.replace(/[^\d]/g, ""));
+    const budgetLimit =
+      Number.isFinite(perPersonPerDay) && perPersonPerDay > 0
+        ? perPersonPerDay * durationDays * numPeople
+        : undefined;
     return { budgetTier: "custom" as BudgetTier, budgetLimit };
   }
 
   const tier = BUDGET_KEY_TO_TIER[draft.budget] ?? DEFAULT_BUDGET_TIER;
-  const perDay = BUDGET_TIER_DAILY_AMOUNT[tier];
-  const budgetLimit = perDay ? perDay * durationDays : undefined;
+  const perPersonPerDay = BUDGET_TIER_DAILY_AMOUNT[tier];
+  const budgetLimit = perPersonPerDay ? perPersonPerDay * durationDays * numPeople : undefined;
   return { budgetTier: tier, budgetLimit };
 }
 
@@ -305,6 +309,18 @@ function buildBudget(draft: TripDraft | undefined, durationDays: number) {
 export function buildActivity(activity: Activity, orderIndex: number): CreateTripActivity {
   const placeId = activity.location?.googlePlaceId;
   const travel = activity.travelFromPrevious;
+  // A generated plan puts its own travel figures in planTravelEstimate, not in
+  // travelFromPrevious — that field means "the traveller entered this", and a
+  // straight-line guess must not claim to be one. But the columns behind
+  // travelTimeFromPrevMin/travelDistanceFromPrevKm are just numbers, and the
+  // API reads them back out as travelFromPrevious either way, so sending the
+  // estimate is what makes it survive at all.
+  //
+  // Without this the numbers existed only in this browser: the trip saved
+  // fine, and the first refetch of GET /trips/:id rebuilt every stop from the
+  // server and silently dropped them — the photos appeared and the travel
+  // figures disappeared in the same render.
+  const estimate = activity.planTravelEstimate;
   return {
     id: activity.id,
     placeId,
@@ -316,8 +332,8 @@ export function buildActivity(activity: Activity, orderIndex: number): CreateTri
     notes: activity.notes,
     travelTypeFromPrev: travel?.type,
     travelCustomTypeFromPrev: travel?.customType,
-    travelTimeFromPrevMin: travel?.durationMin,
-    travelDistanceFromPrevKm: travel?.distanceKm,
+    travelTimeFromPrevMin: travel?.durationMin ?? estimate?.durationMin,
+    travelDistanceFromPrevKm: travel?.distanceKm ?? estimate?.distanceKm,
     travelCostFromPrevAmount: travel?.costAmount,
     travelCostFromPrevCurrency: travel?.costCurrency,
     // activity.travelNote, not travel?.notes — AddActivityDialog's
@@ -345,7 +361,7 @@ export function buildCreateTripRequest(
   // even for draftless trips (see buildBudget/buildStylesAndCustom comments
   // for the same "required, not just validated-if-present" pattern).
   const numPeople = draft ? Math.min(Math.max(draft.adults + draft.children, 1), 50) : 1;
-  const { budgetTier, budgetLimit } = buildBudget(draft, durationDays);
+  const { budgetTier, budgetLimit } = buildBudget(draft, durationDays, numPeople);
 
   return {
     title: trip.title || trip.destination,
@@ -388,6 +404,13 @@ export async function createTripOnServer(
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      // The trip's own client-generated id is already exactly one id per
+      // "save this trip" intention: stable across retries and reloads, and
+      // replaced with the backend's id once this succeeds (see
+      // reconcileTripWithServer), so it can never be reused for a different
+      // trip. A double-click or a retry after a dropped response therefore
+      // gets the trip that was already created back, instead of a duplicate.
+      "Idempotency-Key": trip.id,
     },
     body: JSON.stringify(body),
   });

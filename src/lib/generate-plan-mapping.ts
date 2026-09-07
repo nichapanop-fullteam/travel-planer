@@ -1,5 +1,7 @@
 import type { TripDraft } from "@/types";
 import type {
+  AccommodationGrade,
+  AccommodationStyle,
   Constraint,
   GeneratePlanAccommodation,
   GeneratePlanBudget,
@@ -46,6 +48,47 @@ export const BUDGET_KEY_TO_TIER: Record<string, "economy" | "comfort" | "premium
 // constraint — routed to preferences.transport instead of constraints.
 export const PRIVATE_CAR_CONDITION = "มีรถส่วนตัว";
 
+// HOTEL_STYLE_OPTIONS in create-trip/page.tsx. MORE_HOTEL_STYLE_OPTIONS
+// ("อพาร์ทเมนท์", "แคมป์ปิ้ง / กลางแจ้ง") is deliberately absent — neither has an
+// enum value, so both fall through to accommodation.customStyles like any
+// chip the traveler typed themselves.
+export const HOTEL_STYLE_TAG_TO_ENUM: Record<string, AccommodationStyle> = {
+  บูทีค: "boutique",
+  รีสอร์ท: "resort",
+  โรงแรมทั่วไป: "hotel",
+  โฮมสเตย์: "homestay",
+  วิลล่า: "villa",
+  โฮสเทล: "hostel",
+};
+
+// HOTEL_GRADE_OPTIONS is 1★–5★ but the API's grade is an enum, not a star
+// count — an unmapped chip has to be dropped rather than sent through, since
+// "3★" fails validation with a 400. "ไม่ระบุ" is intentionally unmapped: it
+// means "no preference", same as sending no grade at all.
+export const HOTEL_GRADE_TAG_TO_ENUM: Record<string, AccommodationGrade> = {
+  "1★": "budget",
+  "2★": "budget",
+  "3★": "midscale",
+  "4★": "upscale",
+  "5★": "luxury",
+  หรูหราพิเศษ: "luxury",
+};
+
+const GRADE_RANK: Record<AccommodationGrade, number> = {
+  hostel: 0,
+  budget: 1,
+  midscale: 2,
+  upscale: 3,
+  luxury: 4,
+};
+
+// API caps, enforced here so an over-long selection is trimmed instead of
+// 400-ing the whole request.
+const MAX_ACCOMMODATION_STYLES = 6;
+const MAX_ACCOMMODATION_CUSTOM_STYLES = 5;
+const MAX_CUSTOM_STYLE_LENGTH = 60;
+export const MAX_SELECTED_PLACE_IDS = 40;
+
 export const CONDITION_TO_CONSTRAINT: Record<string, Constraint> = {
   มีผู้สูงอายุ: "seniors",
   เดินเยอะไม่ได้: "limited_walking",
@@ -64,7 +107,18 @@ function toApiDateOnly(isoTimestamp: string): string {
   return isoTimestamp.slice(0, 10);
 }
 
-export function buildGeneratePlanRequest(draft: TripDraft): GeneratePlanRequest {
+// selectedPlaceIds are the `places` ids of the cards the traveler tapped
+// "+ เพิ่มแผน" on during the recommended-places step — passed separately
+// because they live in their own state on create-trip/page.tsx rather than on
+// the TripDraft.
+export function buildGeneratePlanRequest(
+  draft: TripDraft,
+  selectedPlaceIds: string[] = []
+): GeneratePlanRequest {
+  // Deduped before the cap so 40 slots are never spent on repeats (the API
+  // dedupes too, but it counts the raw list against its own limit).
+  const pickedPlaceIds = [...new Set(selectedPlaceIds)].slice(0, MAX_SELECTED_PLACE_IDS);
+
   const styles: TravelStyle[] = [];
   const customStyles: string[] = [];
   for (const tag of draft.styles) {
@@ -120,6 +174,7 @@ export function buildGeneratePlanRequest(draft: TripDraft): GeneratePlanRequest 
     },
     locale: "th",
     currency: "THB",
+    selectedPlaceIds: pickedPlaceIds.length ? pickedPlaceIds : undefined,
   };
 
   if (draft.startDate && draft.endDate) {
@@ -160,17 +215,48 @@ function buildAccommodation(draft: TripDraft): GeneratePlanAccommodation | undef
 
   if (accommodation.status === "unbooked" && accommodation.unbooked) {
     const { styles: hotelStyles, styleRecommend, grades, gradeRecommend, note } = accommodation.unbooked;
-    // Hotel "style" (boutique/resort/etc.) has no dedicated field in this
-    // endpoint's accommodation shape — folded into notes as free-text hint.
-    const styleNote = !styleRecommend && hotelStyles.length ? `สไตล์ที่ต้องการ: ${hotelStyles.join(", ")}` : undefined;
+
+    const styles: AccommodationStyle[] = [];
+    const customStyles: string[] = [];
+    if (!styleRecommend) {
+      for (const tag of hotelStyles) {
+        const mapped = HOTEL_STYLE_TAG_TO_ENUM[tag];
+        if (mapped) {
+          if (!styles.includes(mapped)) styles.push(mapped);
+        } else {
+          customStyles.push(tag.slice(0, MAX_CUSTOM_STYLE_LENGTH));
+        }
+      }
+    }
+
+    // grade takes a single value while the chip row is multi-select, so the
+    // highest tier picked wins and the full selection is restated in notes —
+    // otherwise picking 3★ and 4★ would tell the API strictly less than the
+    // traveler said.
+    const gradeTags = gradeRecommend ? [] : grades;
+    const gradeNote = gradeTags.length > 1 ? `เกรดที่รับได้: ${gradeTags.join(", ")}` : undefined;
+
     return {
       status: "not_booked",
-      grade: !gradeRecommend && grades.length ? grades.join(", ") : undefined,
-      notes: [styleNote, note.trim()].filter(Boolean).join(" — ") || undefined,
+      grade: pickGrade(gradeTags),
+      styles: styles.length ? styles.slice(0, MAX_ACCOMMODATION_STYLES) : undefined,
+      customStyles: customStyles.length
+        ? customStyles.slice(0, MAX_ACCOMMODATION_CUSTOM_STYLES)
+        : undefined,
+      notes: [gradeNote, note.trim()].filter(Boolean).join(" — ") || undefined,
     };
   }
 
   return undefined;
+}
+
+function pickGrade(gradeTags: string[]): AccommodationGrade | undefined {
+  let picked: AccommodationGrade | undefined;
+  for (const tag of gradeTags) {
+    const mapped = HOTEL_GRADE_TAG_TO_ENUM[tag];
+    if (mapped && (!picked || GRADE_RANK[mapped] > GRADE_RANK[picked])) picked = mapped;
+  }
+  return picked;
 }
 
 // ─── Example: draft that lets PunGuide pick everything ("แนะนำมาให้เลย") ───
@@ -181,13 +267,10 @@ function buildAccommodation(draft: TripDraft): GeneratePlanAccommodation | undef
 // both flags are true, so buildAccommodation ignores styles/grades entirely
 // and only note (if any) survives into GeneratePlanAccommodation.notes.
 //
-// selectedRecommendations is included here for reference only — it is NOT a
-// real TripDraft field. It lives in separate useState on create-trip/page.tsx
-// and never reaches /trips/generate-plan; it's merged into the generated
-// trip afterward, by withSelectedRecommendations, onto whichever day the
-// traveler assigned each place to on the recommended-places step (or into
-// lib/trip-places.ts as an unscheduled "save for later" place when
-// dayIndex is null). Shown inline so the full request→response round trip
+// selectedRecommendations is shown here for reference only — it is NOT a
+// TripDraft field. It lives in its own useState on create-trip/page.tsx, and
+// the page passes just the ids to buildGeneratePlanRequest's second argument,
+// which sends them as selectedPlaceIds. Included inline so the whole request
 // is visible in one place.
 //
 // const draft: TripDraft = {
@@ -225,10 +308,10 @@ function buildAccommodation(draft: TripDraft): GeneratePlanAccommodation | undef
 //     },
 //   },
 //
-//   // NOT a TripDraft field — see note above.
+//   // NOT a TripDraft field — see note above. ai mode's picks carry no day
+//   // assignment; the API decides which day each one lands on.
 //   selectedRecommendations: [
 //     {
-//       dayIndex: 0, // assigned to day 1 on the recommended-places sheet
 //       place: {
 //         googlePlaceId: "b3f2e1a0-...-suggest-uuid",
 //         name: "ร้านเข้าซอย",
@@ -241,7 +324,6 @@ function buildAccommodation(draft: TripDraft): GeneratePlanAccommodation | undef
 //       },
 //     },
 //     {
-//       dayIndex: null, // "บันทึกไว้ก่อน" — no day chosen yet
 //       place: {
 //         googlePlaceId: "9c7d4f2b-...-suggest-uuid",
 //         name: "วัดพระสิงห์วรมหาวิหาร",
@@ -256,18 +338,18 @@ function buildAccommodation(draft: TripDraft): GeneratePlanAccommodation | undef
 // };
 //
 // buildAccommodation(draft) resolves to:
-//   { status: "not_booked", grade: undefined, notes: "อยากได้ที่พักใกล้ถนนคนเดินนิมมานเหมิน" }
-// (styleNote is skipped because styleRecommend is true, grade is skipped
+//   { status: "not_booked", grade: undefined, styles: undefined,
+//     customStyles: undefined, notes: "อยากได้ที่พักใกล้ถนนคนเดินนิมมานเหมิน" }
+// (styles/customStyles are skipped because styleRecommend is true, grade
 // because gradeRecommend is true — only the free-text note passes through.)
 //
-// draft.selectedRecommendations never reaches buildGeneratePlanRequest — once
-// the API responds, withSelectedRecommendations(generatedTrip) appends the
-// dayIndex: 0 entry above to generatedTrip.days[0].activities (times ticking
-// up from 09:00, capped at 22:00), and hands the dayIndex: null entry to
-// lib/trip-places.ts's addTripPlace(generatedTrip.id, ...) instead, since it
-// has no day yet:
+// The two selectedRecommendations above reach the request as their ids:
 //
-//   { id: "<uuid>", time: "09:00", title: "ร้านเข้าซอย", category: "food",
-//     location: { name: "ร้านเข้าซอย", lat: 18.7906, lng: 98.9868, rating: 4.6,
-//                  imageUrl: "https://.../khao-soy.jpg", googlePlaceId: "b3f2e1a0-...-suggest-uuid" },
-//     cost: 0 },
+//   selectedPlaceIds: ["b3f2e1a0-...-suggest-uuid", "9c7d4f2b-...-suggest-uuid"]
+//
+// Both places are then in the returned draft's days — placed by the API, not
+// appended to day 1 afterwards, so their times and ordering are part of the
+// plan the model actually reasoned about. If the plan has no room for one
+// (more picks than items-per-day allows), it comes back as a
+// missing_picked_place warning in generation.violations rather than silently
+// vanishing.

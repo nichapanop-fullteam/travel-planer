@@ -1,3 +1,5 @@
+import { optionalAuthHeaders } from "@/lib/backend-user";
+
 // The external API's own DB taxonomy — distinct from this app's
 // PlaceCategory ("hotel" | "attraction" | "restaurant"); kept as a separate
 // type since the two aren't interchangeable.
@@ -35,7 +37,7 @@ export async function fetchExternalPlaceDetails(
   sessionToken: string
 ): Promise<ExternalPlaceDetails | null> {
   const params = new URLSearchParams({ externalRef, sessionToken });
-  const response = await fetch(`/api/places/details?${params.toString()}`);
+  const response = await fetch(`/api/places/details?${params.toString()}`, { headers: optionalAuthHeaders() });
   if (!response.ok) return null;
 
   return (await response.json()) as ExternalPlaceDetails;
@@ -108,7 +110,7 @@ export interface PlaceFullDetails {
 // opens. `id` must be the external service's own places-table UUID returned by
 // search/suggest — never a Google Place ID / externalRef.
 export async function fetchPlaceFullDetails(id: string, signal?: AbortSignal): Promise<PlaceFullDetails> {
-  const response = await fetch(`/api/places/${encodeURIComponent(id)}`, { signal });
+  const response = await fetch(`/api/places/${encodeURIComponent(id)}`, { signal, headers: optionalAuthHeaders() });
 
   if (response.status === 404) throw new Error("PLACE_NOT_FOUND");
   if (!response.ok) throw new Error("PLACE_DETAILS_UNAVAILABLE");
@@ -129,7 +131,7 @@ export async function searchExternalPlaces(query: string, limit?: number): Promi
   const params = new URLSearchParams({ q: query });
   if (limit) params.set("limit", String(limit));
 
-  const response = await fetch(`/api/places/search?${params.toString()}`);
+  const response = await fetch(`/api/places/search?${params.toString()}`, { headers: optionalAuthHeaders() });
   if (!response.ok) return [];
 
   return (await response.json()) as ExternalSearchPlace[];
@@ -181,7 +183,7 @@ export async function fetchAutocompleteSuggestions(
   sessionToken: string
 ): Promise<AutocompleteSuggestion[]> {
   const params = new URLSearchParams({ q: query, sessionToken });
-  const response = await fetch(`/api/places/autocomplete?${params.toString()}`);
+  const response = await fetch(`/api/places/autocomplete?${params.toString()}`, { headers: optionalAuthHeaders() });
   if (!response.ok) return [];
 
   return (await response.json()) as AutocompleteSuggestion[];
@@ -202,7 +204,7 @@ export async function fetchExternalPlaceSuggestions(
   if (options?.radius) params.set("radius", String(options.radius));
   if (options?.limit) params.set("limit", String(options.limit));
 
-  const response = await fetch(`/api/places/suggest?${params.toString()}`);
+  const response = await fetch(`/api/places/suggest?${params.toString()}`, { headers: optionalAuthHeaders() });
   if (!response.ok) return [];
 
   return (await response.json()) as ExternalSearchPlace[];
@@ -231,7 +233,7 @@ export async function fetchExternalPlaceSuggestionSections(
   if (options?.radius) params.set("radius", String(options.radius));
   if (options?.limit) params.set("limit", String(options.limit));
 
-  const response = await fetch(`/api/places/suggest/sections?${params.toString()}`);
+  const response = await fetch(`/api/places/suggest/sections?${params.toString()}`, { headers: optionalAuthHeaders() });
   if (!response.ok) return { attractions: [], restaurants: [], accommodations: [] };
 
   return (await response.json()) as ExternalPlaceSuggestionSections;
