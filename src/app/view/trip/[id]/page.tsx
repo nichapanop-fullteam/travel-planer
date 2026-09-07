@@ -34,6 +34,7 @@ import { Logo } from "@/components/common/Logo";
 import { RemixIcon } from "@/components/common/RemixIcon";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
+import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
 import { useAuth } from "@/providers/AuthProvider";
@@ -69,6 +70,7 @@ export default function ViewTripPage() {
   const [dayIndex, setDayIndex] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [following, setFollowing] = useState(false);
   // Optimistic override over trip.isSaved/saveCount, same shape as the like
   // button elsewhere in the app (generated-plan's TripSocialBar) — the click
@@ -183,7 +185,14 @@ export default function ViewTripPage() {
       .finally(() => setSaving(false));
   }
 
+  // Share-link management (POST/PATCH/DELETE .../share) is owner-only — an
+  // owner gets the manage-link dialog, everyone else gets the OS share sheet
+  // where there is one, the clipboard otherwise.
   function handleShare() {
+    if (isOwner) {
+      setShowShareDialog(true);
+      return;
+    }
     const url = window.location.href;
     if (navigator.share) {
       navigator.share({ title: trip!.title || trip!.destination, url }).catch(() => {});
@@ -244,6 +253,8 @@ export default function ViewTripPage() {
           onSubmit={(values) => remix.submit(values, remixSourceMeta)}
         />
       )}
+
+      {showShareDialog && <ShareTripDialog tripId={trip.id} onClose={() => setShowShareDialog(false)} />}
 
       {/* ─── Hero ─── */}
       <div className="relative flex min-h-[320px] flex-col overflow-hidden rounded-b-[24px] sm:min-h-[380px]">
