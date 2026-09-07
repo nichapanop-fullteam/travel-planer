@@ -100,6 +100,15 @@ export async function deleteShareLink(tripId: string): Promise<void> {
 // Don't try to recover a trip id from this to call GET /trips/:id: the whole
 // point of the feature is that `shareToken` is the only key, and the only one
 // the owner can revoke. A trip id can't be revoked.
+/** `description` and `openingHours` come from a live Google Place Details
+ *  call the backend makes per place (not from anything persisted on the
+ *  trip), so they're absent for a hand-typed stop or when that call failed —
+ *  always treat them as optional, never assume they'll be there. */
+export interface SharedTripOpeningHours {
+  openNow?: boolean;
+  weekdayDescriptions: string[];
+}
+
 export interface SharedTripActivity {
   /** 0-based within its day. */
   order: number;
@@ -108,9 +117,21 @@ export interface SharedTripActivity {
   category: string;
   /** `imageUrl` isn't in the API doc's example but the live payload sends it
    *  (a Google place photo), and it's what the activity thumbnails use. */
-  place?: { name: string; lat?: number; lng?: number; rating?: number; imageUrl?: string };
+  place?: {
+    name: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+    rating?: number;
+    imageUrl?: string;
+    description?: string;
+    openingHours?: SharedTripOpeningHours;
+  };
   travelNote?: string;
   travelFromPrevious?: { type: string; durationMin?: number; distanceKm?: number };
+  /** THB, for the whole group — the one money field this payload publishes;
+   *  see PublicSharedTripResponseDto's header comment on the backend. */
+  cost: number;
 }
 
 export interface SharedTripDay {

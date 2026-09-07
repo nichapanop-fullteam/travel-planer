@@ -28,6 +28,7 @@ const sharedTrip: SharedTrip = {
           title: "วัดเชียงทอง",
           category: "sightseeing",
           place: { name: "วัดเชียงทอง", rating: 4.6 },
+          cost: 0,
         },
       ],
     },
@@ -104,7 +105,7 @@ describe("GET /shared-trips/:shareToken page", () => {
       ...sharedTrip,
       days: [
         sharedTrip.days![0],
-        { dayNumber: 2, date: "2026-09-11", activities: [{ order: 0, title: "น้ำตกตาดกวางสี", category: "sightseeing" }] },
+        { dayNumber: 2, date: "2026-09-11", activities: [{ order: 0, title: "น้ำตกตาดกวางสี", category: "sightseeing", cost: 0 }] },
       ],
     });
     await renderPage();
@@ -117,5 +118,65 @@ describe("GET /shared-trips/:shareToken page", () => {
     await renderPage("q5LMr_f1tphUYZUJD71BehvN-HtOqnBFLjUL544MPio");
 
     expect(mockedGetSharedTrip).toHaveBeenCalledWith("q5LMr_f1tphUYZUJD71BehvN-HtOqnBFLjUL544MPio");
+  });
+
+  // cost, address, openingHours and description are the fields added on top
+  // of the original narrow payload — each renders only when present, since a
+  // hand-typed stop or a failed Google lookup means some of them are absent.
+  it("shows the per-stop price tag when cost is greater than zero", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [{ ...sharedTrip.days![0], activities: [{ ...sharedTrip.days![0].activities[0], cost: 1500 }] }],
+    });
+    await renderPage();
+
+    expect(screen.getByText("฿1,500")).toBeInTheDocument();
+  });
+
+  it("omits the price tag entirely for a free stop rather than showing ฿0", async () => {
+    mockedGetSharedTrip.mockResolvedValue(sharedTrip);
+    await renderPage();
+
+    expect(screen.queryByText(/฿0/)).not.toBeInTheDocument();
+  });
+
+  it("shows the place's address, opening hours and description when the backend supplies them", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [
+        {
+          ...sharedTrip.days![0],
+          activities: [
+            {
+              ...sharedTrip.days![0].activities[0],
+              place: {
+                name: "วัดเชียงทอง",
+                address: "Sakkaline Rd, Luang Prabang",
+                rating: 4.6,
+                description: "วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16",
+                openingHours: { openNow: true, weekdayDescriptions: ["a", "b", "c", "d", "e", "f", "g"] },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    await renderPage();
+
+    expect(screen.getByText("Sakkaline Rd, Luang Prabang")).toBeInTheDocument();
+    expect(screen.getByText("วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16")).toBeInTheDocument();
+    expect(screen.getByText("เปิดอยู่")).toBeInTheDocument();
+  });
+
+  it("renders with no opening-hours or description line for a hand-typed stop with no place", async () => {
+    mockedGetSharedTrip.mockResolvedValue({
+      ...sharedTrip,
+      days: [{ ...sharedTrip.days![0], activities: [{ order: 0, title: "จุดพักรถ", category: "other", cost: 0 }] }],
+    });
+    await renderPage();
+
+    expect(screen.getByText("จุดพักรถ")).toBeInTheDocument();
+    expect(screen.queryByText("เปิดอยู่")).not.toBeInTheDocument();
+    expect(screen.queryByText("ปิดอยู่ตอนนี้")).not.toBeInTheDocument();
   });
 });
