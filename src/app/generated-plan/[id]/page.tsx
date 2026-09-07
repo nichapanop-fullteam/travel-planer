@@ -74,6 +74,7 @@ import {
 import { EXTERNAL_TO_ACTIVITY_CATEGORY } from "@/lib/place-mock-metadata";
 import { addTripMediaFromPlace, deleteTripMediaForActivity, getTripGallery, resolveCoverImageUrl } from "@/lib/trip-media-api";
 import { TripGalleryDialog } from "@/components/plan/TripGalleryDialog";
+import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { Logo } from "@/components/common/Logo";
 import { MapIcon } from "@/components/common/MapIcon";
 import { RemixIcon } from "@/components/common/RemixIcon";
@@ -297,6 +298,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [sharePreparing, setSharePreparing] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   // Optimistic like state for TripSocialBar, held as an override rather than
   // seeded from `trip`: the trip arrives asynchronously, so seeding would mean
   // a setState inside an effect. Null = "nobody has clicked", and the bar reads
@@ -1194,7 +1196,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
   async function handleShareClick() {
     if (trip!.backendSynced) {
-      shareTripViewLink(trip!.id);
+      setShowShareDialog(true);
       return;
     }
     setSharePreparing(true);
@@ -1205,28 +1207,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     const synced = await syncTripToServer(trip!);
     setSharePreparing(false);
     if (synced?.backendSynced) {
-      shareTripViewLink(synced.id);
+      setShowShareDialog(true);
     } else {
       showToast("เตรียมทริปสำหรับแชร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     }
-  }
-
-  // Shares a plain link to the read-only /view/trip/[id] page — replaces the
-  // old ShareTripDialog flow (POST /trips/:id/share + its shareToken), which
-  // is still fully implemented (see lib/share-api.ts and
-  // /shared-trips/[shareToken]) but no longer wired to this button per
-  // product decision: a trip-id link can't be revoked or reissued the way a
-  // share token could, only ever deleted along with the trip itself.
-  function shareTripViewLink(tripId: string) {
-    const url = `${window.location.origin}/view/trip/${tripId}`;
-    if (navigator.share) {
-      navigator.share({ title: trip!.title || trip!.destination, url }).catch(() => {});
-      return;
-    }
-    navigator.clipboard
-      .writeText(url)
-      .then(() => showToast("คัดลอกลิงก์ทริปแล้ว"))
-      .catch(() => showToast("คัดลอกลิงก์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
   }
 
   // Room under the content for however many bars are pinned to the bottom edge
@@ -1323,13 +1307,16 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       .finally(() => setLiking(false));
   }
 
-  // Shares whatever page it's actually on (e.g. /view-trip/[id]) rather than
-  // shareTripViewLink's fixed /view/trip/[id] target — TripSocialBar only
-  // exists on the read-only page, so this never needs the sync-first step
-  // shareTripViewLink does for a trip that isn't backend-synced yet.
-  //
-  // The OS sheet where there is one, the clipboard otherwise.
+  // TripSocialBar renders on the read-only page for owner and non-owner
+  // alike, but the share-link management endpoints are owner-only (see
+  // ShareTripDialog) — an owner gets the same manage-link dialog
+  // handleShareClick opens from the editor, a non-owner gets the OS share
+  // sheet where there is one, the clipboard otherwise.
   function handleSocialShare() {
+    if (isOwner) {
+      handleShareClick();
+      return;
+    }
     const url = window.location.href;
     if (navigator.share) {
       navigator.share({ title: trip!.title || trip!.destination, url }).catch(() => {
@@ -1540,6 +1527,8 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           onSubmit={(values) => remix.submit(values, remixSourceMeta)}
         />
       )}
+
+      {showShareDialog && <ShareTripDialog tripId={trip.id} onClose={() => setShowShareDialog(false)} />}
 
       {/* Read-only only, and it is the ONLY place the primary action appears
           below 1025px — TripAttributionBar hides its copy there (see

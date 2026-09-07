@@ -52,7 +52,7 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(screen.getByText("หลวงพระบาง, ลาว")).toBeInTheDocument();
     // Byline is just the name, matching generated-plan's Hero.
     expect(screen.getByText("นุ้ย")).toBeInTheDocument();
-    expect(screen.getByText("ลำดับแพลน")).toBeInTheDocument();
+    expect(screen.getByText("Trip Overview")).toBeInTheDocument();
     expect(screen.getByText("วัดเชียงทอง")).toBeInTheDocument();
   });
 
