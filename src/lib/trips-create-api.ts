@@ -309,6 +309,18 @@ function buildBudget(draft: TripDraft | undefined, durationDays: number, numPeop
 export function buildActivity(activity: Activity, orderIndex: number): CreateTripActivity {
   const placeId = activity.location?.googlePlaceId;
   const travel = activity.travelFromPrevious;
+  // A generated plan puts its own travel figures in planTravelEstimate, not in
+  // travelFromPrevious — that field means "the traveller entered this", and a
+  // straight-line guess must not claim to be one. But the columns behind
+  // travelTimeFromPrevMin/travelDistanceFromPrevKm are just numbers, and the
+  // API reads them back out as travelFromPrevious either way, so sending the
+  // estimate is what makes it survive at all.
+  //
+  // Without this the numbers existed only in this browser: the trip saved
+  // fine, and the first refetch of GET /trips/:id rebuilt every stop from the
+  // server and silently dropped them — the photos appeared and the travel
+  // figures disappeared in the same render.
+  const estimate = activity.planTravelEstimate;
   return {
     id: activity.id,
     placeId,
@@ -320,8 +332,8 @@ export function buildActivity(activity: Activity, orderIndex: number): CreateTri
     notes: activity.notes,
     travelTypeFromPrev: travel?.type,
     travelCustomTypeFromPrev: travel?.customType,
-    travelTimeFromPrevMin: travel?.durationMin,
-    travelDistanceFromPrevKm: travel?.distanceKm,
+    travelTimeFromPrevMin: travel?.durationMin ?? estimate?.durationMin,
+    travelDistanceFromPrevKm: travel?.distanceKm ?? estimate?.distanceKm,
     travelCostFromPrevAmount: travel?.costAmount,
     travelCostFromPrevCurrency: travel?.costCurrency,
     // activity.travelNote, not travel?.notes — AddActivityDialog's
@@ -392,6 +404,13 @@ export async function createTripOnServer(
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      // The trip's own client-generated id is already exactly one id per
+      // "save this trip" intention: stable across retries and reloads, and
+      // replaced with the backend's id once this succeeds (see
+      // reconcileTripWithServer), so it can never be reused for a different
+      // trip. A double-click or a retry after a dropped response therefore
+      // gets the trip that was already created back, instead of a duplicate.
+      "Idempotency-Key": trip.id,
     },
     body: JSON.stringify(body),
   });

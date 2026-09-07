@@ -244,21 +244,6 @@ function luangPrabangDays(): Day[] {
   ];
 }
 
-function genericDays(destination: string): Day[] {
-  return [
-    {
-      id: "gd1",
-      dayNumber: 1,
-      date: "2026-11-20",
-      activities: [
-        { id: "ga1", time: "14:00", title: `เช็คอินโรงแรมใน${destination}`, category: "hotel", location: { name: destination }, cost: 0 },
-        { id: "ga2", time: "16:00", title: "เดินสำรวจย่านเมืองเก่า", category: "sightseeing", location: { name: destination }, cost: 0, travelNote: "เดิน ~10 นาที" },
-        { id: "ga3", time: "19:00", title: "มื้อเย็นร้านเด็ดประจำเมือง", category: "food", location: { name: destination }, cost: 500, travelNote: "เดิน ~5 นาที" },
-      ],
-    },
-  ];
-}
-
 function parseDurationDays(durationLabel: string): number {
   const match = durationLabel.match(/(\d+)\s*วัน/);
   const days = match ? Number(match[1]) : NaN;
@@ -304,28 +289,6 @@ export function createEmptyTripShell(draft: TripDraft): GeneratedTrip {
   };
 }
 
-// Mock "AI generation" — real generation would call a backend; today it just
-// picks a hand-authored itinerary for known destinations (Luang Prabang) and
-// falls back to a bare-bones single-day template otherwise.
-export function generateTripFromDraft(draft: TripDraft): GeneratedTrip {
-  const luangPrabang = isLuangPrabang(draft.destination);
-  return {
-    id: crypto.randomUUID(),
-    draftId: draft.id,
-    createdAt: new Date().toISOString(),
-    destination: draft.destination,
-    destinationPlace: draft.destinationPlace,
-    coverImageUrl: luangPrabang ? "/images/luang-prabang-aerial.png" : "/images/hero-mountain.jpg",
-    durationLabel: draft.duration || "ยังไม่ระบุ",
-    paceLabel: paceLabel(draft),
-    pace: paceFromDraft(draft),
-    budgetLabel: budgetLabel(draft),
-    conditionsLabel: conditionsLabel(draft),
-    styles: draft.styles,
-    status: "generated",
-    days: luangPrabang ? luangPrabangDays() : genericDays(draft.destination),
-  };
-}
 
 // Real AI generation via POST /trips/plan/generate (see lib/generate-plan-api.ts).
 // The label fields (durationLabel/paceLabel/etc.) are still derived from the
@@ -380,9 +343,18 @@ export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: Ge
           : undefined,
       notes: item.notes,
       cost: item.costAmount ?? item.cost ?? 0,
+      // Still written for the shared-trip view, which has no connector row of
+      // its own to put this on (see SharedTripPlan).
       travelNote:
         item.travelTimeFromPrevMin != null
           ? `~${item.travelTimeFromPrevMin} นาที${item.travelDistanceFromPrevKm != null ? ` · ${item.travelDistanceFromPrevKm} กม.` : ""}`
+          : undefined,
+      planTravelEstimate:
+        item.travelTimeFromPrevMin != null || item.travelDistanceFromPrevKm != null
+          ? {
+              durationMin: item.travelTimeFromPrevMin ?? undefined,
+              distanceKm: item.travelDistanceFromPrevKm ?? undefined,
+            }
           : undefined,
     })),
   }));
@@ -419,6 +391,14 @@ export function buildGeneratedTripFromApiResponse(draft: TripDraft, response: Ge
             modelWarnings: generation.modelWarnings,
             violations: generation.violations,
           },
+    // On for a generated plan, unlike a self-built one (createEmptyTripShell
+    // leaves it off). The two start from opposite places: an AI plan arrives
+    // complete, so its legs are routed once at save and the traveller's edits
+    // are corrections to a schedule that already claims to work — a stop moved
+    // to another day with stale travel times is actively misleading. A
+    // self-built trip starts empty, where the same switch would route a
+    // half-finished day on every stop added.
+    autoTravelCalculationEnabled: true,
   };
 }
 

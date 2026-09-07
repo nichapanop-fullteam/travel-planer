@@ -40,7 +40,6 @@ import {
   Pencil,
   Phone,
   Plus,
-  RefreshCcw,
   Repeat2,
   Share2,
   Sparkles,
@@ -93,15 +92,12 @@ const ACTIVITY_ICON_OVERRIDE: Record<string, typeof Anchor> = {
 };
 import {
   buildGeneratedTripFromBackendTrip,
-  confirmGeneratedTrip,
   DEMO_LUANG_PRABANG_ID,
-  generateTripFromDraft,
   getGeneratedTrip,
   getOrCreateDemoLuangPrabangTrip,
   INTENSITY_TO_PACE,
   PACE_DESCRIPTION,
   replaceGeneratedTripId,
-  saveGeneratedTrip,
   updateGeneratedTrip,
 } from "@/lib/generated-trips";
 import { PACE_TO_INTENSITY } from "@/lib/generate-plan-mapping";
@@ -117,13 +113,13 @@ import {
   createTripItemOnServer,
   deleteTripItemOnServer,
   getDayTravelSegments,
+  retryFailedTravelSegments,
   reorderTripItemsOnServer,
   updateTripDayOnServer,
   updateTripItemOnServer,
   updateTripOnServer,
   type UpdateTripItemRequest,
 } from "@/lib/trips-update-api";
-import { getTripDrafts } from "@/lib/trip-drafts";
 import {
   formatTHB,
   getDayRouteEstimate,
@@ -285,7 +281,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // in Hero for why "ภาพรวมทริป" and "แพลนทริป" no longer show the same numbers.
   const [planDayIndex, setPlanDayIndex] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [generationNoticeDismissed, setGenerationNoticeDismissed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -408,11 +404,26 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           loaded.days = loaded.days.map((day) => ({
             ...day,
             travelSegments: day.travelSegments ?? localDaysById.get(day.id)?.travelSegments,
-            activities: day.activities.map((activity) => ({
-              ...activity,
-              dismissedTravelSegmentId:
-                localActivities.get(activity.id)?.dismissedTravelSegmentId,
-            })),
+            activities: day.activities.map((activity) => {
+              const localActivity = localActivities.get(activity.id);
+              return {
+                ...activity,
+                dismissedTravelSegmentId: localActivity?.dismissedTravelSegmentId,
+                // planTravelEstimate and travelNote are what the generated plan
+                // reckoned each leg costs. Neither has a column: the trip is
+                // rebuilt from GET /trips/:id here, so both were being wiped by
+                // the first refetch — the traveller watched the photos arrive
+                // and the travel figures vanish in the same breath, and every
+                // connector row fell back to "+ เพิ่มการเดินทาง" for a leg the
+                // plan had already worked out.
+                //
+                // ?? rather than =, so a real value from the server always
+                // wins if these ever gain columns.
+                planTravelEstimate:
+                  activity.planTravelEstimate ?? localActivity?.planTravelEstimate,
+                travelNote: activity.travelNote ?? localActivity?.travelNote,
+              };
+            }),
           }));
         }
         if (local) updateGeneratedTrip(loaded.id, loaded);
@@ -475,6 +486,97 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip, backendUser]);
+
+  // An AI plan lands here with nothing on the server: /trips/plan/generate
+  // deliberately writes nothing, so until now the trip existed only in this
+  // browser's localStorage and was pushed to the backend lazily, by whichever
+  // edit happened to fire syncTripToServer first. A traveler who generated a
+  // plan and simply read it therefore had no trip at all — losing it to a
+  // cleared cache, a second device, or a private window, after waiting ~20s and
+  // spending a model call on it.
+  //
+  // So persist it as soon as it is on screen, which is also what self mode has
+  // always done (POST /trips before the first screen). Both flows then share one
+  // model: a real backend id, and per-action autosave on top of it.
+  //
+  // Deliberately silent. It is a background save of something the traveler
+  // already sees, and a failure is not a dead end — the trip stays in local
+  // storage and the existing lazy sync still runs on their first edit.
+  //
+  // NOT silent, unlike the per-action autosave it reuses. That one is a
+  // best-effort extra on top of a trip that already exists; this is the only
+  // thing that makes the trip exist at all, and everything downstream — travel
+  // segments, media, sharing — needs the row it creates. A plan that failed to
+  // save looks exactly like one that saved, right until the traveller loses it.
+  const autoPersistedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!trip || authLoading) return;
+    // The demo trip is a fixture, not somebody's plan.
+    if (trip.id === DEMO_LUANG_PRABANG_ID) return;
+    if (trip.backendSynced) return;
+    if (autoPersistedRef.current === trip.id) return;
+
+    // POST /trips/create takes its owner from the token, so there is nothing to
+    // save against while signed out. Worth saying out loud: without an account
+    // the plan lives in this browser and nowhere else, which is also why its
+    // travel segments and photos never appear.
+    if (!backendUser) {
+      if (autoPersistedRef.current !== `anon:${trip.id}`) {
+        autoPersistedRef.current = `anon:${trip.id}`;
+        showToast("แพลนนี้เก็บอยู่ในเครื่องนี้เท่านั้น เข้าสู่ระบบเพื่อบันทึกและคำนวณเส้นทาง");
+      }
+      return;
+    }
+
+    autoPersistedRef.current = trip.id;
+    void (async () => {
+      const saved = await syncTripToServer(trip);
+      if (!saved) {
+        // Clear the guard so a later render can try again, rather than pinning
+        // the failure for the life of the page.
+        autoPersistedRef.current = null;
+        showToast("บันทึกแพลนไม่สำเร็จ เส้นทางและรูปจะยังไม่ขึ้นจนกว่าจะบันทึกได้");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.backendSynced, backendUser, authLoading]);
+
+  // A leg whose routing call failed keeps null numbers forever: the backend
+  // swallows the provider error on purpose (an outage must not break Add
+  // Place) and nothing ever revisited the row — which is why 39 of the 92
+  // legs in the database are empty, 37 of them with full coordinates on both
+  // ends. Asking once per trip on open is what heals them.
+  //
+  // Not gated on the "คำนวณการเดินทาง" toggle: that switch is about
+  // recalculating legs the traveller has just changed, whereas this is
+  // finishing work the trip was already supposed to have. The call is cheap
+  // when there is nothing to fix — the backend touches only days carrying a
+  // failed leg — and silent when it isn't, since the plan is perfectly usable
+  // without it.
+  const segmentRetryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!trip || !trip.backendSynced || !backendUser) return;
+    if (segmentRetryRef.current === trip.id) return;
+    const hasFailedLeg = trip.days.some((day) =>
+      (day.travelSegments ?? []).some((segment) => segment.routeStatus === "FAILED")
+    );
+    if (!hasFailedLeg) return;
+
+    segmentRetryRef.current = trip.id;
+    void (async () => {
+      try {
+        const segments = await retryFailedTravelSegments(trip.id);
+        const byDay = new Map<string, typeof segments>();
+        for (const segment of segments) {
+          byDay.set(segment.dayId, [...(byDay.get(segment.dayId) ?? []), segment]);
+        }
+        for (const [dayId, daySegments] of byDay) replaceDayTravelSegments(dayId, daySegments);
+      } catch (error) {
+        console.warn("คำนวณเส้นทางที่ค้างอยู่ไม่สำเร็จ", error);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.backendSynced, backendUser]);
 
   useEffect(() => {
     if (remix.status !== "success" || !remix.newTripId) return;
@@ -580,12 +682,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     }
     remix.reset();
     setRemixDialogOpen(true);
-  }
-
-  function handleConfirm() {
-    confirmGeneratedTrip(trip!.id);
-    setTrip({ ...trip!, status: "confirmed" });
-    setTab("plan");
   }
 
   // Pushes the current in-memory trip to the granular PATCH endpoints
@@ -703,17 +799,6 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // the first click does what the label says.
   function handleEditTripClick() {
     setEditDialogOpen(true);
-  }
-
-  function handleRegenerate() {
-    const draft = getTripDrafts().find((d) => d.id === trip!.draftId);
-    if (!draft) return;
-    setRegenerating(true);
-    window.setTimeout(() => {
-      const regenerated = generateTripFromDraft(draft);
-      saveGeneratedTrip(regenerated);
-      router.replace(`/generated-plan/${regenerated.id}`);
-    }, 900);
   }
 
   function applyPatch(patch: Partial<GeneratedTrip>) {
@@ -1333,7 +1418,12 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
         <div className={`${SHELL} py-5 sm:py-8`}>
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
-          {trip.generationNotice && <GenerationNoticeBanner notice={trip.generationNotice} />}
+          {trip.generationNotice && !generationNoticeDismissed && (
+            <GenerationNoticeBanner
+              notice={trip.generationNotice}
+              onDismiss={() => setGenerationNoticeDismissed(true)}
+            />
+          )}
 
           {tab === "overview" && (
             <OverviewTab
@@ -1341,10 +1431,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               isConfirmed={isConfirmed}
               canEdit={canEdit}
               bannerDismissed={bannerDismissed}
-              regenerating={regenerating}
               onDismissBanner={() => setBannerDismissed(true)}
-              onRegenerate={handleRegenerate}
-              onConfirm={handleConfirm}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
               onExploreRecommended={() => setRecommendRequest({ dayId: trip.days[0].id })}
               onExploreRecommendedAccommodation={() => setRecommendRequest({ dayId: trip.days[0].id, onlyHotels: true })}
@@ -2300,17 +2387,13 @@ function MobileActionBar({ primary, secondary, caption }: MobileActionBarProps) 
   );
 }
 
-function ConfirmBanner({
-  regenerating,
-  onDismiss,
-  onRegenerate,
-  onConfirm,
-}: {
-  regenerating: boolean;
-  onDismiss: () => void;
-  onRegenerate: () => void;
-  onConfirm: () => void;
-}) {
+// Informational only. Both of its buttons are gone: "นำไปปรับเป็นทริปของฉัน"
+// because the plan is now saved the moment it opens (see the auto-persist
+// effect), and "สร้างใหม่ทั้งหมด" because re-rolling a whole plan spent another
+// model completion plus a fresh round of place searches every time it was
+// pressed — the single largest multiplier on what this feature costs. Editing
+// the plan that was generated is the supported way to change it.
+function ConfirmBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div
       className="flex flex-col items-start gap-4 rounded-2xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
@@ -2325,34 +2408,30 @@ function ConfirmBanner({
           <X size={14} />
         </button>
         <p className="text-sm">
-          <strong className="font-bold">ชอบแผนนี้ไหม?</strong> ถ้ายัง เราสร้างใหม่ให้ทั้งแผนได้เลย
+          <strong className="font-bold">แพลนฉบับร่างโดย PunGuide</strong> แก้ได้ทุกอย่าง
+          เพิ่ม ลบ สลับวันได้ตามใจ ทุกการแก้ไขถูกบันทึกให้อัตโนมัติ
         </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onRegenerate}
-          disabled={regenerating}
-          className="inline-flex items-center gap-1.5 rounded-full border bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <RefreshCcw size={14} className={regenerating ? "animate-spin" : ""} />
-          สร้างใหม่ทั้งหมด
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="rounded-full px-5 py-2.5 text-sm font-semibold text-white"
-          style={{ backgroundColor: "var(--color-brand-green)" }}
-        >
-          นำไปปรับเป็นทริปของฉัน
-        </button>
       </div>
     </div>
   );
 }
 
-function GenerationNoticeBanner({ notice }: { notice: NonNullable<GeneratedTrip["generationNotice"]> }) {
+// Dismissable, like the draft banner above it. The findings are worth showing
+// once — they are the only place a traveller learns that a place they picked
+// did not fit, or that two stops are scheduled closer together than the drive
+// between them — but they describe a plan the traveller is about to edit
+// anyway, and a warning that cannot be closed just becomes furniture.
+//
+// Closed for this viewing only, deliberately not written to the trip: the
+// findings are still true, and reopening the plan tomorrow should say so again
+// rather than hiding a real problem forever on the strength of one click.
+function GenerationNoticeBanner({
+  notice,
+  onDismiss,
+}: {
+  notice: NonNullable<GeneratedTrip["generationNotice"]>;
+  onDismiss: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const errorCount = notice.violations.filter((v) => v.severity === "error").length;
 
@@ -2376,6 +2455,15 @@ function GenerationNoticeBanner({ notice }: { notice: NonNullable<GeneratedTrip[
           style={{ color: "#B8860B" }}
         >
           {expanded ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="ปิดคำเตือนเกี่ยวกับแผนนี้"
+          className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2"
+          style={{ color: "#B8860B" }}
+        >
+          <X size={16} />
         </button>
       </div>
 
@@ -2488,10 +2576,7 @@ function OverviewTab({
   isConfirmed,
   canEdit,
   bannerDismissed,
-  regenerating,
   onDismissBanner,
-  onRegenerate,
-  onConfirm,
   onAddActivity,
   onExploreRecommended,
   onExploreRecommendedAccommodation,
@@ -2511,10 +2596,7 @@ function OverviewTab({
   isConfirmed: boolean;
   canEdit: boolean;
   bannerDismissed: boolean;
-  regenerating: boolean;
   onDismissBanner: () => void;
-  onRegenerate: () => void;
-  onConfirm: () => void;
   onAddActivity: (dayId: string) => void;
   // "ยังไม่รู้จะไปไหน?" banner — opens the recommend-grid modal (defaulting
   // to day 1), distinct from onAddActivity which opens the plain manual-entry
@@ -2550,10 +2632,7 @@ function OverviewTab({
 
       {canEdit && showConfirmBanner && !isConfirmed && !bannerDismissed && (
         <ConfirmBanner
-          regenerating={regenerating}
           onDismiss={onDismissBanner}
-          onRegenerate={onRegenerate}
-          onConfirm={onConfirm}
         />
       )}
 
@@ -3065,8 +3144,13 @@ function ItineraryRow({
           </p>
         )}
         <p className="truncate text-sm font-bold">{activity.title}</p>
-        {(activity.notes || activity.travelNote) && (
-          <p className="truncate text-xs text-[var(--color-muted)]">{activity.notes || activity.travelNote}</p>
+        {/* travelNote is deliberately NOT a fallback here any more: it holds
+            the plan's own travel estimate, which now renders on the connector
+            row above this stop. Printing it here too showed the same leg twice
+            — once as a number under the stop, once as an empty
+            "+ เพิ่มการเดินทาง" prompt — with the two appearing to disagree. */}
+        {activity.notes && (
+          <p className="truncate text-xs text-[var(--color-muted)]">{activity.notes}</p>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">

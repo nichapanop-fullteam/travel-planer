@@ -165,3 +165,48 @@ describe("buildGeneratedTripFromApiResponse — category", () => {
     expect(trip.days[0].activities.map((a) => a.category)).toEqual(["activity", "activity"]);
   });
 });
+
+// A generated plan arrives complete and already routed, so an edit is a
+// correction to a schedule that claims to work — stale travel times after
+// moving a stop would be actively misleading. A self-built trip starts empty
+// and stays opted out (createEmptyTripShell).
+describe("buildGeneratedTripFromApiResponse — travel calculation", () => {
+  it("turns automatic travel calculation on for a generated plan", () => {
+    const trip = buildGeneratedTripFromApiResponse(
+      tripDraft(),
+      response([{ dayNumber: 1, items: [{ title: "วัดพระสิงห์", startTime: "09:00" }] }])
+    );
+
+    expect(trip.autoTravelCalculationEnabled).toBe(true);
+  });
+
+  // The plan's own figure is a straight-line estimate, kept apart from the
+  // traveller's entry and from a real provider segment so it can never outrank
+  // either. See TravelConnectorRow.
+  it("carries the plan's own travel estimate as a structured field", () => {
+    const trip = buildGeneratedTripFromApiResponse(
+      tripDraft(),
+      response([
+        {
+          dayNumber: 1,
+          items: [
+            { title: "วัดพระสิงห์", startTime: "09:00" },
+            {
+              title: "ตลาดวโรรส",
+              startTime: "11:00",
+              travelTimeFromPrevMin: 6,
+              travelDistanceFromPrevKm: 2.99,
+            },
+          ],
+        },
+      ])
+    );
+
+    expect(trip.days[0].activities[1].planTravelEstimate).toEqual({
+      durationMin: 6,
+      distanceKm: 2.99,
+    });
+    // Nothing to estimate for the first stop of a day.
+    expect(trip.days[0].activities[0].planTravelEstimate).toBeUndefined();
+  });
+});

@@ -1,3 +1,4 @@
+import { optionalAuthHeaders } from "@/lib/backend-user";
 import type { Activity } from "@/types";
 import type { ExternalPlaceCategory } from "./external-places-api";
 
@@ -201,12 +202,34 @@ export class GeneratePlanError extends Error {
 // our own /api/trips/generate-plan proxy (see that route for why).
 //
 // A failed request is safe to retry because this endpoint never persists.
-export async function generatePlan(request: GeneratePlanRequest): Promise<GeneratePlanResponse> {
+export async function generatePlan(
+  request: GeneratePlanRequest,
+  // Marks this as one attempt at one plan: retrying with the same key returns
+  // the plan already generated (for 5 minutes) rather than paying for another
+  // model call. Must change whenever the traveler asks for something else —
+  // see lib/idempotency.ts.
+  idempotencyKey?: string
+): Promise<GeneratePlanResponse> {
   const response = await fetch("/api/trips/generate-plan", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // Signed out is fine here — the token only decides whether this counts
+    // against the traveler's own hourly quota or the shared one (see
+    // lib/proxy-auth.ts).
+    headers: {
+      "Content-Type": "application/json",
+      ...optionalAuthHeaders(),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+    },
     body: JSON.stringify(request),
   });
+
+  // 60 generations per hour, counted per account for a signed-in traveler and
+  // against one bucket shared by everyone otherwise. Worth its own message:
+  // the upstream body for this isn't part of the documented contract, and
+  // "try again" is genuinely the right advice here, unlike other failures.
+  if (response.status === 429) {
+    throw new GeneratePlanError(429, "ระบบจัดแผนถึงขีดจำกัดการใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่อีกครั้ง");
+  }
 
   const text = await response.text();
   let data: unknown;

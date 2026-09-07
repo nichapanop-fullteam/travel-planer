@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { rateLimitHeaders, upstreamHeaders } from "@/lib/proxy-auth";
+
 const EXTERNAL_API_BASE_URL =
   process.env.EXTERNAL_API_BASE_URL ?? "https://travel-planner-api-git-909858882015.asia-northeast3.run.app";
 
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
   const response = await fetch(url, {
     // ngrok-free.dev tunnels serve an HTML warning page to browser-looking
     // requests unless this header is set.
-    headers: { "ngrok-skip-browser-warning": "true" },
+    headers: upstreamHeaders(request),
   });
 
   if (!response.ok) {
@@ -34,5 +36,5 @@ export async function GET(request: NextRequest) {
   }
 
   const data = await response.json();
-  return NextResponse.json(data);
+  return NextResponse.json(data, { headers: rateLimitHeaders(response) });
 }

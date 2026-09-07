@@ -44,6 +44,7 @@ import {
   saveGeneratedTrip,
 } from "@/lib/generated-trips";
 import { generatePlan, GeneratePlanError } from "@/lib/generate-plan-api";
+import { nextIdempotentAttempt, type IdempotentAttempt } from "@/lib/idempotency";
 import { buildGeneratePlanRequest } from "@/lib/generate-plan-mapping";
 import { createDraftTripOnServer } from "@/lib/trips-draft-api";
 import { createTripDayOnServer } from "@/lib/trips-update-api";
@@ -164,6 +165,10 @@ function CreateTripForm() {
   const customBudgetInputRef = useRef<HTMLInputElement>(null);
   const bookingFileInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
+  // Survives a failed attempt so pressing "สร้างแพลน" again retries the same
+  // request under the same Idempotency-Key instead of paying for a second
+  // model call — and is discarded the moment the brief changes.
+  const planAttemptRef = useRef<IdempotentAttempt | null>(null);
 
   // Prefill the Destination/Date/Guest bar from the last search the user ran
   // on this page, unless a deep link (destinationParam) already specifies one.
@@ -417,19 +422,27 @@ function CreateTripForm() {
     // selectedPlaceIds rather than being appended to the response: the API
     // guarantees each one is in the plan it builds, on a day and at a time it
     // chose, instead of them all landing on day 1 after the fact.
-    generatePlan(buildGeneratePlanRequest(draft, selectedRecommendations.map((s) => s.place.googlePlaceId)))
+    const planRequest = buildGeneratePlanRequest(
+      draft,
+      selectedRecommendations.map((s) => s.place.googlePlaceId)
+    );
+    planAttemptRef.current = nextIdempotentAttempt(planAttemptRef.current, JSON.stringify(planRequest));
+
+    generatePlan(planRequest, planAttemptRef.current.key)
       .then((response) => {
+        // This brief has been generated — the next press is a new intention,
+        // even if the traveler comes back and submits the same form again.
+        planAttemptRef.current = null;
         const generatedTrip = buildGeneratedTripFromApiResponse(draft, response);
         saveGeneratedTrip(generatedTrip);
         clearLastCreateTripSearch();
         router.push(`/generated-plan/${generatedTrip.id}?edit=1`);
       })
       .catch((err) => {
-        // NOTE: the trip row is already created server-side by this point
-        // (per the API docs) even on failure — there's no rollback and no
-        // documented delete-trip endpoint available to this app yet, so we
-        // deliberately don't auto-retry here (that would just pile up empty
-        // trips server-side). The user has to manually resubmit.
+        // Nothing to clean up server-side: /trips/plan/generate never writes
+        // to the database, so a failure leaves no half-made trip behind. The
+        // attempt key is kept rather than cleared, so the traveler resubmitting
+        // the same brief is treated as a retry of this attempt.
         isSubmittingRef.current = false;
         setStatus("error");
         // Anything that isn't a GeneratePlanError got thrown while mapping a

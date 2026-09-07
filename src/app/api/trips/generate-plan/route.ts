@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { rateLimitHeaders, upstreamHeaders } from "@/lib/proxy-auth";
+
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL ?? "https://travel-planner-api-git-909858882015.asia-northeast3.run.app";
 
 // Proxies the external trip-generation API. Not streaming — this blocks for
@@ -10,10 +12,7 @@ export async function POST(request: NextRequest) {
 
   const response = await fetch(new URL("/trips/plan/generate", EXTERNAL_API_BASE_URL), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ngrok-skip-browser-warning": "true",
-    },
+    headers: upstreamHeaders(request, { "Content-Type": "application/json" }),
     body,
   });
 
@@ -22,7 +21,10 @@ export async function POST(request: NextRequest) {
   // documented JSON error shape) if its own backend is unreachable.
   const text = await response.text();
   try {
-    return NextResponse.json(JSON.parse(text), { status: response.status });
+    return NextResponse.json(JSON.parse(text), {
+      status: response.status,
+      headers: rateLimitHeaders(response),
+    });
   } catch {
     return NextResponse.json(
       { error: "Trip generation request failed", detail: text.slice(0, 500) },
