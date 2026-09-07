@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, MapPin, Navigation, Star } from "lucide-react";
+import { Clock, Coins, MapPin, Navigation, Star } from "lucide-react";
 import { categoryIcon, categoryLabel } from "@/lib/category-styles";
 import type { SharedTripActivity, SharedTripDay, SharedTripOpeningHours } from "@/lib/share-api";
 import { formatTHB } from "@/lib/trip-utils";
-import type { ActivityCategory } from "@/types";
+import { travelTypeIcon, travelTypeLabel } from "@/lib/travel-styles";
+import type { ActivityCategory, TravelType } from "@/types";
 
 // The day selector + itinerary list, borrowed wholesale from ActivityCard on
 // view/trip/[id] (the Remix Trip page) so a shared plan reads like the real
@@ -25,6 +26,14 @@ const KNOWN_CATEGORIES: ActivityCategory[] = ["transport", "food", "hotel", "sig
 // backend adds later lands on "other" instead of crashing the icon lookup.
 function asCategory(value: string): ActivityCategory {
   return (KNOWN_CATEGORIES as string[]).includes(value) ? (value as ActivityCategory) : "other";
+}
+
+const KNOWN_TRAVEL_TYPES: TravelType[] = ["walk", "bicycle", "tuk_tuk", "private_transfer", "rental_car", "boat", "train", "airplane", "other"];
+
+// Same guard as asCategory, for the same reason: the shared payload types
+// travelFromPrevious.type as a plain string.
+function asTravelType(value: string): TravelType {
+  return (KNOWN_TRAVEL_TYPES as string[]).includes(value) ? (value as TravelType) : "other";
 }
 
 export function SharedTripPlan({ days }: { days: SharedTripDay[] }) {
@@ -94,26 +103,41 @@ function todaysHours(openingHours?: SharedTripOpeningHours): string | undefined 
   return days[mondayFirstIndex];
 }
 
+// Google's Thai weekday descriptions come as "วันจันทร์: 08:00–17:00" — the
+// day name is redundant next to an explicit "เปิด/ปิด" label, so this drops
+// everything up to and including the first ": ". Falls back to the whole
+// string if that separator isn't there, rather than guessing at a format a
+// live third-party payload doesn't guarantee.
+function stripWeekdayPrefix(line: string): string {
+  const separatorIndex = line.indexOf(": ");
+  return separatorIndex === -1 ? line : line.slice(separatorIndex + 2);
+}
+
 function SharedActivityCard({ activity, index }: { activity: SharedTripActivity; index: number }) {
   const category = asCategory(activity.category);
   const CategoryIcon = categoryIcon[category];
 
+  const travelType = activity.travelFromPrevious?.type ? asTravelType(activity.travelFromPrevious.type) : undefined;
+  const TravelIcon = travelType ? travelTypeIcon[travelType] : undefined;
   // travelNote is a real authored tip from the backend — only that goes in
-  // the "Trip hack" callout. The computed duration/distance summary (when
-  // there's no travelNote) is plain context, not a tip, so it sits in the
-  // ordinary meta row instead.
-  const travelSummary = [
-    activity.travelFromPrevious?.durationMin != null ? `~${activity.travelFromPrevious.durationMin} นาที` : null,
-    activity.travelFromPrevious?.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // the "Trip hack" callout below. This is plain "how you got here" context,
+  // not a tip, so it sits in the ordinary meta row instead.
+  const travelSummary = travelType
+    ? [
+        travelTypeLabel[travelType],
+        activity.travelFromPrevious?.durationMin != null ? `${activity.travelFromPrevious.durationMin} นาที` : null,
+        activity.travelFromPrevious?.distanceKm != null ? `${activity.travelFromPrevious.distanceKm} กม.` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
 
-  const showPlaceName = activity.place?.name && activity.place.name !== activity.title;
   const imageUrl = activity.place?.imageUrl ?? "/images/luang-prabang.jpg";
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.place?.name || activity.title)}`;
   const openingHours = activity.place?.openingHours;
   const hoursLine = todaysHours(openingHours);
+  const hasMetaRow = Boolean(activity.time || travelSummary || activity.cost > 0);
+  const hasDetailBlock = Boolean(openingHours || activity.place?.address || activity.place?.description);
 
   return (
     <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
@@ -137,55 +161,61 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
           </span>
         </div>
 
-        {(activity.time || travelSummary || activity.cost > 0) && (
+        {hasMetaRow && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
             {/* The live payload sends time: "" for stops with no set time, so
                 this needs a truthiness check rather than a null check. */}
             {activity.time && <span style={{ color: "var(--color-accent-orange)" }}>{activity.time}</span>}
             {activity.time && travelSummary && <span>·</span>}
-            {travelSummary && <span>{travelSummary}</span>}
-            {(activity.time || travelSummary) && activity.cost > 0 && <span>·</span>}
-            {activity.cost > 0 && <span>{formatTHB(activity.cost)}</span>}
-          </div>
-        )}
-
-        {(showPlaceName || activity.place?.rating != null || activity.place?.address) && (
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-sm text-[var(--color-muted)]">
-            {showPlaceName && (
-              <span className="inline-flex min-w-0 items-center gap-1">
-                <MapPin size={14} className="shrink-0" />
-                <span className="min-w-0 break-words">{activity.place?.name}</span>
+            {travelSummary && (
+              <span className="inline-flex items-center gap-1">
+                {TravelIcon && <TravelIcon size={13} />}
+                {travelSummary}
               </span>
             )}
-            {activity.place?.rating != null && (
-              <span className="inline-flex shrink-0 items-center gap-1">
-                <Star size={14} />
-                {activity.place.rating}
-              </span>
-            )}
-            {/* Address is a separate line from the place name above — the
-                name identifies the stop, the address is where it actually
-                is, and they read oddly squeezed onto one line together. */}
-            {activity.place?.address && (
-              <span className="block min-w-0 basis-full break-words pl-[22px] text-xs text-[var(--color-muted)]">
-                {activity.place.address}
+            {travelSummary && activity.cost > 0 && <span>·</span>}
+            {activity.cost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Coins size={13} />
+                {formatTHB(activity.cost)}
               </span>
             )}
           </div>
         )}
 
-        {/* Opening hours and description come from a live Google lookup, not
-            from anything the trip owner wrote — see SharedTripActivity's doc
-            comment in lib/share-api.ts. Absent for a hand-typed stop or when
-            that lookup failed, so both are rendered only when present. */}
+        {/* One hairline rule between "how to get here / what it costs" and
+            "what this place actually is" — mirrors the reference layout and
+            keeps the two kinds of meta from blurring into one block. */}
+        {hasMetaRow && hasDetailBlock && <div className="h-px" style={{ backgroundColor: "var(--color-border)" }} />}
+
+        {/* Opening hours, address and description come from a live Google
+            lookup, not from anything the trip owner wrote — see
+            SharedTripActivity's doc comment in lib/share-api.ts. Absent for a
+            hand-typed stop or when that lookup failed, so each renders only
+            when present. */}
         {openingHours && (
           <div
             className="flex flex-wrap items-center gap-1.5 text-xs font-semibold"
             style={{ color: openingHours.openNow ? "var(--color-brand-green)" : "var(--color-muted)" }}
           >
             <Clock size={13} className="shrink-0" />
-            {openingHours.openNow != null && <span>{openingHours.openNow ? "เปิดอยู่" : "ปิดอยู่ตอนนี้"}</span>}
-            {hoursLine && <span className="font-normal text-[var(--color-muted)]">{hoursLine}</span>}
+            <span>เปิด/ปิด</span>
+            {hoursLine && <span className="font-normal text-[var(--color-muted)]">· {stripWeekdayPrefix(hoursLine)}</span>}
+          </div>
+        )}
+
+        {activity.place?.address && (
+          <div className="flex items-start gap-1.5 text-sm text-[var(--color-muted)]">
+            <MapPin size={14} className="mt-0.5 shrink-0" />
+            <span className="min-w-0 break-words">
+              {activity.place.address}
+              {activity.place.rating != null && (
+                <span className="ml-1.5 inline-flex items-center gap-0.5 whitespace-nowrap">
+                  <Star size={12} className="inline" />
+                  {activity.place.rating}
+                </span>
+              )}
+            </span>
           </div>
         )}
 
