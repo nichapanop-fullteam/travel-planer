@@ -120,9 +120,10 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(mockedGetSharedTrip).toHaveBeenCalledWith("q5LMr_f1tphUYZUJD71BehvN-HtOqnBFLjUL544MPio");
   });
 
-  // cost, address, openingHours and description are the fields added on top
-  // of the original narrow payload — each renders only when present, since a
-  // hand-typed stop or a failed Google lookup means some of them are absent.
+  // cost, address, openingHours and notes are the fields added on top of the
+  // original narrow payload — each renders only when present, since a
+  // hand-typed stop, a failed Google lookup, or a stop with no note means
+  // some of them are absent.
   it("shows the per-stop price tag when cost is greater than zero", async () => {
     mockedGetSharedTrip.mockResolvedValue({
       ...sharedTrip,
@@ -140,7 +141,7 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(screen.queryByText(/฿0/)).not.toBeInTheDocument();
   });
 
-  it("shows the place's address, opening hours and description when the backend supplies them", async () => {
+  it("shows the place's address, opening hours and the owner's note when the backend supplies them", async () => {
     mockedGetSharedTrip.mockResolvedValue({
       ...sharedTrip,
       days: [
@@ -149,11 +150,11 @@ describe("GET /shared-trips/:shareToken page", () => {
           activities: [
             {
               ...sharedTrip.days![0].activities[0],
+              notes: "วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16",
               place: {
                 name: "วัดเชียงทอง",
                 address: "Sakkaline Rd, Luang Prabang",
                 rating: 4.6,
-                description: "วัดเก่าแก่ริมแม่น้ำโขงจากศตวรรษที่ 16",
                 openingHours: { openNow: true, weekdayDescriptions: ["a", "b", "c", "d", "e", "f", "g"] },
               },
             },
@@ -168,7 +169,7 @@ describe("GET /shared-trips/:shareToken page", () => {
     expect(screen.getByText("เปิด/ปิด")).toBeInTheDocument();
   });
 
-  it("renders with no opening-hours or description line for a hand-typed stop with no place", async () => {
+  it("renders with no opening-hours or note line for a hand-typed stop with no place and no note", async () => {
     mockedGetSharedTrip.mockResolvedValue({
       ...sharedTrip,
       days: [{ ...sharedTrip.days![0], activities: [{ order: 0, title: "จุดพักรถ", category: "other", cost: 0 }] }],
