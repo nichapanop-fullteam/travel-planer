@@ -175,10 +175,12 @@ export default async function SharedTripPage({ params }: PageProps) {
                 </span>
               </div>
             </div>
-            <p className="text-sm leading-relaxed text-[var(--color-muted)]">
+            <p className="text-base leading-relaxed text-[var(--color-muted)]">
               แพลนเที่ยว{trip.destination} {durationLabel ?? ""} รวม {activityCount} จุดเช็คอิน
             </p>
           </div>
+
+          <div className="mb-6 h-px w-full" style={{ backgroundColor: "var(--color-border)" }} />
 
           <SharedTripPlan days={days} />
 

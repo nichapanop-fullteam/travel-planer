@@ -141,19 +141,22 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
   const openingHours = activity.place?.openingHours;
   const hoursLine = todaysHours(openingHours);
   const hasMetaRow = Boolean(activity.time || travelSummary || activity.cost > 0);
-  const hasDetailBlock = Boolean(openingHours || activity.place?.address || activity.place?.description);
+  const hasDetailBlock = Boolean(openingHours || activity.place?.address || activity.notes);
 
   return (
-    <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
-      <div className="relative h-40 w-full sm:h-48">
+    <div className="flex overflow-hidden rounded-2xl border" style={{ borderColor: "var(--color-border)" }}>
+      {/* Image sits on the left, alongside the content column, rather than
+          stacked above it — align-items: stretch (the flex row default)
+          keeps it matched to the content column's height, however tall. */}
+      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-        <span className="absolute left-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
+        <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
           {index}
         </span>
       </div>
 
-      <div className="flex flex-col gap-2 p-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
           <span
@@ -192,11 +195,11 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
             keeps the two kinds of meta from blurring into one block. */}
         {hasMetaRow && hasDetailBlock && <div className="h-px" style={{ backgroundColor: "var(--color-border)" }} />}
 
-        {/* Opening hours, address and description come from a live Google
-            lookup, not from anything the trip owner wrote — see
-            SharedTripActivity's doc comment in lib/share-api.ts. Absent for a
-            hand-typed stop or when that lookup failed, so each renders only
-            when present. */}
+        {/* Opening hours and address come from a live Google lookup, not from
+            anything the trip owner wrote — see SharedTripActivity's doc
+            comment in lib/share-api.ts. Absent for a hand-typed stop or when
+            that lookup failed, so each renders only when present. `notes`
+            below is the opposite: the owner's own words, never Google's. */}
         {openingHours && (
           <div
             className="flex flex-wrap items-center gap-1.5 text-xs font-semibold"
@@ -223,8 +226,8 @@ function SharedActivityCard({ activity, index }: { activity: SharedTripActivity;
           </div>
         )}
 
-        {activity.place?.description && (
-          <p className="text-sm leading-relaxed text-[var(--foreground)]">{activity.place.description}</p>
+        {activity.notes && (
+          <p className="text-sm leading-relaxed text-[var(--foreground)]">{activity.notes}</p>
         )}
 
         <div className="flex items-center justify-end pt-1">
