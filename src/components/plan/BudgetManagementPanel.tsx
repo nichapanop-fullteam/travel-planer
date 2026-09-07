@@ -27,6 +27,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import type { ExpenseCategory, GeneratedTrip } from "@/types";
 import { ACTIVITY_TO_EXPENSE_CATEGORY } from "@/lib/expense-styles";
 import { formatExpenseDate } from "@/lib/trip-expenses";
+import { toPerPersonAmount, toWholeTripAmount } from "@/lib/budget-units";
 import { formatTHB } from "@/lib/trip-utils";
 import { updateTripItemOnServer, updateTripOnServer } from "@/lib/trips-update-api";
 import { BackendAuthenticationError } from "@/lib/authenticated-fetch";
@@ -197,15 +198,21 @@ export function BudgetManagementPanel({
   }
 
   const items = budget.items;
-  const total = budget.totalBudget;
-  const goal = budget.budgetLimit;
+  // The server's rolled-up figures — totalBudget, budgetLimit, and the
+  // byCategory/byDay aggregates built from them — cover the whole group,
+  // while this panel is per person throughout (see lib/budget-units.ts).
+  // items[] is left alone: a line item is the amount that was typed, and this
+  // panel types them per person already (see the "ต่อคน" field below).
+  const perPerson = (amount: number) => toPerPersonAmount(amount, trip.creator?.groupSize);
+  const total = perPerson(budget.totalBudget);
+  const goal = budget.budgetLimit !== undefined ? perPerson(budget.budgetLimit) : undefined;
   const spentPercent = goal ? Math.min(100, Math.round((total / goal) * 100)) : 0;
   const remaining = goal !== undefined ? goal - total : undefined;
 
   const bucketTotals = new Map<BudgetBucket, number>();
   for (const b of budget.byCategory) {
     const bucket = CATEGORY_TO_BUCKET[b.category];
-    bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + b.amount);
+    bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + perPerson(b.amount));
   }
   const breakdown = BUCKET_ORDER.filter((bucket) => (bucketTotals.get(bucket) ?? 0) > 0).map((bucket) => {
     const amount = bucketTotals.get(bucket) ?? 0;
@@ -221,7 +228,7 @@ export function BudgetManagementPanel({
     itemsByDayNumber.set(item.dayNumber, list);
   }
   const unassignedItems = items.filter((i) => i.dayNumber == null);
-  const amountByDayId = new Map(budget.byDay.map((d) => [d.dayId, d.amount]));
+  const amountByDayId = new Map(budget.byDay.map((d) => [d.dayId, perPerson(d.amount)]));
 
   async function deleteLineItem(item: TripBudgetLineItem) {
     if (item.source === "expense") {
@@ -1182,7 +1189,11 @@ function SetBudgetGoalDialog({
     setSaving(true);
     setSaveError("");
     try {
-      await updateTripOnServer(trip.id, { budgetLimit: numeric });
+      // The field is labelled "งบประมาณต่อคนทั้งทริป"; the API's cap covers the
+      // whole group (see lib/budget-units.ts).
+      await updateTripOnServer(trip.id, {
+        budgetLimit: toWholeTripAmount(numeric, trip.creator?.groupSize),
+      });
       onSaved();
     } catch (error) {
       setSaveError(error instanceof BackendAuthenticationError ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" : "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");

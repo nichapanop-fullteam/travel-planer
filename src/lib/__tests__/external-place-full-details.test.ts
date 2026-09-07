@@ -38,9 +38,12 @@ describe("fetchPlaceFullDetails", () => {
     );
 
     await expect(fetchPlaceFullDetails("12f642ae-d16f-4e64-bf5a-fca160f2d945")).resolves.toEqual(placeDetails);
+    // headers is empty because no one is signed in — these routes work
+    // signed out, and a token is only ever attached when there is a real
+    // session to attribute the rate-limit quota to (see optionalAuthHeaders).
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/places/12f642ae-d16f-4e64-bf5a-fca160f2d945",
-      { signal: undefined }
+      { signal: undefined, headers: {} }
     );
   });
 
@@ -74,7 +77,10 @@ describe("fetchPlaceFullDetails", () => {
     await expect(fetchResolvedPlaceFullDetails(undefined, "Hilton Tokyo")).resolves.toMatchObject({
       name: "Hilton Tokyo",
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/places/search?q=Hilton+Tokyo&limit=5");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/places/${internalId}`, { signal: undefined });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/places/search?q=Hilton+Tokyo&limit=5", { headers: {} });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/places/${internalId}`, {
+      signal: undefined,
+      headers: {},
+    });
   });
 });

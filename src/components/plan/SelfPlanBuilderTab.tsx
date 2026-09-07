@@ -2310,21 +2310,37 @@ export function TravelConnectorRow({
         distanceKm: travelSegment.distanceKilometers ?? undefined,
       }
     : undefined;
+  // Three tiers, most trustworthy first: what the traveller entered, what the
+  // routing provider computed, and — only while neither exists — what the
+  // generated plan guessed. The guess is last on purpose: it is straight-line
+  // distance with a detour factor, not a route.
   const travel = manualTravel ?? estimatedTravel;
   const isEstimate = !manualTravel && Boolean(estimatedTravel);
+  const planEstimate = toActivity.planTravelEstimate;
+  const hasPlanEstimate = Boolean(
+    planEstimate && (planEstimate.durationMin != null || planEstimate.distanceKm != null)
+  );
+  // `travel` alone is not enough to render: an entry whose `type` is missing or
+  // is a value this build does not know (an older localStorage copy, a mode the
+  // API added since) finds no icon and no label, and the row then had nothing
+  // left to draw — an empty pill with a delete button beside it, which is what
+  // showed up once automatic calculation was turned on and segments started
+  // reaching this component for the first time.
   const TypeIcon = travel ? travelTypeIcon[travel.type] : null;
   const travelLabel = travel
     ? travel.type === "other" && travel.customType
       ? travel.customType
       : travelTypeLabel[travel.type]
     : undefined;
+  const canRenderTravel = Boolean(travel && TypeIcon && travelLabel);
+  const showPlanEstimate = !canRenderTravel && hasPlanEstimate;
 
   // Read-only: nothing to add, so hide the placeholder prompt entirely; an
   // already-attached leg still shows (travelers should be able to see how
   // they get between stops) but as plain text, not a clickable edit target.
 
   const content =
-    travel && TypeIcon && travelLabel ? (
+    canRenderTravel && travel && TypeIcon && travelLabel ? (
       <>
         <TypeIcon size={11} className="shrink-0" />
         <span>{travelLabel}</span>
@@ -2334,16 +2350,30 @@ export function TravelConnectorRow({
         {travel.notes && <span className="min-w-0 truncate text-[var(--color-muted)]">· {travel.notes}</span>}
         {isEstimate && <span className="text-[var(--color-muted)]">· คำนวณเบื้องต้น</span>}
       </>
-    ) : travelSegment ? (
-      travelSegment.routeStatus === "FAILED" ? (
-        <>
-          <Car size={11} className="shrink-0" />
-          <span>ยังคำนวณเส้นทางไม่ได้</span>
-        </>
-      ) : (
-        <></>
-      )
+    ) : showPlanEstimate ? (
+      // The plan already worked this leg out; showing "+ เพิ่มการเดินทาง" over
+      // the top of it asked the traveller for something they had been given
+      // already, and the same figure was being printed under the next stop
+      // anyway. Labelled so it is never mistaken for a real route.
+      <>
+        <Car size={11} className="shrink-0" />
+        <span>
+          {planEstimate?.durationMin != null && <>~{planEstimate.durationMin} นาที</>}
+          {planEstimate?.durationMin != null && planEstimate?.distanceKm != null && " · "}
+          {planEstimate?.distanceKm != null && <>{planEstimate.distanceKm} กม.</>}
+        </span>
+        <span className="text-[var(--color-muted)]">· ประมาณการจากแผน</span>
+      </>
+    ) : travelSegment?.routeStatus === "FAILED" ? (
+      <>
+        <Car size={11} className="shrink-0" />
+        <span>ยังคำนวณเส้นทางไม่ได้</span>
+      </>
     ) : (
+      // The catch-all, and it must never be empty. A segment whose status this
+      // build cannot interpret lands here rather than in a blank pill: there is
+      // genuinely nothing to show, so offer the one thing the traveller can do
+      // about it.
       <>
         <Plus size={11} className="shrink-0" />
         เพิ่มการเดินทาง

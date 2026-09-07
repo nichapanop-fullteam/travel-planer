@@ -26,6 +26,17 @@ export function getBackendAccessToken(): string | null {
   return accessToken;
 }
 
+// Bearer header for the optional-auth routes behind our own /api proxies
+// (/api/places/*, /api/trips/generate-plan). Those endpoints work signed out —
+// the token only decides whether the external API counts the call against this
+// user's rate-limit quota or the bucket everyone shares (see lib/proxy-auth.ts)
+// — so this returns an empty object rather than failing when there is no
+// session, and deliberately does not go through authenticatedFetch: a 401 from
+// one of these is not a sign this user's session expired.
+export function optionalAuthHeaders(): Record<string, string> {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
 export function setBackendAccessToken(token: string): void {
   accessToken = token;
 }

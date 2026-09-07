@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { rateLimitHeaders, upstreamHeaders } from "@/lib/proxy-auth";
+
 const EXTERNAL_API_BASE_URL =
   process.env.EXTERNAL_API_BASE_URL ?? "https://travel-planner-api-git-909858882015.asia-northeast3.run.app";
 
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
   if (sessionToken) url.searchParams.set("sessionToken", sessionToken);
 
   const response = await fetch(url, {
-    headers: { "ngrok-skip-browser-warning": "true" },
+    headers: upstreamHeaders(request),
   });
 
   // The upstream contract promises JSON errors, but that only holds once
@@ -30,7 +32,10 @@ export async function GET(request: NextRequest) {
   // otherwise throw here and surface as an opaque 500.
   const text = await response.text();
   try {
-    return NextResponse.json(JSON.parse(text), { status: response.status });
+    return NextResponse.json(JSON.parse(text), {
+      status: response.status,
+      headers: rateLimitHeaders(response),
+    });
   } catch {
     return NextResponse.json(
       { error: "Places Autocomplete request failed", detail: text.slice(0, 500) },

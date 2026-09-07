@@ -68,6 +68,13 @@ export interface Activity {
   cost: number; // THB, per group
   travelNote?: string; // e.g. "เดิน ~8 นาที" — free-text fallback, kept for backward compat
   travelFromPrevious?: TravelFromPrevious; // structured version of travelNote — the leg from the previous stop
+  // What the generated plan itself reckoned this leg costs, straight from
+  // POST /trips/plan/generate. A rough figure — straight-line distance with a
+  // detour factor, not a route — so it ranks BELOW both the traveller's own
+  // entry and a real provider segment, and is only shown while neither exists.
+  // Kept apart from travelFromPrevious for exactly that reason: putting it
+  // there would let a guess outrank the route Google actually returned.
+  planTravelEstimate?: { durationMin?: number; distanceKm?: number };
   // A provider estimate can be dismissed without deleting the backend's
   // structural segment (segments must continue to match adjacent stops).
   // Kept client-side so the row returns to "+ เพิ่มการเดินทาง" for this plan.
@@ -252,9 +259,13 @@ export interface GeneratedTrip {
   styles: string[];
   status: GeneratedTripStatus;
   days: Day[];
-  // Client-side preference for automatic, preliminary travel estimates.
-  // Deliberately defaults to off: itinerary mutations only ask the backend
-  // to reconcile Google Routes segments after the traveller opts in.
+  // Client-side preference for automatic, preliminary travel estimates:
+  // itinerary mutations only ask the backend to reconcile Google Routes
+  // segments while this is on.
+  //
+  // Absent means off, which is what a self-built trip starts as. A generated
+  // plan sets it true instead — see buildGeneratedTripFromApiResponse for why
+  // the two differ.
   autoTravelCalculationEnabled?: boolean;
   accommodation?: TripAccommodation;
   // Budget management (สรุปงบ tab) — expenses is the ledger shown/edited
@@ -299,7 +310,7 @@ export interface GeneratedTrip {
   // buildGeneratedTripFromBackendTrip in lib/generated-trips.ts) — absent for
   // local-only/never-synced trips, which are always the current browser's own.
   ownerId?: string;
-  creator?: { id: string; name: string; avatarUrl?: string };
+  creator?: { id: string; name: string; avatarUrl?: string; groupSize?: number };
   planMode?: string;
   saveCount?: number;
   remixCount?: number;
