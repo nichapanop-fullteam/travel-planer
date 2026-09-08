@@ -16,7 +16,6 @@
 // never needed.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -26,32 +25,23 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Clock,
   CloudSun,
-  Globe2,
   Heart,
   LoaderCircle,
   Loader2,
-  Maximize2,
   Menu,
-  Minus,
-  MoreVertical,
   MapPin,
   Navigation,
-  PanelRightClose,
-  PanelRightOpen,
   Pencil,
-  Phone,
   Plus,
   Repeat2,
   Share2,
-  Star,
   TriangleAlert,
   X,
 } from "lucide-react";
-import type { Activity, ActivityCategory, Day, GeneratedTrip, TravelSegment } from "@/types";
+import type { Activity, ActivityCategory, GeneratedTrip, TravelSegment } from "@/types";
 import { categoryIcon, categoryLabel } from "@/lib/category-styles";
-import { fetchResolvedPlaceFullDetails, type PlaceFullDetails } from "@/lib/external-places-api";
+import { fetchResolvedPlaceFullDetails } from "@/lib/external-places-api";
 import { resolveCoverImageUrl, getTripGallery } from "@/lib/trip-media-api";
 import { buildGeneratedTripFromBackendTrip } from "@/lib/generated-trips";
 import { getTrip, likeTrip, unlikeTrip, saveTrip, unsaveTrip } from "@/lib/trips-api";
@@ -66,13 +56,11 @@ import {
 } from "@/lib/trip-utils";
 import { formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
-import { FakeMapBackground } from "@/components/plan/FakeMapBackground";
 import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { Logo } from "@/components/common/Logo";
-import { MapIcon } from "@/components/common/MapIcon";
 import { RemixIcon } from "@/components/common/RemixIcon";
 import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -1050,12 +1038,15 @@ function visibleTravelSegment(
   return segment && toActivity.dismissedTravelSegmentId !== segment.id ? segment : undefined;
 }
 
-// The day switcher + itinerary list + map, adapted from generated-plan/[id]'s
-// PlanTab: every canEdit branch (เพิ่มวัน, เพิ่มจุด, the editable PlanActivityRow,
-// editable TravelConnectorRow handlers) is gone, since this page is always
-// read-only — ReadOnlyPlanActivityCard renders every stop, and
+// The day switcher + itinerary list, adapted from generated-plan/[id]'s
+// PlanTab: every canEdit branch (เพิ่มวัน, เพิ่มจุด, the editable
+// PlanActivityRow, editable TravelConnectorRow handlers) is gone, since this
+// page is always read-only — ReadOnlyPlanActivityCard renders every stop, and
 // TravelConnectorRow gets no onSave/onDelete at all (both are optional; it
-// renders read-only on its own when they're absent).
+// renders read-only on its own when they're absent). No map here either —
+// this page shows only the Trip Overview + itinerary detail, matching the
+// shared-trips page's design; the map/place-popup live on generated-plan's
+// own editor, not here.
 function PlanTab({
   trip,
   dayIndex,
@@ -1065,7 +1056,6 @@ function PlanTab({
   dayIndex: number;
   onDayIndexChange: (index: number) => void;
 }) {
-  const [showMap, setShowMap] = useState(true);
   const header = <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>;
 
   if (trip.days.length === 0) {
@@ -1087,79 +1077,41 @@ function PlanTab({
       {header}
 
       <div className="flex flex-col gap-4 rounded-2xl p-2.5 sm:gap-5 sm:rounded-3xl sm:p-5" style={{ backgroundColor: "#FAF8F5" }}>
-        <div className={`trip-plan-layout ${showMap ? "" : "trip-plan-layout--no-map"}`}>
-          <div
-            className="trip-plan-layout__days flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            {trip.days.map((d, i) => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => onDayIndexChange(i)}
-                className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
-                style={i === dayIndex ? { backgroundColor: "var(--color-brand-green)", color: "#fff" } : { color: "var(--color-muted)" }}
-              >
-                วันที่ {d.dayNumber}
-              </button>
-            ))}
-          </div>
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white p-1.5 [scrollbar-width:none] sm:gap-2 sm:rounded-2xl sm:p-2 [&::-webkit-scrollbar]:hidden"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          {trip.days.map((d, i) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onDayIndexChange(i)}
+              className="min-w-[88px] flex-none whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-bold sm:min-w-0 sm:flex-1 sm:rounded-xl sm:px-5"
+              style={i === dayIndex ? { backgroundColor: "var(--color-brand-green)", color: "#fff" } : { color: "var(--color-muted)" }}
+            >
+              วันที่ {d.dayNumber}
+            </button>
+          ))}
+        </div>
 
-          <div className="trip-plan-layout__list min-w-0 overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
-            <div className="trip-plan-list-header items-center justify-between rounded-t-2xl px-4 py-3" style={{ backgroundColor: "var(--color-sel-bg)" }}>
-              <h3 className="text-base font-bold" style={{ color: "var(--color-brand-green)" }}>
-                ลำดับแพลน
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowMap((v) => !v)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border bg-white"
-                style={{ borderColor: "var(--color-sel-border)" }}
-                title={showMap ? "ซ่อนแผนที่" : "แสดงแผนที่"}
-              >
-                {showMap ? (
-                  <PanelRightClose size={14} style={{ color: "var(--color-brand-green)" }} />
-                ) : (
-                  <PanelRightOpen size={14} style={{ color: "var(--color-brand-green)" }} />
+        <div className="flex flex-col gap-3">
+          {day.activities.map((a, i) => {
+            const next = day.activities[i + 1];
+            return (
+              <div key={a.id} className="flex flex-col gap-3">
+                <ReadOnlyPlanActivityCard activity={a} index={i + 1} />
+                {next && (
+                  <TravelConnectorRow
+                    fromTitle={a.title}
+                    toActivity={next}
+                    travelSegment={showAutomaticTravel ? visibleTravelSegment(day.travelSegments, a, next) : undefined}
+                  />
                 )}
-              </button>
-            </div>
-            <div className="flex flex-col gap-3 px-2 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4">
-              {day.activities.map((a, i) => {
-                const next = day.activities[i + 1];
-                return (
-                  <div key={a.id} className="flex flex-col gap-3">
-                    <ReadOnlyPlanActivityCard activity={a} index={i + 1} />
-                    {next && (
-                      <TravelConnectorRow
-                        fromTitle={a.title}
-                        toActivity={next}
-                        travelSegment={showAutomaticTravel ? visibleTravelSegment(day.travelSegments, a, next) : undefined}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {showMap && (
-            <div className="trip-plan-layout__map min-w-0">
-              <TripMapPanel day={day} />
-            </div>
-          )}
+              </div>
+            );
+          })}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setShowMap((v) => !v)}
-        aria-pressed={showMap}
-        aria-label={showMap ? "ซ่อนแผนที่" : "แสดงแผนที่"}
-        className="trip-plan-map-fab flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition-opacity hover:opacity-90"
-        style={{ backgroundColor: "var(--color-accent-orange)" }}
-      >
-        <MapIcon className="h-6 w-6" />
-      </button>
     </div>
   );
 }
@@ -1294,8 +1246,8 @@ function ResolvedNavigationLink({ activity, className, children }: { activity: A
   );
 }
 
-// Full-screen photo viewer used by both HeroImageCarousel and PlacePopup.
-// Copied verbatim from generated-plan/[id].
+// Full-screen photo viewer for HeroImageCarousel. Copied verbatim from
+// generated-plan/[id].
 function ImageLightbox({ title, images, initialIndex = 0, onClose }: { title: string; images: string[]; initialIndex?: number; onClose: () => void }) {
   const [index, setIndex] = useState(initialIndex);
   const hasMultiple = images.length > 1;
@@ -1376,455 +1328,6 @@ function ImageLightbox({ title, images, initialIndex = 0, onClose }: { title: st
           </button>
         ))}
       </div>
-    </div>
-  );
-}
-
-const MAP_PIN_POSITIONS = [
-  { x: "22%", y: "72%" },
-  { x: "30%", y: "48%" },
-  { x: "42%", y: "52%" },
-  { x: "58%", y: "34%" },
-  { x: "50%", y: "18%" },
-  { x: "70%", y: "16%" },
-  { x: "82%", y: "10%" },
-];
-
-// Fake-map pin layout + place popup. Copied verbatim from generated-plan/[id].
-function TripMapPanel({ day }: { day: Day }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = day.activities.find((a) => a.id === selectedId);
-  const selectedIndex = selected ? day.activities.findIndex((a) => a.id === selected.id) : -1;
-
-  return (
-    <div className="relative min-h-[280px] rounded-2xl border border-[var(--color-border)]/25 sm:min-h-[320px]">
-      <div className="absolute inset-0 overflow-hidden rounded-2xl">
-        <FakeMapBackground />
-      </div>
-
-      <button type="button" className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
-        <MoreVertical size={14} />
-      </button>
-
-      {day.activities.map((a, i) => {
-        const pos = MAP_PIN_POSITIONS[i % MAP_PIN_POSITIONS.length];
-        const isSelected = selectedId === a.id;
-        const xPercent = parseFloat(pos.x);
-        const openBelow = parseFloat(pos.y) < 45;
-        const horizontalAlign = xPercent > 65 ? "right" : xPercent < 25 ? "left" : "center";
-        return (
-          <div key={a.id} className={`absolute -translate-x-1/2 -translate-y-1/2 ${isSelected ? "z-20" : "z-0"}`} style={{ left: pos.x, top: pos.y }}>
-            {selected && isSelected && (
-              <div className="trip-place-anchored">
-                <PlacePopup key={selected.id} activity={selected} index={i + 1} onClose={() => setSelectedId(null)} openBelow={openBelow} horizontalAlign={horizontalAlign} />
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setSelectedId((prev) => (prev === a.id ? null : a.id))}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-md"
-              style={{ backgroundColor: "var(--color-brand-green)" }}
-            >
-              {i + 1}
-            </button>
-          </div>
-        );
-      })}
-
-      {selected && selectedIndex >= 0 && (
-        <div className="trip-place-sheet">
-          <button
-            type="button"
-            aria-label="ปิดข้อมูลสถานที่"
-            onClick={() => setSelectedId(null)}
-            className="fixed inset-0 z-10 bg-black/35 backdrop-blur-[1px]"
-          />
-          <PlacePopup key={selected.id} activity={selected} index={selectedIndex + 1} onClose={() => setSelectedId(null)} />
-        </div>
-      )}
-
-      <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
-        <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
-          <Plus size={14} />
-        </button>
-        <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
-          <Minus size={14} />
-        </button>
-        <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md">
-          <Navigation size={13} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const PLACE_DETAIL_TABS = [
-  { key: "about", label: "เกี่ยวกับ" },
-  { key: "booking", label: "จอง" },
-  { key: "reviews", label: "รีวิว" },
-  { key: "photos", label: "รูปภาพ" },
-  { key: "mentions", label: "การกล่าวถึง" },
-] as const;
-type PlaceDetailTab = (typeof PLACE_DETAIL_TABS)[number]["key"];
-
-const PRICE_LEVEL_LABEL: Record<string, string> = {
-  PRICE_LEVEL_FREE: "ฟรี",
-  PRICE_LEVEL_INEXPENSIVE: "ราคาประหยัด",
-  PRICE_LEVEL_MODERATE: "ราคาปานกลาง",
-  PRICE_LEVEL_EXPENSIVE: "ราคาสูง",
-  PRICE_LEVEL_VERY_EXPENSIVE: "ราคาสูงมาก",
-};
-
-// The map pin's detail sheet — same live Google-details lookup and tab set as
-// generated-plan/[id]'s. Copied verbatim.
-function PlacePopup({
-  activity,
-  index,
-  onClose,
-  openBelow,
-  horizontalAlign = "center",
-  variant = "anchored",
-}: {
-  activity: Activity;
-  index: number;
-  onClose: () => void;
-  openBelow?: boolean;
-  horizontalAlign?: "left" | "center" | "right";
-  variant?: "anchored" | "modal";
-}) {
-  const placeId = activity.location?.googlePlaceId;
-  const [details, setDetails] = useState<PlaceFullDetails | null>(null);
-  const [detailsStatus, setDetailsStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const [activeTab, setActiveTab] = useState<PlaceDetailTab>("about");
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    const isSheet = !window.matchMedia("(min-width: 1025px) and (hover: hover) and (pointer: fine)").matches;
-    if (!isSheet) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-    const fallbackName = activity.location?.name || activity.title;
-
-    fetchResolvedPlaceFullDetails(placeId, fallbackName, controller.signal)
-      .then((payload) => {
-        if (cancelled) return;
-        setDetails(payload);
-        setDetailsStatus("loaded");
-      })
-      .catch((error: unknown) => {
-        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) return;
-        setDetailsStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [activity.location?.name, activity.title, loadAttempt, placeId]);
-
-  const name = details?.name || activity.location?.name || activity.title;
-  const rating = details?.rating ?? activity.location?.rating;
-  const description = details?.editorialSummary || activity.notes || activity.travelNote;
-  const CategoryIcon = categoryIcon[activity.category];
-  const categoryName = details?.primaryTypeDisplayName || categoryLabel[activity.category];
-  const openingHours = details?.currentOpeningHours?.weekdayDescriptions.length
-    ? details.currentOpeningHours.weekdayDescriptions
-    : details?.regularOpeningHours?.weekdayDescriptions ?? [];
-  const openNow = details?.currentOpeningHours?.openNow ?? details?.regularOpeningHours?.openNow;
-  const phone = details?.internationalPhoneNumber || details?.nationalPhoneNumber;
-  const telPhone = details?.internationalPhoneNumber || details?.nationalPhoneNumber;
-  const photos = details?.photos.length
-    ? details.photos
-    : activity.images?.length
-      ? activity.images
-      : activity.location?.imageUrl
-        ? [activity.location.imageUrl]
-        : [];
-  const mapsUrl = details?.googleMapsUri || getGoogleMapsUrl(activity.location ?? { name: activity.title });
-
-  const isModal = variant === "modal";
-  const horizontalClass =
-    horizontalAlign === "right" ? "sm:right-0 sm:left-auto" : horizontalAlign === "left" ? "sm:left-0 sm:right-auto" : "sm:left-1/2 sm:right-auto sm:-translate-x-1/2";
-  const verticalClass = openBelow ? "sm:top-full sm:bottom-auto sm:mt-2" : "sm:top-auto sm:bottom-full sm:mb-2";
-
-  return (
-    <div
-      role="dialog"
-      aria-modal={openBelow === undefined}
-      aria-label={`ข้อมูลสถานที่ ${name}`}
-      className={`fixed inset-x-0 bottom-0 z-20 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 bg-white shadow-2xl ${
-        isModal ? "trip-place-modal" : `sm:absolute sm:inset-x-auto sm:max-h-[min(38rem,calc(100vh-2rem))] sm:w-[min(34rem,calc(100vw-2rem))] sm:rounded-3xl sm:border ${horizontalClass} ${verticalClass}`
-      }`}
-      style={{ borderColor: "var(--color-border-tag)" }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="relative shrink-0 px-4 pb-3 pt-2 sm:px-6 sm:pt-5">
-        <div className="relative mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--color-border-tag)] sm:hidden" aria-hidden="true" />
-
-        <div className="relative flex items-start gap-2.5">
-          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-            <MapPin size={30} fill="var(--color-brand-green)" strokeWidth={0} style={{ color: "var(--color-brand-green)" }} />
-            <span className="absolute inset-x-0 top-[5px] text-center text-[11px] font-extrabold text-white">{index}</span>
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-muted)] sm:text-[11px]">จุดหมายในแผนของคุณ</p>
-            <h4 className="mt-0.5 min-w-0 break-words text-lg font-extrabold leading-6 sm:text-xl">{name}</h4>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="ปิดข้อมูลสถานที่"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white text-[var(--color-muted)] transition hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger)]"
-            style={{ borderColor: "var(--color-border-tag)" }}
-          >
-            <X size={16} strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
-
-      <div className="relative z-[1] shrink-0 border-b px-4 sm:px-6" style={{ borderColor: "var(--color-border-tag)" }}>
-        <div className="no-scrollbar relative flex min-w-0 items-center gap-5 overflow-x-auto sm:gap-6">
-          {PLACE_DETAIL_TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setActiveTab(t.key)}
-              aria-pressed={activeTab === t.key}
-              className="-mb-px shrink-0 border-b-2 pb-2.5 pt-1 text-sm font-bold transition-colors"
-              style={activeTab === t.key ? { borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)" } : { borderColor: "transparent", color: "var(--foreground)" }}
-            >
-              {t.label}
-              {t.key === "reviews" && details?.reviews.length ? ` (${details.reviews.length})` : ""}
-              {t.key === "photos" && photos.length ? ` (${photos.length})` : ""}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 sm:px-5">
-        {detailsStatus === "loading" && (
-          <div className="mb-3 flex items-center gap-2 rounded-2xl bg-[var(--color-sel-bg)] px-3 py-2 text-xs font-semibold text-[var(--color-brand-green)]">
-            <LoaderCircle size={14} className="animate-spin" />
-            กำลังโหลดข้อมูลสถานที่ล่าสุด…
-          </div>
-        )}
-
-        {detailsStatus === "error" && (
-          <div className="mb-3 flex flex-col items-start gap-2 rounded-2xl bg-[var(--color-danger-bg)] px-3 py-2 text-xs text-[var(--color-danger)] sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-            <span>โหลดข้อมูลเต็มไม่สำเร็จ กำลังแสดงข้อมูลจากแผนแทน</span>
-            <button
-              type="button"
-              onClick={() => {
-                setDetailsStatus("loading");
-                setLoadAttempt((attempt) => attempt + 1);
-              }}
-              className="shrink-0 rounded-full border border-[var(--color-danger-border)] bg-white px-2.5 py-1 font-bold"
-            >
-              ลองใหม่
-            </button>
-          </div>
-        )}
-
-        {activeTab === "about" && (
-          <div>
-            <div className="flex flex-col gap-3 min-[380px]:flex-row min-[380px]:items-start">
-              {description ? (
-                <p className="min-w-0 flex-1 break-words text-sm leading-6 text-[var(--foreground)] sm:text-[15px] sm:leading-7">{description}</p>
-              ) : (
-                <p className="min-w-0 flex-1 text-sm text-[var(--color-muted)]">ยังไม่มีคำอธิบายสำหรับสถานที่นี้</p>
-              )}
-              {photos[0] && (
-                <button
-                  type="button"
-                  onClick={() => setLightboxIndex(0)}
-                  aria-label={`ดูรูปของ ${name} แบบเต็มจอ`}
-                  className="group relative h-36 w-full shrink-0 overflow-hidden rounded-xl bg-[var(--color-sel-bg)] min-[380px]:h-28 min-[380px]:w-28"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photos[0]} alt={name} className="h-full w-full object-cover transition group-hover:scale-105" />
-                  <span className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 shadow-sm">
-                    <Maximize2 size={10} />
-                  </span>
-                </button>
-              )}
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {details?.priceLevel && PRICE_LEVEL_LABEL[details.priceLevel] && (
-                <span className="rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
-                  {PRICE_LEVEL_LABEL[details.priceLevel]}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
-                <CategoryIcon size={12} />
-                {categoryName}
-              </span>
-              {activity.cost > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface)] px-2 py-1 text-xs font-semibold text-[var(--color-muted)]">
-                  <CircleDollarSign size={12} />
-                  {formatTHB(activity.cost)}
-                </span>
-              )}
-            </div>
-
-            {rating != null && (
-              <p className="mt-3 flex items-center gap-1.5 text-sm">
-                <Star size={16} fill="currentColor" className="shrink-0 text-[var(--color-accent-orange)]" />
-                <span className="font-extrabold text-[var(--foreground)]">{rating.toFixed(1)}</span>
-                {details?.userRatingCount != null && <span className="text-[var(--color-muted)]">({details.userRatingCount.toLocaleString("th-TH")})</span>}
-              </p>
-            )}
-
-            <div className="mt-3 grid gap-2.5 text-sm text-[var(--color-muted)]">
-              {openNow != null && (
-                <p className="flex items-start gap-2">
-                  <Clock size={16} className="mt-0.5 shrink-0" />
-                  <span className={openNow ? "font-bold text-[var(--color-brand-green)]" : "font-bold text-[var(--color-danger)]"}>
-                    {openNow ? "เปิดอยู่ตอนนี้" : "ปิดอยู่ตอนนี้"}
-                  </span>
-                </p>
-              )}
-              {details?.address && (
-                <p className="flex items-start gap-2">
-                  <MapPin size={16} className="mt-0.5 shrink-0" />
-                  <span>{details.address}</span>
-                </p>
-              )}
-              {phone && telPhone && (
-                <a href={`tel:${telPhone}`} className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
-                  <Phone size={16} className="mt-0.5 shrink-0" />
-                  <span>{phone}</span>
-                </a>
-              )}
-              {details?.websiteUri && (
-                <a href={details.websiteUri} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 hover:text-[var(--color-brand-green)]">
-                  <Globe2 size={16} className="mt-0.5 shrink-0" />
-                  <span className="truncate">เว็บไซต์ของสถานที่</span>
-                </a>
-              )}
-            </div>
-
-            {openingHours.length > 0 && (
-              <details className="mt-3 text-sm">
-                <summary className="cursor-pointer font-semibold text-[#1a73e8]">แสดงเวลาเปิด</summary>
-                <div className="mt-2 grid gap-1 text-[var(--color-muted)]">
-                  {openingHours.map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
-                </div>
-              </details>
-            )}
-          </div>
-        )}
-
-        {activeTab === "booking" && (
-          <div className="rounded-2xl bg-[var(--color-page-cream)] p-3 text-xs sm:text-sm">
-            <p className="font-bold text-[var(--color-brand-green)]">ข้อมูลการจอง</p>
-            <p className="mt-1 text-[var(--color-muted)]">ตรวจสอบราคา เวลาให้บริการ หรือช่องทางจองจากเว็บไซต์ของสถานที่</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {details?.websiteUri && (
-                <a href={details.websiteUri} target="_blank" rel="noopener noreferrer" className="rounded-full bg-[var(--color-brand-green)] px-3 py-1.5 text-xs font-bold text-white">
-                  ไปที่เว็บไซต์
-                </a>
-              )}
-              {activity.category === "hotel" && <HotelBookingButton name={name} className="rounded-full border px-3 py-1.5 text-xs font-bold" />}
-              {!details?.websiteUri && activity.category !== "hotel" && <span className="text-[var(--color-muted)]">ยังไม่มีข้อมูลการจองสำหรับสถานที่นี้</span>}
-            </div>
-          </div>
-        )}
-
-        {activeTab === "reviews" && (
-          <div className="grid gap-2 sm:max-h-64 sm:overflow-y-auto sm:pr-1">
-            {details?.reviews.length ? (
-              details.reviews.map((review, reviewIndex) => (
-                <article key={`${review.authorName}-${review.publishTime ?? reviewIndex}`} className="rounded-2xl border p-3" style={{ borderColor: "var(--color-border-tag)" }}>
-                  <div className="flex items-center gap-2">
-                    {review.authorPhotoUri ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={review.authorPhotoUri} alt="" className="h-8 w-8 rounded-full object-cover" />
-                    ) : (
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-sel-bg)] text-xs font-bold text-[var(--color-brand-green)]">
-                        {review.authorName.slice(0, 1)}
-                      </span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold">{review.authorName}</p>
-                      <p className="flex items-center gap-1 text-[10px] text-[var(--color-muted)]">
-                        <Star size={10} fill="currentColor" className="text-[var(--color-accent-orange)]" />
-                        {review.rating.toFixed(1)}
-                        {review.relativePublishTimeDescription && <> · {review.relativePublishTimeDescription}</>}
-                      </p>
-                    </div>
-                  </div>
-                  {review.text && <p className="mt-2 text-xs leading-5 text-[var(--color-muted)]">{review.text}</p>}
-                </article>
-              ))
-            ) : (
-              <p className="rounded-2xl bg-[var(--color-page-cream)] p-4 text-center text-xs text-[var(--color-muted)]">ยังไม่มีรีวิวที่แสดงได้</p>
-            )}
-          </div>
-        )}
-
-        {activeTab === "photos" &&
-          (photos.length ? (
-            <div className="grid grid-cols-2 gap-2 sm:max-h-64 sm:grid-cols-3 sm:overflow-y-auto sm:pr-1">
-              {photos.map((src, photoIndex) => (
-                <button
-                  key={`${src}-${photoIndex}`}
-                  type="button"
-                  onClick={() => setLightboxIndex(photoIndex)}
-                  aria-label={`ดูรูปของ ${name} รูปที่ ${photoIndex + 1} แบบเต็มจอ`}
-                  className="group relative aspect-square overflow-hidden rounded-2xl bg-[var(--color-sel-bg)]"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`${name} รูปที่ ${photoIndex + 1}`} className="h-full w-full object-cover transition group-hover:scale-105" />
-                  <span className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100">
-                    <Maximize2 size={11} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-2xl bg-[var(--color-page-cream)] p-4 text-center text-xs text-[var(--color-muted)]">ยังไม่มีรูปภาพของสถานที่นี้</p>
-          ))}
-
-        {activeTab === "mentions" && (
-          <div className="rounded-2xl bg-[var(--color-page-cream)] p-3 text-xs leading-5 text-[var(--color-muted)] sm:text-sm">
-            {activity.notes || activity.travelNote || "ยังไม่มีการกล่าวถึงเพิ่มเติมในแผนนี้"}
-          </div>
-        )}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 border-t bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5" style={{ borderColor: "var(--color-border-tag)" }}>
-        <span className="hidden text-[11px] text-[var(--color-muted)] sm:inline">ดูตำแหน่งและเส้นทาง</span>
-        <a
-          href={mapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 sm:ml-auto sm:min-h-0 sm:w-auto"
-          style={{ backgroundColor: "var(--color-accent-orange)" }}
-        >
-          <Navigation size={13} />
-          เปิดใน Google Maps
-        </a>
-      </div>
-
-      {lightboxIndex !== null &&
-        photos.length > 0 &&
-        createPortal(
-          <ImageLightbox title={name} images={photos} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />,
-          document.body
-        )}
     </div>
   );
 }
