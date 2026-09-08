@@ -31,7 +31,11 @@ import { BookingBar } from "@/components/consumer/BookingBar";
 import { DatePickerDialog } from "@/components/consumer/DatePickerDialog";
 import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
 import { buildGuestsLabel, GuestPickerDialog } from "@/components/consumer/GuestPickerDialog";
-import { RecommendedPlacesStep, type SelectedRecommendation } from "@/components/consumer/RecommendedPlacesStep";
+import {
+  RecommendPlacesBanner,
+  RecommendPlacesDialog,
+  type SelectedRecommendation,
+} from "@/components/consumer/RecommendPlaces";
 import { Divider } from "@/components/ui/Divider";
 import { clearLastCreateTripSearch, getLastCreateTripSearch, saveLastCreateTripSearch } from "@/lib/create-trip-search";
 import { HERO_ILLUSTRATION } from "@/lib/hero-image";
@@ -89,9 +93,9 @@ const MORE_HOTEL_STYLE_OPTIONS = ["อพาร์ทเมนท์", "แค�
 const HOTEL_GRADE_OPTIONS = ["1★", "2★", "3★", "4★", "5★"];
 const MORE_HOTEL_GRADE_OPTIONS = ["ไม่ระบุ", "หรูหราพิเศษ"];
 
-// Gates "PunGuide จัดแพลนให้ (AI)": the ModeToggle, step 2 (recommended
-// places), and whether ?mode= is honoured at all. Set to false to run the form
-// in self mode only.
+// Gates "PunGuide จัดแพลนให้ (AI)": the ModeToggle, the recommended-places
+// banner/drawer, and whether ?mode= is honoured at all. Set to false to run
+// the form in self mode only.
 const AI_MODE_ENABLED = true;
 
 const COND_OPTIONS = ["มีผู้สูงอายุ", "มีรถส่วนตัว", "เดินเยอะไม่ได้", "มีเด็กเล็ก", "ผู้ใช้รถเข็น"];
@@ -152,7 +156,10 @@ function CreateTripForm() {
   const [hotelGradeRecommend, setHotelGradeRecommend] = useState(false);
   const [accommodationNote, setAccommodationNote] = useState("");
 
-  const [step, setStep] = useState<1 | 2>(1);
+  // The recommended-places browser used to be step 2 of this form. It's a
+  // dialog over step 1 now (see RecommendPlacesBanner), so the form is a
+  // single step and there's no step state left to track.
+  const [placesDialogOpen, setPlacesDialogOpen] = useState(false);
   const [selectedRecommendations, setSelectedRecommendations] = useState<SelectedRecommendation[]>([]);
 
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -241,7 +248,7 @@ function CreateTripForm() {
     customBudgetInputRef.current?.focus();
   }
 
-  // ai mode: CATEGORY_SECTIONS toggle (see RecommendedPlacesStep) — a place
+  // ai mode: CATEGORY_SECTIONS toggle (see RecommendPlaces) — a place
   // is either selected into a bucket or not, no day assignment.
   function toggleRecommendation(place: RecommendedPlace, category: PlaceCategory) {
     setSelectedRecommendations((prev) =>
@@ -270,14 +277,6 @@ function CreateTripForm() {
     if (!destinationPlace) {
       setStatus("error");
       setErrorMessage("กรุณาเลือกปลายทางจากรายการค้นหาอีกครั้ง เพื่อให้ระบบแนะนำสถานที่ได้ถูกต้อง");
-      return;
-    }
-
-    // The primary button on step 1 moves to the recommended-places step
-    // instead of generating right away — generation happens from step 2.
-    // Self mode has no step 2 — it goes straight from step 1 to the trip page.
-    if (!isSkip && step === 1 && mode === "ai") {
-      setStep(2);
       return;
     }
 
@@ -418,7 +417,7 @@ function CreateTripForm() {
       return;
     }
 
-    // The places picked on the recommended-places step go into the request as
+    // The places picked in the recommended-places drawer go into the request as
     // selectedPlaceIds rather than being appended to the response: the API
     // guarantees each one is in the plan it builds, on a day and at a time it
     // chose, instead of them all landing on day 1 after the fact.
@@ -524,28 +523,33 @@ function CreateTripForm() {
             </div>
           )}
 
-          {step === 2 ? (
-            <RecommendedPlacesStep
+          {placesDialogOpen && (
+            <RecommendPlacesDialog
               center={
                 destinationPlace
                   ? { lat: destinationPlace.latitude, lng: destinationPlace.longitude }
                   : DEFAULT_RECOMMENDATION_CENTER
               }
-              destinationName={destination.trim() || undefined}
-              selectedIds={new Set(selectedRecommendations.map((s) => s.place.googlePlaceId))}
               selectedRecommendations={selectedRecommendations}
-              onToggle={toggleRecommendation}
-              onEditPreferences={() => setStep(1)}
-              onSubmit={() => submit(false)}
-              submitDisabled={status === "loading"}
+              onConfirm={setSelectedRecommendations}
+              onClose={() => setPlacesDialogOpen(false)}
             />
-          ) : (
-            <>
-              {mode === "self" && (
-                <div className="mx-4 mt-5 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:mt-6 lg:mx-8" style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}>
-                  โหมด <strong>สร้างด้วยตัวเอง</strong> — คุณจะเลือกสถานที่เองในหน้าแพลนทริป ตัวเลือกด้านล่างใช้เป็นตัวช่วยกรองเท่านั้น
-                </div>
-              )}
+          )}
+
+          {/* Self mode picks its places on the trip page itself, so the
+              recommended-places dialog is an ai-mode affordance only. */}
+          {mode === "ai" && (
+            <RecommendPlacesBanner
+              selectedRecommendations={selectedRecommendations}
+              onExplore={() => setPlacesDialogOpen(true)}
+              onRemove={toggleRecommendation}
+            />
+          )}
+          {mode === "self" && (
+            <div className="mx-4 mt-5 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:mt-6 lg:mx-8" style={{ backgroundColor: "var(--color-sel-bg)", borderColor: "var(--color-sel-border)", color: "var(--color-brand-green)" }}>
+              โหมด <strong>สร้างด้วยตัวเอง</strong> — คุณจะเลือกสถานที่เองในหน้าแพลนทริป ตัวเลือกด้านล่างใช้เป็นตัวช่วยกรองเท่านั้น
+            </div>
+          )}
 
           <div className="flex flex-col gap-1 px-4 pb-28 pt-2 sm:px-6 lg:px-8 lg:pb-2">
             <FormRow
@@ -878,37 +882,19 @@ function CreateTripForm() {
               </div>
             </FormRow>
           </div>
-            </>
-          )}
 
-          {/* RecommendedPlacesStep renders its own summary + สร้างแพลน bar
-              once something's selected on step 2 — this generic footer
-              would otherwise duplicate that CTA. */}
-          {!(step === 2 && selectedRecommendations.length > 0) && (
-            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)]/40 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_20px_rgba(0,0,0,0.07)] sm:px-6 lg:static lg:px-8 lg:py-5 lg:pb-5 lg:shadow-none">
-              <div className="mx-auto flex w-full max-w-6xl items-center gap-4 lg:justify-between">
-              {mode === "ai" ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-8 rounded-full" style={{ backgroundColor: "var(--color-accent-orange)" }} />
-                    <span
-                      className="h-2 w-2 rounded-full transition-colors"
-                      style={{ backgroundColor: step === 2 ? "var(--color-accent-orange)" : "#d5cdb8" }}
-                    />
-                  </div>
-                  <span className="text-sm text-[var(--color-muted)]">{step} จาก 2</span>
-                </div>
-              ) : (
-                <span className="hidden lg:block" />
-              )}
+          {/* One step now that the recommended-places step is a drawer, so
+              there are no step dots and nothing to go back to. */}
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)]/40 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_20px_rgba(0,0,0,0.07)] sm:px-6 lg:static lg:px-8 lg:py-5 lg:pb-5 lg:shadow-none">
+            <div className="mx-auto flex w-full max-w-6xl items-center gap-4 lg:justify-end">
               <div className="flex w-full items-center justify-between gap-4 sm:justify-end sm:gap-8 lg:w-auto">
                 <button
                   type="button"
-                  onClick={() => (step === 2 ? setStep(1) : submit(true))}
+                  onClick={() => submit(true)}
                   disabled={status === "loading"}
                   className="text-sm text-[var(--color-muted)] underline hover:text-[var(--foreground)] disabled:opacity-50"
                 >
-                  {step === 2 ? "ย้อนกลับ" : "ข้ามไปก่อน"}
+                  ข้ามไปก่อน
                 </button>
                 <button
                   type="button"
@@ -917,13 +903,12 @@ function CreateTripForm() {
                   className="group inline-flex flex-1 items-center justify-center gap-2 rounded-full px-7 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none sm:text-base lg:py-3.5"
                   style={{ backgroundColor: "var(--color-accent-orange)" }}
                 >
-                  {step === 2 ? "สร้างแพลน" : mode === "self" ? "เริ่มจัดทริปเอง" : "สร้างแพลน"}
+                  {mode === "self" ? "เริ่มจัดทริปเอง" : "เริ่มจัดทริป"}
                   <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
                 </button>
               </div>
-              </div>
             </div>
-          )}
+          </div>
 
           {status === "loading" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white/85 backdrop-blur-sm">
