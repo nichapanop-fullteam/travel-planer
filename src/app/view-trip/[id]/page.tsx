@@ -994,15 +994,46 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
-          >
-            <CategoryIcon size={12} />
-            {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
-          </span>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+            >
+              <CategoryIcon size={12} />
+              {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
+            </span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Design only for now — no bookmark-a-place / add-to-my-trip
+                endpoint exists yet, so these two are visual placeholders
+                until that backend support lands. */}
+            <button
+              type="button"
+              aria-label="บันทึกสถานที่นี้"
+              className="flex h-9 w-9 items-center justify-center rounded-full border bg-white"
+              style={{ borderColor: "var(--color-border)", color: "var(--foreground)" }}
+            >
+              <Bookmark size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="เพิ่มสถานที่นี้เข้าทริปของฉัน"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white"
+              style={{ backgroundColor: "var(--color-accent-violet)" }}
+            >
+              <Plus size={16} />
+            </button>
+            <ResolvedNavigationLink
+              activity={activity}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              <Navigation size={13} />
+              Map
+            </ResolvedNavigationLink>
+          </div>
         </div>
 
         {hasMetaRow && (
@@ -1041,18 +1072,14 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-          {activity.category === "hotel" && (
+        {activity.category === "hotel" && (
+          <div className="flex items-center justify-end pt-1">
             <HotelBookingButton
               name={activity.location?.name ?? activity.title}
               className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
             />
-          )}
-          <ResolvedNavigationLink activity={activity} className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white">
-            <Navigation size={13} />
-            นำทาง
-          </ResolvedNavigationLink>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
