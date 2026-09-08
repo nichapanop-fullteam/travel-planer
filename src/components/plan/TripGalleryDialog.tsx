@@ -17,10 +17,14 @@ import type { GalleryMediaItem, Media, MediaSummary } from "@/types";
 // a 404 from any call below most likely means that hasn't happened yet.
 export function TripGalleryDialog({
   tripId,
+  ready,
   onClose,
   onCoverChanged,
 }: {
   tripId: string;
+  // False while the trip still only exists in this browser — its id has no row
+  // behind it, so every media call would 404. See load().
+  ready: boolean;
   onClose: () => void;
   onCoverChanged: (coverImage: Media | undefined, mediaSummary: MediaSummary | undefined) => void;
 }) {
@@ -37,6 +41,15 @@ export function TripGalleryDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function load() {
+    // Nothing to load for a trip that has no row yet. Its id is the one this
+    // browser generated, so GET /trips/:id/media answers "Trip not found" — a
+    // 404 the traveller reads as "my photos are missing" when the truth is
+    // that the trip is still being saved. Wait for the id to be real instead.
+    if (!ready) {
+      setLoading(false);
+      setItems([]);
+      return;
+    }
     setLoading(true);
     setError(null);
     getTripGallery(tripId)
@@ -48,10 +61,13 @@ export function TripGalleryDialog({
       .finally(() => setLoading(false));
   }
 
+  // `ready` is in the deps on purpose: a dialog opened while the trip was
+  // still saving has to load itself the moment the id becomes real, rather
+  // than sitting on its placeholder until the traveller closes and reopens it.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId]);
+  }, [tripId, ready]);
 
   async function handleUpload(file: File) {
     setUploading(true);
@@ -129,7 +145,7 @@ export function TripGalleryDialog({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || !ready}
             className="mb-4 inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold disabled:opacity-60"
             style={{ borderColor: "var(--color-border)" }}
           >
@@ -146,6 +162,25 @@ export function TripGalleryDialog({
             </p>
           )}
 
+          {/* The gallery of a generated trip starts with photos nobody in it
+              took: one per place, imported from the place listing. Saying so is
+              not a disclaimer for its own sake — a traveller who thinks these
+              are their own photos will not add theirs, and will be surprised
+              when the trip they share is illustrated with stock imagery. The
+              two real limits (one per place, and only the first stops) belong
+              here too, so an incomplete gallery reads as a rule rather than a
+              bug. */}
+          {items.some((item) => item.source !== "user_upload") && (
+            <p
+              className="mb-4 rounded-xl px-3 py-2 text-xs leading-relaxed"
+              style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-muted)" }}
+            >
+              รูปบางส่วนนำเข้าจากข้อมูลสถานที่โดยอัตโนมัติ — สถานที่ละ 1 รูป
+              และเฉพาะสถานที่ช่วงต้นของแผน ไม่ใช่รูปที่คุณถ่ายเอง
+              และอาจหมดอายุได้ อัปโหลดรูปของคุณเองเพื่อใช้เป็นรูปหลักของทริป
+            </p>
+          )}
+
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <LoaderCircle size={20} className="animate-spin text-[var(--color-muted)]" />
@@ -153,7 +188,9 @@ export function TripGalleryDialog({
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-16 text-center text-[var(--color-muted)]">
               <ImageOff size={24} />
-              <p className="text-sm">ยังไม่มีรูปภาพในทริปนี้</p>
+              <p className="text-sm">
+                {ready ? "ยังไม่มีรูปภาพในทริปนี้" : "กำลังบันทึกทริป เดี๋ยวรูปจะขึ้นให้เอง"}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

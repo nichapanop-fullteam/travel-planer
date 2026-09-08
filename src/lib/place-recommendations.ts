@@ -9,7 +9,7 @@ import type { PlaceCategory } from "@/types";
 // coordinate (attractions/restaurants/accommodations) instead of one
 // popularity-ranked list split client-side — see docs for why the plain
 // /places/suggest endpoint can leave a category empty. The three
-// CategorySection calls in RecommendedPlacesStep (one per PlaceCategory)
+// CategorySection calls in RecommendPlaces (one per PlaceCategory)
 // share a single fetch per center rather than each firing their own — this
 // cache is what makes that happen without changing that component.
 const sectionsCache = new Map<string, Promise<ExternalPlaceSuggestionSections>>();
@@ -45,7 +45,7 @@ export const DEFAULT_RECOMMENDATION_CENTER = { lat: 19.8834, lng: 102.1347 };
 export interface RecommendedPlace {
   // Historically a real Google place id (see git history); now the
   // external API's own `places` table UUID — kept under this name since
-  // downstream code (RecommendedPlacesStep, create-trip) only ever uses it
+  // downstream code (RecommendPlaces, create-trip) only ever uses it
   // as an opaque dedup/selection key, not to re-query Google directly.
   googlePlaceId: string;
   name: string;
