@@ -3330,14 +3330,18 @@ function PlanTab({
                 const next = day.activities[i + 1];
                 return (
                   <div key={a.id} className="flex flex-col gap-3">
-                    <PlanActivityRow
-                      activity={a}
-                      index={i + 1}
-                      canEdit={canEdit}
-                      mapHidden={!showMap}
-                      onEdit={() => onEditActivity(day.id, a)}
-                      onDelete={() => onDeleteActivity(day.id, a.id)}
-                    />
+                    {canEdit ? (
+                      <PlanActivityRow
+                        activity={a}
+                        index={i + 1}
+                        canEdit={canEdit}
+                        mapHidden={!showMap}
+                        onEdit={() => onEditActivity(day.id, a)}
+                        onDelete={() => onDeleteActivity(day.id, a.id)}
+                      />
+                    ) : (
+                      <ReadOnlyPlanActivityCard activity={a} index={i + 1} />
+                    )}
                     {next && (
                       <TravelConnectorRow
                         fromTitle={a.title}
@@ -3630,6 +3634,102 @@ function PlanActivityRow({
           onClose={() => setLightboxOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+// The read-only rendering of a Plan-tab stop — deliberately its own component
+// rather than a `canEdit` branch inside PlanActivityRow, so a layout change
+// here can never leak into the owner's editable /generated-plan/[id] card.
+// Matches the shared-trips / view/trip/[id] card: image on the left, a
+// divider between the meta row (time, cost) and the location/note detail
+// block, `travelNote` called out in its own "Trip hack" box.
+function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; index: number }) {
+  const CategoryIcon = categoryIcon[activity.category as ActivityCategory] ?? categoryIcon.other;
+  const galleryImages = activity.images && activity.images.length > 0 ? activity.images : undefined;
+  const imageUrl = galleryImages?.[0] ?? activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
+  const hasMetaRow = Boolean(activity.time || activity.cost > 0);
+  const hasDetailBlock = Boolean(activity.location?.name || activity.notes);
+
+  return (
+    <div className="flex overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--color-border-tag)" }}>
+      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
+          {index}
+        </span>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+          >
+            <CategoryIcon size={12} />
+            {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
+          </span>
+        </div>
+
+        {hasMetaRow && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-muted)]">
+            {activity.time && (
+              <span style={{ color: "var(--color-accent-orange)" }}>{formatTimeDisplay(activity.time)}</span>
+            )}
+            {activity.time && activity.cost > 0 && <span>·</span>}
+            {activity.cost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <CircleDollarSign size={13} />
+                {formatTHB(activity.cost)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {hasMetaRow && hasDetailBlock && <div className="h-px" style={{ backgroundColor: "var(--color-border)" }} />}
+
+        {activity.location?.name && (
+          <a
+            href={getGoogleMapsUrl(activity.location)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-start gap-1.5 text-sm text-[var(--color-muted)] hover:underline"
+          >
+            <MapPin size={14} className="mt-0.5 shrink-0" />
+            {activity.location.name}
+          </a>
+        )}
+
+        {activity.notes && <p className="text-sm leading-relaxed">{activity.notes}</p>}
+
+        {activity.travelNote && (
+          <div
+            className="rounded-xl px-3 py-2 text-xs font-medium"
+            style={{ backgroundColor: "var(--color-cat-sightseeing-bg, #EAF6EE)", color: "var(--color-brand-green)" }}
+          >
+            <span className="font-bold">Trip hack </span>
+            {activity.travelNote}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+          {activity.category === "hotel" && (
+            <HotelBookingButton
+              name={activity.location?.name ?? activity.title}
+              className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
+            />
+          )}
+          <ResolvedNavigationLink
+            activity={activity}
+            className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            <Navigation size={13} />
+            นำทาง
+          </ResolvedNavigationLink>
+        </div>
+      </div>
     </div>
   );
 }
