@@ -62,6 +62,29 @@ export async function addTripMediaFromPlace(
   return response.json();
 }
 
+export interface ImportPlacePhotosResult {
+  imported: number;
+  skipped: number;
+  /** The itinerary had more places than one import brings in. */
+  capped: boolean;
+  /** The import also gave the trip its cover — it only ever fills an empty slot. */
+  coverSet: boolean;
+}
+
+// POST /trips/:tripId/media/import-places — one photo per place on the
+// itinerary, so a brand-new trip's gallery is not empty.
+//
+// Best-effort on the server (an expired photo URL is skipped, not fatal) and
+// safe to call again: a place this trip already has a photo for is returned
+// as-is, so a retry downloads nothing.
+export async function importTripPlacePhotos(tripId: string): Promise<ImportPlacePhotosResult> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/media/import-places`, {
+    method: "POST",
+  });
+  await throwOnError(response, "นำเข้ารูปภาพสถานที่");
+  return response.json();
+}
+
 // #30 PATCH /trips/:tripId/media/:mediaId
 export async function updateTripMedia(
   tripId: string,
