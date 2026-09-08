@@ -994,8 +994,8 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
             <span
               className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
