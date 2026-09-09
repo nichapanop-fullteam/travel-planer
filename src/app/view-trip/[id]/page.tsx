@@ -32,7 +32,6 @@ import {
   MapPin,
   Navigation,
   Pencil,
-  Plus,
   Repeat2,
   Share2,
   TriangleAlert,
@@ -49,6 +48,9 @@ import { formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
+import { AddPlaceToTripMenu } from "@/components/plan/AddPlaceToTripMenu";
+import { SavePlaceButton } from "@/components/place/SavePlaceButton";
+import { addablePlaceFromActivity } from "@/lib/add-place-to-trip";
 import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { Logo } from "@/components/common/Logo";
 import { RemixIcon } from "@/components/common/RemixIcon";
@@ -412,7 +414,13 @@ export default function ViewTripPage() {
             />
           )}
 
-          <PlanTab trip={trip} dayIndex={dayIndex} onDayIndexChange={setDayIndex} />
+          <PlanTab
+            trip={trip}
+            dayIndex={dayIndex}
+            onDayIndexChange={setDayIndex}
+            signedIn={Boolean(backendUser)}
+            onRequireLogin={requireLogin}
+          />
         </div>
       </div>
 
@@ -909,10 +917,16 @@ function PlanTab({
   trip,
   dayIndex,
   onDayIndexChange,
+  signedIn,
+  onRequireLogin,
 }: {
   trip: GeneratedTrip;
   dayIndex: number;
   onDayIndexChange: (index: number) => void;
+  // Only plumbing for the per-stop "เพิ่มเข้าทริปของฉัน" menu — this page
+  // itself stays read-only; the write lands on the trip the visitor picks.
+  signedIn: boolean;
+  onRequireLogin: () => void;
 }) {
   const header = <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>;
 
@@ -957,7 +971,13 @@ function PlanTab({
             const next = day.activities[i + 1];
             return (
               <div key={a.id} className="flex flex-col gap-3">
-                <ReadOnlyPlanActivityCard activity={a} index={i + 1} />
+                <ReadOnlyPlanActivityCard
+                  activity={a}
+                  index={i + 1}
+                  sourceTripId={trip.id}
+                  signedIn={signedIn}
+                  onRequireLogin={onRequireLogin}
+                />
                 {next && (
                   <TravelConnectorRow
                     fromTitle={a.title}
@@ -974,9 +994,22 @@ function PlanTab({
   );
 }
 
-// The itinerary stop card. Copied verbatim from generated-plan/[id]'s
-// ReadOnlyPlanActivityCard.
-function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; index: number }) {
+// The itinerary stop card. Started as a verbatim copy of generated-plan/[id]'s
+// ReadOnlyPlanActivityCard and has since diverged in the header button
+// cluster: only this page offers "add this stop to one of my trips".
+function ReadOnlyPlanActivityCard({
+  activity,
+  index,
+  sourceTripId,
+  signedIn,
+  onRequireLogin,
+}: {
+  activity: Activity;
+  index: number;
+  sourceTripId: string;
+  signedIn: boolean;
+  onRequireLogin: () => void;
+}) {
   const CategoryIcon = categoryIcon[activity.category as ActivityCategory] ?? categoryIcon.other;
   const galleryImages = activity.images && activity.images.length > 0 ? activity.images : undefined;
   const imageUrl = galleryImages?.[0] ?? activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
@@ -984,8 +1017,12 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
   const hasDetailBlock = Boolean(activity.location?.name || activity.notes);
 
   return (
-    <div className="flex overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--color-border-tag)" }}>
-      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
+    // No overflow-hidden on the card itself, unlike generated-plan's copy of
+    // it: AddPlaceToTripMenu's popover opens downward out of the header and a
+    // clip here would cut it off on any card shorter than the menu. The photo
+    // column clips itself instead, which is all the rounding ever needed.
+    <div className="flex rounded-2xl border bg-white" style={{ borderColor: "var(--color-border-tag)" }}>
+      <div className="relative w-28 min-h-40 flex-none overflow-hidden rounded-l-2xl sm:w-44 md:w-52">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={imageUrl} alt="" className="h-full w-full object-cover" />
         <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
@@ -1007,25 +1044,26 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Design only for now — no bookmark-a-place / add-to-my-trip
-                endpoint exists yet, so these two are visual placeholders
-                until that backend support lands. */}
-            <button
-              type="button"
-              aria-label="บันทึกสถานที่นี้"
-              className="flex h-9 w-9 items-center justify-center rounded-full border bg-white"
-              style={{ borderColor: "var(--color-border)", color: "var(--foreground)" }}
-            >
-              <Bookmark size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label="เพิ่มสถานที่นี้เข้าทริปของฉัน"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white"
-              style={{ backgroundColor: "var(--color-accent-violet)" }}
-            >
-              <Plus size={16} />
-            </button>
+            {/* Both need a real `places` row: the bookmark writes POST
+                /places/:id/save, and the "+" copies this place into another
+                trip. A hand-typed stop has no place row at all — hence no
+                placeId — so it gets neither button rather than two that
+                cannot work. */}
+            {activity.location?.placeId && (
+              <SavePlaceButton
+                placeId={activity.location.placeId}
+                placeName={activity.location.name || activity.title}
+                initialSaved={activity.location.isSaved ?? false}
+                signedIn={signedIn}
+                onRequireLogin={onRequireLogin}
+              />
+            )}
+            <AddPlaceToTripMenu
+              place={addablePlaceFromActivity(activity)}
+              excludeTripId={sourceTripId}
+              signedIn={signedIn}
+              onRequireLogin={onRequireLogin}
+            />
             <ResolvedNavigationLink
               activity={activity}
               className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
