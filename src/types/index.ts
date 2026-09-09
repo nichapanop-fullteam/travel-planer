@@ -25,6 +25,15 @@ export type ActivityCategory =
 
 export interface Location {
   name: string;
+  // The `places` row behind this stop, as returned by GET /trips/:id
+  // (location.placeId). This is OUR uuid — the value POST /days/:dayId/items
+  // and POST /places/:id/save both take — NOT googlePlaceId below, which
+  // carries Google's externalRef on a trip loaded from the backend. Absent on
+  // a hand-typed stop, which has no place row at all.
+  placeId?: string;
+  // Whether the signed-in viewer has bookmarked this place. Only present on an
+  // authenticated GET /trips/:id; undefined reads as "not saved".
+  isSaved?: boolean;
   lat?: number;
   lng?: number;
   rating?: number; // shown on the map pin's detail popup
