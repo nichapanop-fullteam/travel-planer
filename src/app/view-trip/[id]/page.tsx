@@ -25,7 +25,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  CloudSun,
   Heart,
   LoaderCircle,
   Loader2,
@@ -33,7 +32,6 @@ import {
   MapPin,
   Navigation,
   Pencil,
-  Plus,
   Repeat2,
   Share2,
   TriangleAlert,
@@ -45,20 +43,14 @@ import { fetchResolvedPlaceFullDetails } from "@/lib/external-places-api";
 import { resolveCoverImageUrl, getTripGallery } from "@/lib/trip-media-api";
 import { buildGeneratedTripFromBackendTrip } from "@/lib/generated-trips";
 import { getTrip, likeTrip, unlikeTrip, saveTrip, unsaveTrip } from "@/lib/trips-api";
-import {
-  formatTHB,
-  getDayRouteEstimate,
-  getDayTotalCost,
-  getGoogleMapsUrl,
-  getTripDistanceKm,
-  getTripPlaceStats,
-  getTripTotalCost,
-} from "@/lib/trip-utils";
+import { formatTHB, getGoogleMapsUrl } from "@/lib/trip-utils";
 import { formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
-import { BudgetManagementPanel } from "@/components/plan/BudgetManagementPanel";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
+import { AddPlaceToTripMenu } from "@/components/plan/AddPlaceToTripMenu";
+import { SavePlaceButton } from "@/components/place/SavePlaceButton";
+import { addablePlaceFromActivity } from "@/lib/add-place-to-trip";
 import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { Logo } from "@/components/common/Logo";
 import { RemixIcon } from "@/components/common/RemixIcon";
@@ -68,14 +60,6 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
-
-type TabKey = "plan" | "weather" | "budget";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "plan", label: "แพลนทริป" },
-  { key: "weather", label: "สภาพอากาศ" },
-  { key: "budget", label: "สรุปงบ" },
-];
 
 // The one width grid for this whole route — every band lines up at the same
 // left/right edge at every viewport width. Copied from generated-plan/[id],
@@ -102,7 +86,6 @@ export default function ViewTripPage() {
   const [likeOverride, setLikeOverride] = useState<{ liked: boolean; count: number } | null>(null);
   const [liking, setLiking] = useState(false);
 
-  const [tab, setTab] = useState<TabKey>("plan");
   const [dayIndex, setDayIndex] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
@@ -333,8 +316,6 @@ export default function ViewTripPage() {
         onMenuClick={() => setSidebarOpen(true)}
         userAvatarUrl={backendUser?.avatarUrl}
         isOwner={isOwner}
-        tab={tab}
-        dayIndex={dayIndex}
       />
 
       <div className="relative rounded-t-[28px] bg-white">
@@ -424,15 +405,6 @@ export default function ViewTripPage() {
           <div className="h-px w-full" style={{ backgroundColor: "var(--color-border)" }} />
         </div>
 
-        <div
-          className="sticky top-0 z-30 mt-4 bg-white/85 backdrop-blur-md"
-          style={{ paddingTop: "env(safe-area-inset-top)" }}
-        >
-          <div className={`${SHELL} py-3`}>
-            <PlanTabs tabs={TABS} tab={tab} setTab={setTab} />
-          </div>
-        </div>
-
         <div className={`${SHELL} py-5 sm:py-8`}>
           {trip.remixedFrom && <RemixSourceBanner remixedFrom={trip.remixedFrom} />}
           {trip.generationNotice && !generationNoticeDismissed && (
@@ -442,9 +414,13 @@ export default function ViewTripPage() {
             />
           )}
 
-          {tab === "plan" && <PlanTab trip={trip} dayIndex={dayIndex} onDayIndexChange={setDayIndex} />}
-          {tab === "weather" && <WeatherTab />}
-          {tab === "budget" && <BudgetManagementPanel trip={trip} onPatch={() => {}} readOnly />}
+          <PlanTab
+            trip={trip}
+            dayIndex={dayIndex}
+            onDayIndexChange={setDayIndex}
+            signedIn={Boolean(backendUser)}
+            onRequireLogin={requireLogin}
+          />
         </div>
       </div>
 
@@ -482,59 +458,18 @@ function Hero({
   onMenuClick,
   userAvatarUrl,
   isOwner,
-  tab,
-  dayIndex,
 }: {
   trip: GeneratedTrip;
   onBack: () => void;
   onMenuClick: () => void;
   userAvatarUrl?: string | null;
   isOwner: boolean;
-  tab: TabKey;
-  // Which day is selected in แพลนทริป — read only when tab is "plan", so the
-  // stats reflect that one day's numbers there and the whole trip everywhere
-  // else (สภาพอากาศ, สรุปงบ have no single day to summarise).
-  dayIndex: number;
 }) {
   const [following, setFollowing] = useState(false);
 
   const dateRangeLabel =
     trip.days.length > 0 ? formatSlashDateRange(trip.days[0].date, trip.days[trip.days.length - 1].date) : "";
   const scheduleLabel = [dateRangeLabel, trip.durationLabel].filter(Boolean).join(" · ");
-
-  const selectedDay =
-    tab === "plan" && trip.days.length > 0 ? trip.days[Math.min(dayIndex, trip.days.length - 1)] : undefined;
-  const placeStats = useMemo(
-    () => getTripPlaceStats(selectedDay ? { days: [selectedDay] } : trip),
-    [trip, selectedDay]
-  );
-  const distanceKm = useMemo(
-    () => (selectedDay ? getDayRouteEstimate(selectedDay).distanceKm : getTripDistanceKm(trip)),
-    [trip, selectedDay]
-  );
-  const costPerDay = useMemo(() => {
-    if (selectedDay) return getDayTotalCost(selectedDay);
-    const plannedDays = trip.days.filter((d) => d.activities.length > 0).length;
-    if (plannedDays === 0) return 0;
-    const groupSize = trip.creator?.groupSize;
-    const totalPerPerson =
-      trip.totalBudget != null && groupSize && groupSize > 0
-        ? trip.totalBudget / groupSize
-        : (trip.totalBudget ?? getTripTotalCost(trip));
-    return Math.round(totalPerPerson / plannedDays);
-  }, [trip, selectedDay]);
-  const staysCount = selectedDay
-    ? selectedDay.activities.filter((a) => a.category === "hotel").length
-    : trip.accommodation
-      ? 1
-      : 0;
-  const summaryStats = [
-    { key: "attractions", label: "ที่เที่ยว", value: `${placeStats.attractions}` },
-    { key: "restaurants", label: "ร้านอาหาร", value: `${placeStats.restaurants}` },
-    { key: "stays", label: "ที่พัก", value: `${staysCount}` },
-    { key: "budget", label: "งบ/วัน/คน", value: formatTHB(costPerDay) },
-    { key: "distance", label: "Total Distance", value: `${distanceKm} km` },
-  ];
 
   // Same gallery lookup generated-plan's Hero does: the first photo flagged
   // as cover leads, the rest become swipeable slides. Only asked for once the
@@ -664,17 +599,6 @@ function Hero({
             {scheduleLabel}
           </p>
         )}
-        <div className="grid grid-cols-3 gap-2 pt-1 sm:grid-cols-5">
-          {summaryStats.map((s) => (
-            <div
-              key={s.key}
-              className="flex flex-col items-center gap-0.5 rounded-2xl bg-black/35 px-2 py-2 text-center text-white backdrop-blur-sm"
-            >
-              <span className="text-sm font-extrabold sm:text-base">{s.value}</span>
-              <span className="text-[10px] font-medium text-white/85">{s.label}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -966,64 +890,6 @@ function GenerationNoticeBanner({
   );
 }
 
-function PlanTabs({ tabs, tab, setTab }: { tabs: { key: TabKey; label: string }[]; tab: TabKey; setTab: (t: TabKey) => void }) {
-  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, index: number) {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    e.preventDefault();
-    const dir = e.key === "ArrowRight" ? 1 : -1;
-    const nextIndex = (index + dir + tabs.length) % tabs.length;
-    setTab(tabs[nextIndex].key);
-    buttonRefs.current[nextIndex]?.focus();
-  }
-
-  return (
-    <div
-      role="tablist"
-      aria-label="ส่วนต่าง ๆ ของแผนทริป"
-      className="flex items-center gap-1 overflow-x-auto rounded-full p-1.5 shadow-md [scrollbar-width:none] sm:gap-2 sm:p-2 [&::-webkit-scrollbar]:hidden"
-      style={{ backgroundColor: "#FAF8F5" }}
-    >
-      {tabs.map((t, i) => {
-        const isActive = tab === t.key;
-        return (
-          <button
-            key={t.key}
-            ref={(el) => {
-              buttonRefs.current[i] = el;
-            }}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            tabIndex={isActive ? 0 : -1}
-            onClick={() => setTab(t.key)}
-            onKeyDown={(e) => handleKeyDown(e, i)}
-            className="min-w-[108px] flex-none whitespace-nowrap rounded-full px-3 py-2.5 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-w-0 sm:flex-1 sm:py-3 sm:text-sm"
-            style={{
-              backgroundColor: isActive ? "var(--color-brand-green)" : "transparent",
-              color: isActive ? "#fff" : "var(--foreground)",
-              outlineColor: "var(--color-brand-green)",
-            }}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function WeatherTab() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed py-16 text-center" style={{ borderColor: "var(--color-border)" }}>
-      <CloudSun size={28} style={{ color: "var(--color-muted)" }} />
-      <p className="text-sm font-semibold">ข้อมูลสภาพอากาศกำลังจะมาเร็วๆ นี้</p>
-      <p className="text-xs text-[var(--color-muted)]">ดูพยากรณ์อากาศระหว่างทริปได้ที่นี่</p>
-    </div>
-  );
-}
-
 // A leg's calculated travel segment is only shown when the trip has opted
 // into automatic travel calculation, and only if the traveller hasn't
 // dismissed it for this exact leg. Copied verbatim from generated-plan/[id].
@@ -1051,10 +917,16 @@ function PlanTab({
   trip,
   dayIndex,
   onDayIndexChange,
+  signedIn,
+  onRequireLogin,
 }: {
   trip: GeneratedTrip;
   dayIndex: number;
   onDayIndexChange: (index: number) => void;
+  // Only plumbing for the per-stop "เพิ่มเข้าทริปของฉัน" menu — this page
+  // itself stays read-only; the write lands on the trip the visitor picks.
+  signedIn: boolean;
+  onRequireLogin: () => void;
 }) {
   const header = <h2 className="text-xl font-bold sm:text-2xl">แพลนเที่ยวของคุณ</h2>;
 
@@ -1099,7 +971,13 @@ function PlanTab({
             const next = day.activities[i + 1];
             return (
               <div key={a.id} className="flex flex-col gap-3">
-                <ReadOnlyPlanActivityCard activity={a} index={i + 1} />
+                <ReadOnlyPlanActivityCard
+                  activity={a}
+                  index={i + 1}
+                  sourceTripId={trip.id}
+                  signedIn={signedIn}
+                  onRequireLogin={onRequireLogin}
+                />
                 {next && (
                   <TravelConnectorRow
                     fromTitle={a.title}
@@ -1116,9 +994,22 @@ function PlanTab({
   );
 }
 
-// The itinerary stop card. Copied verbatim from generated-plan/[id]'s
-// ReadOnlyPlanActivityCard.
-function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; index: number }) {
+// The itinerary stop card. Started as a verbatim copy of generated-plan/[id]'s
+// ReadOnlyPlanActivityCard and has since diverged in the header button
+// cluster: only this page offers "add this stop to one of my trips".
+function ReadOnlyPlanActivityCard({
+  activity,
+  index,
+  sourceTripId,
+  signedIn,
+  onRequireLogin,
+}: {
+  activity: Activity;
+  index: number;
+  sourceTripId: string;
+  signedIn: boolean;
+  onRequireLogin: () => void;
+}) {
   const CategoryIcon = categoryIcon[activity.category as ActivityCategory] ?? categoryIcon.other;
   const galleryImages = activity.images && activity.images.length > 0 ? activity.images : undefined;
   const imageUrl = galleryImages?.[0] ?? activity.location?.imageUrl ?? "/images/luang-prabang.jpg";
@@ -1126,8 +1017,12 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
   const hasDetailBlock = Boolean(activity.location?.name || activity.notes);
 
   return (
-    <div className="flex overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--color-border-tag)" }}>
-      <div className="relative w-28 min-h-40 flex-none sm:w-44 md:w-52">
+    // No overflow-hidden on the card itself, unlike generated-plan's copy of
+    // it: AddPlaceToTripMenu's popover opens downward out of the header and a
+    // clip here would cut it off on any card shorter than the menu. The photo
+    // column clips itself instead, which is all the rounding ever needed.
+    <div className="flex rounded-2xl border bg-white" style={{ borderColor: "var(--color-border-tag)" }}>
+      <div className="relative w-28 min-h-40 flex-none overflow-hidden rounded-l-2xl sm:w-44 md:w-52">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={imageUrl} alt="" className="h-full w-full object-cover" />
         <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white">
@@ -1136,15 +1031,47 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
-          >
-            <CategoryIcon size={12} />
-            {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
-          </span>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <h3 className="text-base font-bold sm:text-lg">{activity.title}</h3>
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              style={{ backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}
+            >
+              <CategoryIcon size={12} />
+              {categoryLabel[activity.category as ActivityCategory] ?? categoryLabel.other}
+            </span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Both need a real `places` row: the bookmark writes POST
+                /places/:id/save, and the "+" copies this place into another
+                trip. A hand-typed stop has no place row at all — hence no
+                placeId — so it gets neither button rather than two that
+                cannot work. */}
+            {activity.location?.placeId && (
+              <SavePlaceButton
+                placeId={activity.location.placeId}
+                placeName={activity.location.name || activity.title}
+                initialSaved={activity.location.isSaved ?? false}
+                signedIn={signedIn}
+                onRequireLogin={onRequireLogin}
+              />
+            )}
+            <AddPlaceToTripMenu
+              place={addablePlaceFromActivity(activity)}
+              excludeTripId={sourceTripId}
+              signedIn={signedIn}
+              onRequireLogin={onRequireLogin}
+            />
+            <ResolvedNavigationLink
+              activity={activity}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              <Navigation size={13} />
+              Map
+            </ResolvedNavigationLink>
+          </div>
         </div>
 
         {hasMetaRow && (
@@ -1183,18 +1110,14 @@ function ReadOnlyPlanActivityCard({ activity, index }: { activity: Activity; ind
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-          {activity.category === "hotel" && (
+        {activity.category === "hotel" && (
+          <div className="flex items-center justify-end pt-1">
             <HotelBookingButton
               name={activity.location?.name ?? activity.title}
               className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
             />
-          )}
-          <ResolvedNavigationLink activity={activity} className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white">
-            <Navigation size={13} />
-            นำทาง
-          </ResolvedNavigationLink>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
