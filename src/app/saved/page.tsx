@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bookmark, SearchX } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
@@ -26,6 +26,17 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export default function SavedPage() {
+  // useSearchParams (the ?tab= handoff below) bails out of static prerendering
+  // unless it sits under a Suspense boundary — the build fails outright without
+  // this. Same wrapper, same reasoning as HomePage and CreateTripPage.
+  return (
+    <Suspense fallback={null}>
+      <SavedLists />
+    </Suspense>
+  );
+}
+
+function SavedLists() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { backendUser, isLoading } = useAuth();
