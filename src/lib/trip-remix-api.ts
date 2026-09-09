@@ -147,3 +147,104 @@ export async function remixTrip(
   }
   throw new RemixApiError("server", "สร้างทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
 }
+
+// ─── POST /trips/:sourceTripId/remix/into/:targetTripId ──────────────────────
+//
+// The other half of the Remix menu: instead of minting a new trip, the whole
+// plan is appended onto a trip the visitor already owns (the "Add to trip"
+// modal). Deliberately a second function rather than a flag on remixTrip —
+// the request body, the success status (200, no trip created) and every error
+// message differ, and a 400 here means "same trip twice", never the duration
+// mismatch remixTrip's 400 handler is written for.
+export interface RemixIntoTripRequest {
+  copyNotes: boolean;
+  copyBudget: boolean;
+}
+
+// Matches RemixIntoTripResponseDto on the backend. `id` is the TARGET trip —
+// unchanged, since nothing was created — which is why the caller navigates to
+// it rather than to a new id.
+export interface RemixIntoTripResponse {
+  id: string;
+  ownerId: string;
+  title: string;
+  planMode?: string;
+  status: string;
+  visibility: "private" | "public";
+  schedule: {
+    startDate?: string;
+    endDate?: string;
+    durationDays?: number;
+    durationNights?: number;
+    isDateFlexible: boolean;
+  };
+  sourceTrip: {
+    id: string;
+    title: string;
+    ownerId: string;
+    ownerDisplayName?: string;
+  };
+  // Whether the target trip now carries "remixed from ..." on its own row —
+  // true only when it was empty and unattributed. See the backend doc.
+  attributionRecorded: boolean;
+  // An Idempotency-Key replay: nothing was appended a second time, and the
+  // two `added*` fields below are absent.
+  replayed: boolean;
+  addedDayNumbers?: number[];
+  addedStopCount?: number;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export async function remixTripInto(
+  sourceTripId: string,
+  targetTripId: string,
+  payload: RemixIntoTripRequest,
+  idempotencyKey: string
+): Promise<RemixIntoTripResponse> {
+  let response: Response;
+  try {
+    response = await authenticatedFetch(
+      `${BACKEND_URL}/trips/${sourceTripId}/remix/into/${targetTripId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+  } catch (error) {
+    if (error instanceof BackendAuthenticationError) {
+      throw new RemixApiError("unauthorized", "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่");
+    }
+    throw new RemixApiError("server", "เพิ่มแผนลงทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+  }
+
+  if (response.ok) return (await response.json()) as RemixIntoTripResponse;
+
+  if (response.status === 400) {
+    // The only 400 this route defines is source === target, which the dialog
+    // already prevents by filtering the source out of the trip grid — so this
+    // is a "should not happen" guard rather than a form error.
+    throw new RemixApiError("validation", "เลือกทริปปลายทางเป็นทริปเดียวกับต้นฉบับไม่ได้");
+  }
+  if (response.status === 403) {
+    throw new RemixApiError("forbidden", "ไม่สามารถนำแผนส่วนตัวนี้ไปใช้ได้");
+  }
+  if (response.status === 404) {
+    // One status for two causes on purpose (see the backend doc): the source
+    // is gone, or the target is not the caller's.
+    throw new RemixApiError("not_found", "ไม่พบแผนต้นฉบับ หรือทริปปลายทางถูกลบไปแล้ว");
+  }
+  if (response.status === 409) {
+    // A real conflict here, unlike remixTrip's speculative 409 branch: the
+    // ledger behind Idempotency-Key is shared by both remix routes, so a key
+    // already spent on a different trip is refused rather than answered with
+    // that other trip. useRemixTripInto mints one key per dialog open, so
+    // this should only ever be a client bug.
+    throw new RemixApiError("conflict", "คำขอนี้ถูกใช้ไปกับทริปอื่นแล้ว กรุณาลองใหม่อีกครั้ง");
+  }
+  throw new RemixApiError("server", "เพิ่มแผนลงทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+}

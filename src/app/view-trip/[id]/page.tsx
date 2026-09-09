@@ -21,7 +21,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Bookmark,
   CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -48,17 +47,19 @@ import { formatTimeDisplay } from "@/components/plan/ActivityFormFields";
 import { TravelConnectorRow } from "@/components/plan/SelfPlanBuilderTab";
 import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
+import { RemixTripMenu } from "@/components/plan/RemixTripMenu";
+import { AddToTripDialog } from "@/components/plan/AddToTripDialog";
 import { AddPlaceToTripMenu } from "@/components/plan/AddPlaceToTripMenu";
 import { SavePlaceButton } from "@/components/place/SavePlaceButton";
 import { addablePlaceFromActivity } from "@/lib/add-place-to-trip";
 import { ShareTripDialog } from "@/components/plan/ShareTripDialog";
 import { Logo } from "@/components/common/Logo";
-import { RemixIcon } from "@/components/common/RemixIcon";
 import { HERO_ILLUSTRATION } from "@/lib/hero-image";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
+import { useRemixTripInto } from "@/hooks/useRemixTripInto";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
 
 // The one width grid for this whole route — every band lines up at the same
@@ -66,12 +67,23 @@ import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-
 // which is where this grid originates.
 const SHELL = "mx-auto w-full max-w-[var(--container-max)] px-4 sm:px-6 lg:px-10";
 
+// "วันที่ 3–5", or just "วันที่ 3" for a one-day source — a range whose ends
+// are the same number reads as a bug in a toast. The numbers are always
+// contiguous (the backend appends them in one run), so first and last say it
+// all.
+function formatAddedDayRange(dayNumbers: number[]): string {
+  const first = dayNumbers[0];
+  const last = dayNumbers[dayNumbers.length - 1];
+  return first === last ? `วันที่ ${first}` : `วันที่ ${first}–${last}`;
+}
+
 export default function ViewTripPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { backendUser } = useAuth();
   const { showToast } = useToast();
   const remix = useRemixTrip();
+  const remixInto = useRemixTripInto();
 
   const [trip, setTrip] = useState<GeneratedTrip | null | undefined>(undefined);
   // buildGeneratedTripFromBackendTrip doesn't carry `isSaved` over onto
@@ -89,6 +101,7 @@ export default function ViewTripPage() {
   const [dayIndex, setDayIndex] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [remixDialogOpen, setRemixDialogOpen] = useState(false);
+  const [addToTripOpen, setAddToTripOpen] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [generationNoticeDismissed, setGenerationNoticeDismissed] = useState(false);
 
@@ -113,16 +126,19 @@ export default function ViewTripPage() {
     };
   }, [params.id]);
 
-  // Returning from the forced /login redirect below — reopens the Remix
-  // dialog for the trip the visitor originally clicked "Remix" on. Same
-  // one-shot sessionStorage handoff generated-plan/[id]/page.tsx uses.
+  // Returning from the forced /login redirect below — reopens the Remix flow
+  // for the trip the visitor originally clicked "Remix" on. Same one-shot
+  // sessionStorage handoff generated-plan/[id]/page.tsx uses. It resumes at
+  // "Add to trip", not at RemixSetupDialog, because that is now where the
+  // whole-trip choice lands and the visitor can still pick สร้างทริปใหม่
+  // from inside it.
   useEffect(() => {
     if (!trip || !backendUser) return;
     const pendingSourceTripId = consumePendingRemixIntent();
     if (pendingSourceTripId === trip.id) {
-      remix.reset();
+      remixInto.reset();
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to a one-shot sessionStorage flag left by a prior page, not to React state
-      setRemixDialogOpen(true);
+      setAddToTripOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip, backendUser]);
@@ -135,6 +151,26 @@ export default function ViewTripPage() {
     router.push(`/generated-plan/${remix.newTripId}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remix.status, remix.newTripId]);
+
+  // The merge-into-an-existing-trip equivalent of the effect above. The toast
+  // names the days that were appended because nothing else on the way to the
+  // target trip does — the plan lands at the END of a trip the visitor may
+  // have to scroll to reach, unlike a fresh remix where the whole page IS the
+  // result. A replay (a double-submitted Idempotency-Key) reports no day
+  // numbers, so it gets the plainer sentence.
+  useEffect(() => {
+    if (remixInto.status !== "success" || !remixInto.result) return;
+    const { id: targetTripId, addedDayNumbers } = remixInto.result;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing the dialog is a one-time reaction to the hook's async result landing, not a render-time derivation
+    setAddToTripOpen(false);
+    showToast(
+      addedDayNumbers?.length
+        ? `เพิ่มแผนลงทริปแล้ว เป็น${formatAddedDayRange(addedDayNumbers)}`
+        : "เพิ่มแผนลงทริปแล้ว"
+    );
+    router.push(`/generated-plan/${targetTripId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remixInto.status, remixInto.result]);
 
   const activityCount = useMemo(
     () => (trip ? trip.days.reduce((total, day) => total + day.activities.length, 0) : 0),
@@ -232,12 +268,22 @@ export default function ViewTripPage() {
       .catch(() => showToast("คัดลอกลิงก์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
   }
 
-  function handleRemixClick() {
+  // "ใช้แผนในทริปทั้งหมด" — opens the trip picker. Which of the two endpoints
+  // actually runs is decided inside it: pick an existing trip and the plan is
+  // appended to it, or take สร้างทริปใหม่ and fall through to
+  // RemixSetupDialog below.
+  function handleRemixWholeTrip() {
     if (!backendUser) {
       setPendingRemixIntent(trip!.id);
       requireLogin();
       return;
     }
+    remixInto.reset();
+    setAddToTripOpen(true);
+  }
+
+  function handleCreateNewFromRemix() {
+    setAddToTripOpen(false);
     remix.reset();
     setRemixDialogOpen(true);
   }
@@ -264,13 +310,14 @@ export default function ViewTripPage() {
       }
     : canRemix
       ? {
-          primary: {
-            label: "Remix Trip",
-            icon: <RemixIcon className="h-4 w-5 shrink-0" />,
-            color: "var(--color-accent-violet)",
-            onClick: handleRemixClick,
-          },
-          caption: "ระบบจะสร้างสำเนาเป็นทริปส่วนตัวของคุณ การแก้ไขจะไม่กระทบแผนต้นฉบับ",
+          // A node, not a `primary` descriptor: this CTA is a menu trigger
+          // now, and its dropdown has to open upward out of the fixed bar.
+          primaryNode: <RemixTripMenu variant="bar" onWholeTrip={handleRemixWholeTrip} />,
+          // Reworded with the menu: the old line ("ระบบจะสร้างสำเนาเป็นทริปส่วนตัว
+          // ของคุณ") described the only thing this button used to do, and is
+          // now wrong for the default path — picking an existing trip appends
+          // to it and creates nothing.
+          caption: "เลือกได้ว่าจะเพิ่มแผนนี้ต่อท้ายทริปที่มีอยู่ หรือสร้างเป็นทริปใหม่ การแก้ไขไม่กระทบแผนต้นฉบับ",
         }
       : null;
   const bottomBarPadding = !actionBar ? "trip-page-bottom-bar--one-row" : "trip-page-bottom-bar--two-rows";
@@ -305,6 +352,23 @@ export default function ViewTripPage() {
           expectedDurationDays={remix.expectedDurationDays}
           onClose={() => setRemixDialogOpen(false)}
           onSubmit={(values) => remix.submit(values, remixSourceMeta)}
+        />
+      )}
+
+      {addToTripOpen && (
+        <AddToTripDialog
+          excludeTripId={trip.id}
+          submitting={remixInto.status === "submitting"}
+          errorMessage={remixInto.status === "submitting" || remixInto.status === "success" ? undefined : remixInto.message}
+          onClose={() => setAddToTripOpen(false)}
+          onCreateNew={handleCreateNewFromRemix}
+          // copyNotes/copyBudget are not offered here, unlike RemixSetupDialog:
+          // both are additive-only on this route (notes only fill a gap, the
+          // budget cap is never touched — see the backend doc), so there is
+          // nothing for a traveller to protect by turning them off.
+          onConfirm={(target) =>
+            remixInto.submit(trip.id, target.id, { copyNotes: true, copyBudget: true })
+          }
         />
       )}
 
@@ -356,18 +420,7 @@ export default function ViewTripPage() {
               แก้ไขทริป
             </Link>
           ) : (
-            canRemix && (
-              <button
-                type="button"
-                onClick={handleRemixClick}
-                className="flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-white"
-                style={{ backgroundColor: "var(--color-accent-violet)" }}
-              >
-                <RemixIcon className="h-4 w-5 shrink-0" />
-                Remix Trip
-                <ChevronDown size={14} />
-              </button>
-            )
+            canRemix && <RemixTripMenu variant="inline" onWholeTrip={handleRemixWholeTrip} />
           )}
         </div>
 
@@ -753,12 +806,16 @@ function TripSocialBar({
 
 // Mobile-only sticky bottom CTA. Copied verbatim from generated-plan/[id].
 interface MobileActionBarProps {
-  primary: { label: string; icon: ReactNode; color: string; onClick: () => void };
+  primary?: { label: string; icon: ReactNode; color: string; onClick: () => void };
+  // For a CTA that is more than a button — today only RemixTripMenu, whose
+  // trigger has to carry its own dropdown state. Exactly one of primary /
+  // primaryNode is given.
+  primaryNode?: ReactNode;
   secondary?: { label: string; icon: ReactNode; onClick: () => void };
   caption?: string;
 }
 
-function MobileActionBar({ primary, secondary, caption }: MobileActionBarProps) {
+function MobileActionBar({ primary, primaryNode, secondary, caption }: MobileActionBarProps) {
   return (
     <div className="flex flex-col gap-0.5 border-t px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
       <div className="flex items-center gap-2">
@@ -773,15 +830,18 @@ function MobileActionBar({ primary, secondary, caption }: MobileActionBarProps) 
             {secondary.label}
           </button>
         )}
-        <button
-          type="button"
-          onClick={primary.onClick}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full py-2 text-sm font-bold text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: primary.color }}
-        >
-          {primary.icon}
-          {primary.label}
-        </button>
+        {primaryNode ??
+          (primary && (
+            <button
+              type="button"
+              onClick={primary.onClick}
+              className="flex flex-1 items-center justify-center gap-2 rounded-full py-2 text-sm font-bold text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: primary.color }}
+            >
+              {primary.icon}
+              {primary.label}
+            </button>
+          ))}
       </div>
       {caption && <p className="text-center text-[10px] text-[var(--color-muted)]">{caption}</p>}
     </div>
