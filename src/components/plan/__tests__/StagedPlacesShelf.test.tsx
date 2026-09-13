@@ -120,3 +120,42 @@ describe("StagedPlacesShelf", () => {
     ).toBeDisabled();
   });
 });
+
+// Dragging a stop OFF a day is the undo for every assign — but the first time
+// anyone needs it, the shelf is empty and would otherwise not be on screen at
+// all, leaving nowhere to drop.
+describe("StagedPlacesShelf as a drop target", () => {
+  it("appears as an empty target while something is being dragged", () => {
+    render(
+      <StagedPlacesShelf
+        places={[]}
+        days={DAYS}
+        dragInProgress
+        onAssign={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("ลากมาวางเพื่อเก็บไว้ก่อน")).toBeInTheDocument();
+  });
+
+  it("goes away again once nothing is in flight", () => {
+    const { container } = render(
+      <StagedPlacesShelf places={[]} days={DAYS} onAssign={vi.fn()} onDelete={vi.fn()} />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  // The handle owns the drag, not the whole row, so the delete and "ลงวันที่"
+  // buttons keep taking taps.
+  it("gives each place its own drag handle", () => {
+    render(
+      <StagedPlacesShelf places={[place()]} days={DAYS} onAssign={vi.fn()} onDelete={vi.fn()} />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "ลาก ร้านมาลองเต๊อะ เชียงราย ไปวางในวันที่ต้องการ" })
+    ).toBeInTheDocument();
+  });
+});

@@ -51,15 +51,17 @@ import {
 } from "lucide-react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
-  closestCenter,
+  closestCorners,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DraggableAttributes,
 } from "@dnd-kit/core";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Activity, ActivityCategory, Day, Destination, GeneratedTrip, TravelFromPrevious, TravelSegment, TripAccommodation } from "@/types";
 import { DestinationPickerDialog } from "@/components/consumer/DestinationPickerDialog";
@@ -147,6 +149,7 @@ import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
 import { StagedPlacesShelf } from "@/components/plan/StagedPlacesShelf";
+import { resolveDragEnd } from "@/lib/plan-drag";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
@@ -1143,28 +1146,57 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // ─── the staging shelf ───
   //
   // Places added from another trip's "+" menu land on the trip with no day
-  // (GeneratedTrip.stagedPlaces). Assigning one is a move, not a copy: the same
-  // backend row changes its day, so the stop keeps its id, its notes and its
-  // photos, and PATCH /items/:itemId/assign re-routes the day it joins.
+  // (GeneratedTrip.stagedPlaces). Getting one onto a day is a MOVE, not a
+  // copy: the same backend row changes its day, so the stop keeps its id, its
+  // notes and its photos.
+  //
+  // One function for every move a stop can make — shelf → day ("ลงวันที่ N"
+  // and a drag), day → day, and day → shelf (dragging it back out, which is
+  // the undo for all of the above). The backend has one endpoint for all
+  // three, and locally it is the same three lines with different buckets.
+  // `toDayId` null means the shelf; `toIndex` undefined means the end of
+  // wherever it is going, which is what the menu wants — a drag names the
+  // position it was dropped at.
+  //
+  // A move within ONE bucket is not this function's job: that is a reorder,
+  // and handleReorderActivities already does it through the endpoint built
+  // for it.
   //
   // Optimistic like every other mutation on this page — the local copy is
-  // written first and the server is told after, so a flaky connection never
+  // written first and the server told after, so a flaky connection never
   // costs an edit. A failed write leaves the local copy ahead of the server
-  // until the next GET /trips/:id, which is the same bargain handleDelete and
+  // until the next GET /trips/:id, the same bargain handleDelete and
   // handleReorder already make; the difference is that this one is a
   // deliberate, visible action, so it says so rather than only warning to the
   // console.
-  function handleAssignStagedPlace(placeId: string, dayId: string) {
-    const place = (trip!.stagedPlaces ?? []).find((p) => p.id === placeId);
-    if (!place || pendingStagedPlaceId) return;
+  function handleMovePlace(placeId: string, toDayId: string | null, toIndex?: number) {
+    if (pendingStagedPlaceId) return;
+
+    const fromDayId =
+      trip!.days.find((d) => d.activities.some((a) => a.id === placeId))?.id ?? null;
+    const place =
+      fromDayId === null
+        ? (trip!.stagedPlaces ?? []).find((p) => p.id === placeId)
+        : trip!.days
+            .find((d) => d.id === fromDayId)
+            ?.activities.find((a) => a.id === placeId);
+    if (!place || fromDayId === toDayId) return;
 
     setTrip((prev) => {
       if (!prev) return prev;
-      const stagedPlaces = (prev.stagedPlaces ?? []).filter((p) => p.id !== placeId);
-      // Appended, matching where the backend puts it with no orderIndex.
-      const days = prev.days.map((d) =>
-        d.id === dayId ? { ...d, activities: [...d.activities, place] } : d
-      );
+      const withoutIt = (prev.stagedPlaces ?? []).filter((p) => p.id !== placeId);
+      const stagedPlaces = toDayId === null ? insertAt(withoutIt, place, toIndex) : withoutIt;
+      // fromDayId and toDayId cannot be the same day here, so no day is both
+      // losing and gaining the stop.
+      const days = prev.days.map((d) => {
+        if (d.id === fromDayId) {
+          return { ...d, activities: d.activities.filter((a) => a.id !== placeId) };
+        }
+        if (d.id === toDayId) {
+          return { ...d, activities: insertAt(d.activities, place, toIndex) };
+        }
+        return d;
+      });
       updateGeneratedTrip(prev.id, { stagedPlaces, days });
       return { ...prev, stagedPlaces, days };
     });
@@ -1172,13 +1204,25 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
     if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(placeId)) return;
 
     setPendingStagedPlaceId(placeId);
-    assignTripItemOnServer(placeId, dayId, undefined, autoTravelCalculationEnabled)
+    assignTripItemOnServer(placeId, toDayId, toIndex, autoTravelCalculationEnabled)
       .then(() => {
-        if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+        if (!autoTravelCalculationEnabled) return;
+        // Both ends: the stop leaving a day joins its neighbours into a leg
+        // that did not exist, and the day it lands on gets one of its own.
+        // The backend reconciles both, so both have to be re-read.
+        return Promise.all([
+          fromDayId ? refreshDayTravelSegments(fromDayId) : undefined,
+          toDayId ? refreshDayTravelSegments(toDayId) : undefined,
+        ]).then(() => undefined);
       })
       .catch((err: unknown) => {
-        console.warn("ลงวันให้สถานที่ไม่สำเร็จ", err);
-        showToast("ลงวันให้สถานที่ไม่สำเร็จ ลองใหม่อีกครั้ง", "error");
+        console.warn("ย้ายสถานที่ไม่สำเร็จ", err);
+        showToast(
+          toDayId === null
+            ? "ย้ายสถานที่กลับไม่สำเร็จ ลองใหม่อีกครั้ง"
+            : "ลงวันให้สถานที่ไม่สำเร็จ ลองใหม่อีกครั้ง",
+          "error"
+        );
       })
       .finally(() => setPendingStagedPlaceId(null));
   }
@@ -1559,7 +1603,7 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               isConfirmed={isConfirmed}
               canEdit={canEdit}
               pendingStagedPlaceId={pendingStagedPlaceId}
-              onAssignStagedPlace={handleAssignStagedPlace}
+              onMovePlace={handleMovePlace}
               onDeleteStagedPlace={handleDeleteStagedPlace}
               bannerDismissed={bannerDismissed}
               onDismissBanner={() => setBannerDismissed(true)}
@@ -2725,7 +2769,7 @@ function OverviewTab({
   onAddDay,
   onGoToPlanTab,
   pendingStagedPlaceId,
-  onAssignStagedPlace,
+  onMovePlace,
   onDeleteStagedPlace,
   onUpdateActivityTravel,
   onDeleteActivityTravel,
@@ -2758,7 +2802,7 @@ function OverviewTab({
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
   // The staging shelf, rendered inside ตารางแพลน — see StagedPlacesShelf.
   pendingStagedPlaceId: string | null;
-  onAssignStagedPlace: (placeId: string, dayId: string) => void;
+  onMovePlace: (placeId: string, toDayId: string | null, toIndex?: number) => void;
   onDeleteStagedPlace: (placeId: string) => void;
   autoTravelCalculationEnabled: boolean;
   onAutoTravelCalculationChange: (enabled: boolean) => void;
@@ -2796,7 +2840,7 @@ function OverviewTab({
         trip={trip}
         canEdit={canEdit}
         pendingStagedPlaceId={pendingStagedPlaceId}
-        onAssignStagedPlace={onAssignStagedPlace}
+        onMovePlace={onMovePlace}
         onDeleteStagedPlace={onDeleteStagedPlace}
         onAddActivity={onAddActivity}
         onExploreRecommended={onExploreRecommended}
@@ -2839,7 +2883,7 @@ function ItineraryAccordion({
   trip,
   canEdit,
   pendingStagedPlaceId,
-  onAssignStagedPlace,
+  onMovePlace,
   onDeleteStagedPlace,
   onAddActivity,
   onExploreRecommended,
@@ -2856,7 +2900,7 @@ function ItineraryAccordion({
   trip: GeneratedTrip;
   canEdit: boolean;
   pendingStagedPlaceId: string | null;
-  onAssignStagedPlace: (placeId: string, dayId: string) => void;
+  onMovePlace: (placeId: string, toDayId: string | null, toIndex?: number) => void;
   onDeleteStagedPlace: (placeId: string) => void;
   onAddActivity: (dayId: string) => void;
   onExploreRecommended: () => void;
@@ -2871,6 +2915,24 @@ function ItineraryAccordion({
   onAutoTravelCalculationChange: (enabled: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const staged = trip.stagedPlaces ?? [];
+  const draggedPlace = activeDragId ? findPlace(trip, activeDragId) : undefined;
+
+  // The rules live in lib/plan-drag — see resolveDragEnd for why.
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null);
+    const { active, over } = event;
+    const outcome = resolveDragEnd(trip, String(active.id), over ? String(over.id) : null);
+    if (!outcome) return;
+    if (outcome.kind === "reorder") {
+      onReorderActivities(outcome.dayId, outcome.activities);
+      return;
+    }
+    onMovePlace(outcome.placeId, outcome.toDayId, outcome.toIndex);
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl" style={{ backgroundColor: "#FAF8F5" }}>
@@ -2953,19 +3015,36 @@ function ItineraryAccordion({
             </span>
           </button>
 
-          {/* Above the days, below the "สำรวจสถานที่แนะนำ" banner: these are
-              places already collected and waiting on a decision, which is more
-              urgent than finding more. Renders nothing when the shelf is
-              empty. */}
-          <StagedPlacesShelf
-            places={trip.stagedPlaces ?? []}
-            days={trip.days}
-            pendingPlaceId={pendingStagedPlaceId}
-            onAssign={onAssignStagedPlace}
-            onDelete={onDeleteStagedPlace}
-          />
+          {/* ONE DndContext over the shelf and every day, which is the whole
+              point: it used to sit inside SortableItineraryList, one per day,
+              so a stop could only ever be reordered within the day it was
+              already in. Now the shelf and each day are droppable buckets and
+              a card can be dragged between any of them.
 
-          <div className="flex flex-col gap-4">
+              closestCorners rather than closestCenter: with buckets of very
+              different heights, a card's centre can sit nearer a distant day's
+              centre than the one it is visibly hovering over. */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={(event) => setActiveDragId(String(event.active.id))}
+            onDragCancel={() => setActiveDragId(null)}
+            onDragEnd={handleDragEnd}
+          >
+            {/* Above the days, below the "สำรวจสถานที่แนะนำ" banner: these are
+                places already collected and waiting on a decision, which is more
+                urgent than finding more. Renders nothing when the shelf is
+                empty. */}
+            <StagedPlacesShelf
+              places={staged}
+              days={trip.days}
+              pendingPlaceId={pendingStagedPlaceId}
+              dragInProgress={activeDragId !== null}
+              onAssign={(placeId, dayId) => onMovePlace(placeId, dayId)}
+              onDelete={onDeleteStagedPlace}
+            />
+
+          <div className="mt-4 flex flex-col gap-4">
             {trip.days.map((day) => {
               const hasActivities = day.activities.length > 0;
               return (
@@ -3000,26 +3079,32 @@ function ItineraryAccordion({
                       สถานที่
                     </button>
                   </div>
-                  {hasActivities && (
-                    <div className="flex flex-col gap-2">
-                      <SortableItineraryList
-                        activities={day.activities}
-                        travelSegments={day.travelSegments}
-                        showAutomaticTravel={autoTravelCalculationEnabled}
-                        onEdit={(a) => onEditActivity(day.id, a)}
-                        onDelete={(a) => onDeleteActivity(day.id, a.id)}
-                        onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
-                        onDeleteTravel={(activityId, segmentId) =>
-                          onDeleteActivityTravel(day.id, activityId, segmentId)
-                        }
-                        onReorder={(activities) => onReorderActivities(day.id, activities)}
-                      />
-                    </div>
-                  )}
+                  {/* Always rendered, empty or not: a day with no stops still
+                      has to be somewhere a card can be dropped, and it used to
+                      render nothing at all. */}
+                  <SortableItineraryList
+                    dayId={day.id}
+                    activities={day.activities}
+                    travelSegments={day.travelSegments}
+                    showAutomaticTravel={autoTravelCalculationEnabled}
+                    onEdit={(a) => onEditActivity(day.id, a)}
+                    onDelete={(a) => onDeleteActivity(day.id, a.id)}
+                    onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
+                    onDeleteTravel={(activityId, segmentId) =>
+                      onDeleteActivityTravel(day.id, activityId, segmentId)
+                    }
+                  />
                 </div>
               );
             })}
           </div>
+
+            {/* Follows the cursor across bucket boundaries. Without it the
+                dragged card is clipped by whichever day card it started in. */}
+            <DragOverlay>
+              {draggedPlace ? <DragPreviewCard place={draggedPlace} /> : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       )}
 
@@ -3130,6 +3215,52 @@ function ReadOnlyOverviewDay({
 // latter has no real touch support, and this list needs to work on mobile.
 // The grip handle (not the whole row) owns the drag listeners so taps on the
 // title, edit, and delete buttons keep working normally.
+// A stop by id, wherever it currently lives. Only the drag overlay needs this:
+// the card being dragged may have come from the shelf or from any day.
+function findPlace(trip: GeneratedTrip, placeId: string): Activity | undefined {
+  return (
+    (trip.stagedPlaces ?? []).find((p) => p.id === placeId) ??
+    trip.days.flatMap((d) => d.activities).find((a) => a.id === placeId)
+  );
+}
+
+// What follows the cursor during a drag. Deliberately not ItineraryRow: that
+// row carries a position badge and edit/delete buttons, and a card in flight
+// has no position yet and cannot be pressed.
+function DragPreviewCard({ place }: { place: Activity }) {
+  const Icon = categoryIcon[place.category] ?? categoryIcon.other;
+  const imageUrl = place.images?.[0] ?? place.location?.imageUrl;
+
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-white p-2.5 shadow-[0_12px_32px_-8px_rgba(16,24,40,0.35)]">
+      <div
+        className="h-14 w-14 shrink-0 overflow-hidden rounded-xl"
+        style={{ backgroundColor: "var(--color-sel-bg)" }}
+      >
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <Icon size={18} style={{ color: categoryColorVar[place.category] }} />
+          </div>
+        )}
+      </div>
+      <p className="truncate pr-2 text-sm font-bold">{place.title}</p>
+    </div>
+  );
+}
+
+// Puts a stop at `index`, or at the end when there is no index — which is
+// what both the "ลงวันที่ N" menu and the backend do when no orderIndex is
+// sent. An index past the end appends, same as splice.
+function insertAt(items: Activity[], item: Activity, index?: number): Activity[] {
+  if (index === undefined) return [...items, item];
+  const next = [...items];
+  next.splice(index, 0, item);
+  return next;
+}
+
 function visibleTravelSegment(
   travelSegments: TravelSegment[] | undefined,
   fromActivity: Activity,
@@ -3143,6 +3274,7 @@ function visibleTravelSegment(
 }
 
 function SortableItineraryList({
+  dayId,
   activities,
   travelSegments,
   showAutomaticTravel,
@@ -3150,8 +3282,9 @@ function SortableItineraryList({
   onDelete,
   onSaveTravel,
   onDeleteTravel,
-  onReorder,
 }: {
+  // Doubles as this day's droppable id — see containerOf in ItineraryAccordion.
+  dayId: string;
   activities: Activity[];
   travelSegments?: TravelSegment[];
   showAutomaticTravel: boolean;
@@ -3159,50 +3292,68 @@ function SortableItineraryList({
   onDelete: (activity: Activity) => void;
   onSaveTravel: (activityId: string, travel: TravelFromPrevious) => void;
   onDeleteTravel: (activityId: string, estimatedSegmentId?: string) => Promise<void>;
-  onReorder: (activities: Activity[]) => void;
 }) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = activities.findIndex((a) => a.id === active.id);
-    const newIndex = activities.findIndex((a) => a.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    onReorder(arrayMove(activities, oldIndex, newIndex));
-  }
+  // No DndContext of its own any more: the one in ItineraryAccordion spans the
+  // shelf and every day, which is what lets a card cross between them. This is
+  // now just one bucket inside it — a drop target plus the sort order of what
+  // it holds.
+  const { setNodeRef, isOver } = useDroppable({ id: dayId });
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-        {activities.map((a, i) => {
-          const next = activities[i + 1];
-          return (
-            <SortableItineraryEntry
-              key={a.id}
-              activity={a}
-              index={i + 1}
-              next={next}
-              travelSegment={
-                next && showAutomaticTravel
-                  ? visibleTravelSegment(travelSegments, a, next)
-                  : undefined
-              }
-              onEdit={() => onEdit(a)}
-              onDelete={() => onDelete(a)}
-              onSaveTravel={next ? (travel) => onSaveTravel(next.id, travel) : undefined}
-              onDeleteTravel={next
-                ? () =>
-                    onDeleteTravel(
-                      next.id,
-                      showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next)?.id : undefined
-                    )
-                : undefined}
-            />
-          );
-        })}
-      </SortableContext>
-    </DndContext>
+    <div
+      ref={setNodeRef}
+      // A day with no stops still needs somewhere to aim at, and an invisible
+      // zero-height target cannot be hit. The dashed outline appears only while
+      // something is being dragged over it, so a day that is simply empty does
+      // not look like a broken one.
+      className={
+        activities.length === 0
+          ? "flex min-h-16 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-xs font-semibold"
+          : "flex flex-col gap-2 rounded-xl"
+      }
+      style={
+        activities.length === 0
+          ? {
+              borderColor: isOver ? "var(--color-accent-violet)" : "#E6D9B8",
+              color: "var(--color-muted)",
+              backgroundColor: isOver ? "#F6F2FF" : "transparent",
+            }
+          : { backgroundColor: isOver ? "#F6F2FF" : "transparent" }
+      }
+    >
+      {activities.length === 0 ? (
+        <span>{isOver ? "วางที่นี่" : "วันนี้ยังไม่มีสถานที่"}</span>
+      ) : (
+        <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+          {activities.map((a, i) => {
+            const next = activities[i + 1];
+            return (
+              <SortableItineraryEntry
+                key={a.id}
+                activity={a}
+                index={i + 1}
+                next={next}
+                travelSegment={
+                  next && showAutomaticTravel
+                    ? visibleTravelSegment(travelSegments, a, next)
+                    : undefined
+                }
+                onEdit={() => onEdit(a)}
+                onDelete={() => onDelete(a)}
+                onSaveTravel={next ? (travel) => onSaveTravel(next.id, travel) : undefined}
+                onDeleteTravel={next
+                  ? () =>
+                      onDeleteTravel(
+                        next.id,
+                        showAutomaticTravel ? visibleTravelSegment(travelSegments, a, next)?.id : undefined
+                      )
+                  : undefined}
+              />
+            );
+          })}
+        </SortableContext>
+      )}
+    </div>
   );
 }
 
