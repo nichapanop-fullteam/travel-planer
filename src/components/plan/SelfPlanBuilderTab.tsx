@@ -2276,7 +2276,9 @@ function LabeledInput({
 // the numbered badges above/below it) plus a full-width dashed pill.
 // Empty state is a plain "+ เพิ่มการเดินทาง" prompt; once `toActivity` has a
 // travelFromPrevious leg attached, it instead shows every available piece of
-// travel information and reopens the same dialog to edit it.
+// travel information and reopens the same dialog to edit it. Read-only callers
+// (no `onSave`) get no prompt at all — the row disappears when the leg has
+// nothing to report.
 export function TravelConnectorRow({
   fromTitle,
   toActivity,
@@ -2394,10 +2396,16 @@ export function TravelConnectorRow({
     }
   }
 
-  // Read-only plan cards must not leave an orphaned green connector between
-  // places when there is no travel data to display. In edit mode `onSave` is
-  // present, so the connector remains visible as the “เพิ่มการเดินทาง” action.
-  if (!onSave && !travel && !travelSegment) return null;
+  // Read-only plan cards (view-trip, shared-trips) must not leave an orphaned
+  // green connector between places when the leg has nothing to say. Holding a
+  // `travel`/`travelSegment` object is not enough to earn the row: an entry
+  // this build cannot render and a segment whose status it cannot interpret
+  // both fall through to the “+ เพิ่มการเดินทาง” catch-all — an invitation to
+  // do something the reader of a view-only page cannot do. In edit mode
+  // `onSave` is present, so the connector stays as the add action.
+  const hasTravelToShow =
+    canRenderTravel || showPlanEstimate || travelSegment?.routeStatus === "FAILED";
+  if (!onSave && !hasTravelToShow) return null;
 
   return (
     <>
@@ -2444,7 +2452,9 @@ export function TravelConnectorRow({
           >
             {content}
           </button>
-        ) : travel || travelSegment ? (
+        ) : hasTravelToShow ? (
+          // Read-only: the same information, as plain text rather than a
+          // clickable edit target.
           <div
             className="my-auto flex min-h-7 min-w-0 flex-1 flex-wrap items-center justify-start gap-x-1 gap-y-0.5 rounded-full border border-dashed px-3 py-1.5 text-left text-[10px] font-semibold"
             style={{ borderColor: "var(--color-sel-border)", backgroundColor: "var(--color-sel-bg)", color: "var(--color-brand-green)" }}

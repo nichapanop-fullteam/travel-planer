@@ -162,3 +162,66 @@ describe("TravelConnectorRow — never renders an empty pill", () => {
     expect(screen.getByText(/ประมาณการจากแผน/)).toBeInTheDocument();
   });
 });
+
+// view-trip and shared-trips render the connector with no onSave, so there is
+// nothing behind the "+ เพิ่มการเดินทาง" prompt — it invites a reader to do
+// something the page does not let them do. Read-only legs with nothing to
+// report must disappear entirely.
+describe("TravelConnectorRow — read-only never offers เพิ่มการเดินทาง", () => {
+  it("renders nothing when the leg has no travel information", () => {
+    const { container } = render(
+      <TravelConnectorRow fromTitle="โรงแรม" toActivity={stop()} />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing when the segment status is one this build does not know", () => {
+    const { container } = render(
+      <TravelConnectorRow
+        fromTitle="ร้านมาลองเต๊อะ เชียงราย"
+        toActivity={stop()}
+        travelSegment={segment({ routeStatus: "PENDING" as never })}
+      />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing when the entered leg has no usable type", () => {
+    const { container } = render(
+      <TravelConnectorRow
+        fromTitle="ร้านมาลองเต๊อะ เชียงราย"
+        toActivity={stop({ travelFromPrevious: { durationMin: 6 } as never })}
+      />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  // Read-only hides the prompt, not the information: a leg the traveller can
+  // actually read about still shows, as plain text.
+  it("still shows a leg that has something to say", () => {
+    render(
+      <TravelConnectorRow
+        fromTitle="ร้านมาลองเต๊อะ เชียงราย"
+        toActivity={stop()}
+        travelSegment={segment()}
+      />
+    );
+
+    expect(screen.getByText(/12 นาที/)).toBeInTheDocument();
+    expect(screen.queryByText("เพิ่มการเดินทาง")).not.toBeInTheDocument();
+  });
+
+  it("still shows the plan's own estimate", () => {
+    render(
+      <TravelConnectorRow
+        fromTitle="ร้านมาลองเต๊อะ เชียงราย"
+        toActivity={stop({ planTravelEstimate: { durationMin: 10, distanceKm: 5.06 } })}
+      />
+    );
+
+    expect(screen.getByText(/ประมาณการจากแผน/)).toBeInTheDocument();
+  });
+});
