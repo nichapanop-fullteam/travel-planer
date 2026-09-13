@@ -2,7 +2,7 @@ import { authenticatedFetch } from "@/lib/authenticated-fetch";
 import { BACKEND_URL } from "@/lib/backend-url";
 import { getBackendAccessToken } from "@/lib/backend-user";
 import { getTripGallery } from "@/lib/trip-media-api";
-import type { Day, Media, MediaSummary } from "@/types";
+import type { Activity, Day, Media, MediaSummary } from "@/types";
 
 // Shape confirmed against a real GET /trips response (see the curl example
 // this was built from) — loose on the nested bits (brief) that vary a lot
@@ -135,6 +135,14 @@ export interface BackendTrip {
   mediaSummary?: MediaSummary;
   customer?: BackendTripCustomer; // absent if the trip's owner row is gone
   days: BackendTripDay[];
+  // The trip's staging shelf: places added via "เพิ่มสถานที่ลงทริป" that have
+  // no day yet. Same Activity shape as a day's stops, ordered by `order`.
+  //
+  // Owner-only — a stranger reading the same public trip gets an empty array.
+  // Optional here rather than required because a backend that predates the
+  // shelf omits the field entirely, and every reader treats missing and empty
+  // the same way.
+  stagedItems?: Activity[];
   createdAt: string;
   updatedAt: string;
   // saveCount has no backend field yet in any environment — stays optional,

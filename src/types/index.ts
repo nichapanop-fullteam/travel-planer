@@ -268,6 +268,13 @@ export interface GeneratedTrip {
   styles: string[];
   status: GeneratedTripStatus;
   days: Day[];
+  // The staging shelf — places added via "เพิ่มสถานที่ลงทริป" that have no day
+  // yet, shown above the day list in the plan builder and assigned from there.
+  //
+  // Optional and separate from `days` on purpose: every existing reader that
+  // walks `days` (budget, share, remix, the map) keeps describing the plan
+  // itself, and a place on the shelf is not in the plan yet.
+  stagedPlaces?: Activity[];
   // Client-side preference for automatic, preliminary travel estimates:
   // itinerary mutations only ask the backend to reconcile Google Routes
   // segments while this is on.

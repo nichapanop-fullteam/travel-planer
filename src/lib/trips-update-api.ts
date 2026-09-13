@@ -202,6 +202,55 @@ export async function createTripItemOnServer(
     : { place: body, travelSegment: null };
 }
 
+// POST /trips/:tripId/staged-items — puts a place on the trip's staging shelf
+// without choosing a day. This is where the "+" on a stop of someone else's
+// trip sends it: that menu asks only WHICH TRIP, and the day is picked later
+// in the plan builder.
+//
+// No Idempotency-Key, unlike createTripItemOnServer above: the shelf is a set
+// of places the traveller means to fit in somewhere, so the backend dedupes by
+// placeId instead and adding a place the shelf already holds answers with the
+// stop that is already there. That covers the double tap this key exists for,
+// and covers it permanently rather than for one request's retry window.
+export async function createStagedItemOnServer(
+  tripId: string,
+  item: CreateTripActivity
+): Promise<Activity> {
+  const allowed = buildCreateTripItemRequest(item);
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips/${tripId}/staged-items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(allowed),
+  });
+  await throwOnError(response, "เพิ่มสถานที่ลงทริป");
+  return response.json();
+}
+
+// PATCH /items/:itemId/assign — the one move: shelf → day ("ลงวันที่ N" and
+// drag-and-drop), day → day, and day → shelf with a null dayId (an undo, and
+// what a deleted day's stops fall back to).
+//
+// `orderIndex` omitted means the end of the destination. The backend re-routes
+// both the day the stop left and the day it joined, so the caller only has to
+// re-read the segments of the days it is showing.
+export async function assignTripItemOnServer(
+  itemId: string,
+  tripDayId: string | null,
+  orderIndex?: number,
+  calculateTravelSegments = true
+): Promise<Activity> {
+  const response = await authenticatedFetch(`${BACKEND_URL}/items/${itemId}/assign`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Calculate-Travel-Segments": String(calculateTravelSegments),
+    },
+    body: JSON.stringify({ tripDayId, ...(orderIndex !== undefined ? { orderIndex } : {}) }),
+  });
+  await throwOnError(response, tripDayId === null ? "ย้ายสถานที่กลับ" : "ลงวันให้สถานที่");
+  return response.json();
+}
+
 // DELETE /items/:itemId — 204 with no response body.
 export async function deleteTripItemOnServer(
   itemId: string,

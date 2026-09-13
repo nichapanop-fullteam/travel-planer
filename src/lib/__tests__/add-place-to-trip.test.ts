@@ -1,22 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  addPlaceToTripDay,
-  addablePlaceFromActivity,
-  getTripDayOptions,
-} from "@/lib/add-place-to-trip";
-import { getTrip } from "@/lib/trips-api";
+import { addPlaceToTripShelf, addablePlaceFromActivity } from "@/lib/add-place-to-trip";
 import { searchExternalPlaces } from "@/lib/external-places-api";
-import { createTripItemOnServer } from "@/lib/trips-update-api";
+import { createStagedItemOnServer } from "@/lib/trips-update-api";
 import type { Activity } from "@/types";
 
-vi.mock("@/lib/trips-api", () => ({ getTrip: vi.fn() }));
 vi.mock("@/lib/external-places-api", () => ({ searchExternalPlaces: vi.fn() }));
-vi.mock("@/lib/trips-update-api", () => ({ createTripItemOnServer: vi.fn() }));
+vi.mock("@/lib/trips-update-api", () => ({ createStagedItemOnServer: vi.fn() }));
 
-const getTripMock = vi.mocked(getTrip);
 const searchMock = vi.mocked(searchExternalPlaces);
-const createItemMock = vi.mocked(createTripItemOnServer);
+const createItemMock = vi.mocked(createStagedItemOnServer);
 
 // น้ำตกตาดกวางสี as it arrives from GET /trips/:id: a `location` with a name
 // and coordinates and NO place id — that omission is the whole reason this
@@ -33,41 +26,13 @@ const activity: Activity = {
   location: { name: "น้ำตกตาดกวางสี", lat: 19.7477, lng: 101.9946 },
 };
 
-// What the menu's day step hands back to addPlaceToTripDay.
-function dayOption(id: string, dayNumber: number) {
-  return { id, dayNumber, date: "2026-10-11", activityCount: 0 };
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
-  createItemMock.mockResolvedValue({ place: { ...activity, id: "new-item" }, travelSegment: null });
+  createItemMock.mockResolvedValue({ ...activity, id: "new-item" });
 });
 
-describe("getTripDayOptions", () => {
-  it("lists the target trip's days with how full each one is", async () => {
-    getTripMock.mockResolvedValue({
-      id: "target-trip",
-      days: [
-        { id: "day-1", dayNumber: 1, date: "2026-10-10", activities: [{}, {}] },
-        { id: "day-2", dayNumber: 2, date: "2026-10-11", activities: [] },
-      ],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-
-    await expect(getTripDayOptions("target-trip")).resolves.toEqual([
-      { id: "day-1", dayNumber: 1, date: "2026-10-10", activityCount: 2 },
-      { id: "day-2", dayNumber: 2, date: "2026-10-11", activityCount: 0 },
-    ]);
-  });
-
-  it("refuses a trip that is gone", async () => {
-    getTripMock.mockResolvedValue(null);
-    await expect(getTripDayOptions("target-trip")).rejects.toThrow("ไม่พบทริปที่เลือก");
-  });
-});
-
-describe("addPlaceToTripDay", () => {
-  it("links the resolved place and posts to the day the caller picked", async () => {
+describe("addPlaceToTripShelf", () => {
+  it("links the resolved place and posts to the trip's shelf", async () => {
     searchMock.mockResolvedValue([
       {
         id: "11111111-1111-4111-8111-111111111111",
@@ -80,11 +45,11 @@ describe("addPlaceToTripDay", () => {
     ]);
 
     await expect(
-      addPlaceToTripDay(dayOption("day-2", 2), addablePlaceFromActivity(activity))
-    ).resolves.toEqual({ dayNumber: 2, linkedToPlace: true });
+      addPlaceToTripShelf("target-trip", addablePlaceFromActivity(activity))
+    ).resolves.toEqual({ linkedToPlace: true });
 
-    const [dayId, item] = createItemMock.mock.calls[0];
-    expect(dayId).toBe("day-2");
+    const [tripId, item] = createItemMock.mock.calls[0];
+    expect(tripId).toBe("target-trip");
     expect(item).toMatchObject({
       placeId: "11111111-1111-4111-8111-111111111111",
       time: "13:00",
@@ -97,8 +62,6 @@ describe("addPlaceToTripDay", () => {
     expect(item).not.toHaveProperty("travelNotesFromPrev");
     expect(item).not.toHaveProperty("travelTimeFromPrevMin");
     expect(item).not.toHaveProperty("orderIndex");
-    // The day came from the picker, so nothing had to fetch the trip again.
-    expect(getTripMock).not.toHaveBeenCalled();
   });
 
   // The whole point of GET /trips/:id reporting location.placeId: a stop that
@@ -106,11 +69,11 @@ describe("addPlaceToTripDay", () => {
   // to a different place of the same name.
   it("uses the stop's own placeId and never searches", async () => {
     await expect(
-      addPlaceToTripDay(dayOption("day-1", 1), {
+      addPlaceToTripShelf("target-trip", {
         ...addablePlaceFromActivity(activity),
         placeId: "33333333-3333-4333-8333-333333333333",
       })
-    ).resolves.toEqual({ dayNumber: 1, linkedToPlace: true });
+    ).resolves.toEqual({ linkedToPlace: true });
 
     expect(searchMock).not.toHaveBeenCalled();
     expect(createItemMock.mock.calls[0][1]).toMatchObject({
@@ -131,8 +94,8 @@ describe("addPlaceToTripDay", () => {
     ]);
 
     await expect(
-      addPlaceToTripDay(dayOption("day-1", 1), addablePlaceFromActivity(activity))
-    ).resolves.toEqual({ dayNumber: 1, linkedToPlace: false });
+      addPlaceToTripShelf("target-trip", addablePlaceFromActivity(activity))
+    ).resolves.toEqual({ linkedToPlace: false });
     expect(createItemMock.mock.calls[0][1]).toMatchObject({
       placeId: undefined,
       title: "น้ำตกตาดกวางสี",
@@ -144,8 +107,19 @@ describe("addPlaceToTripDay", () => {
     searchMock.mockResolvedValue([]);
 
     await expect(
-      addPlaceToTripDay(dayOption("day-1", 1), addablePlaceFromActivity(activity))
+      addPlaceToTripShelf("target-trip", addablePlaceFromActivity(activity))
     ).resolves.toMatchObject({ linkedToPlace: false });
     expect(createItemMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The shelf dedupes by place server-side, so there is no key to send — see
+  // createStagedItemOnServer.
+  it("sends no idempotency key", async () => {
+    await addPlaceToTripShelf("target-trip", {
+      ...addablePlaceFromActivity(activity),
+      placeId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    expect(createItemMock.mock.calls[0]).toHaveLength(2);
   });
 });

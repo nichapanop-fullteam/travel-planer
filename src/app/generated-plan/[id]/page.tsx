@@ -118,6 +118,7 @@ import { getTrip, likeTrip, unlikeTrip } from "@/lib/trips-api";
 import {
   createTripDayOnServer,
   createTripItemOnServer,
+  assignTripItemOnServer,
   deleteTripItemOnServer,
   getDayTravelSegments,
   retryFailedTravelSegments,
@@ -145,6 +146,7 @@ import { ActivityCategoryField, TimePickerDialog, formatTimeDisplay } from "@/co
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/providers/AuthProvider";
+import { StagedPlacesShelf } from "@/components/plan/StagedPlacesShelf";
 import { useToast } from "@/providers/ToastProvider";
 import { useRemixTrip, type RemixSourceMeta } from "@/hooks/useRemixTrip";
 import { consumePendingRemixIntent, setPendingRemixIntent } from "@/lib/pending-remix";
@@ -329,6 +331,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   const coverDidChangeRef = useRef(false);
   const { backendUser, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
+  // Which shelved place is being written to a day right now — its row spins and
+  // stops taking a second answer, since two assigns of the same stop would
+  // race for its order index.
+  const [pendingStagedPlaceId, setPendingStagedPlaceId] = useState<string | null>(null);
   const remix = useRemixTrip();
 
   // Backend-wins once a trip has a real server row: a local-only draft
@@ -407,6 +413,10 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
           loaded.expenses ??= local.expenses;
           loaded.generationNotice ??= local.generationNotice;
           loaded.autoTravelCalculationEnabled ??= local.autoTravelCalculationEnabled;
+          // Undefined only when the backend has no shelf to report — an owner
+          // whose shelf is genuinely empty sends [], which wins. See
+          // buildGeneratedTripFromBackendTrip.
+          loaded.stagedPlaces ??= local.stagedPlaces;
           const localActivities = new Map(
             local.days.flatMap((day) => day.activities).map((activity) => [activity.id, activity])
           );
@@ -1130,6 +1140,68 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
       );
   }
 
+  // ─── the staging shelf ───
+  //
+  // Places added from another trip's "+" menu land on the trip with no day
+  // (GeneratedTrip.stagedPlaces). Assigning one is a move, not a copy: the same
+  // backend row changes its day, so the stop keeps its id, its notes and its
+  // photos, and PATCH /items/:itemId/assign re-routes the day it joins.
+  //
+  // Optimistic like every other mutation on this page — the local copy is
+  // written first and the server is told after, so a flaky connection never
+  // costs an edit. A failed write leaves the local copy ahead of the server
+  // until the next GET /trips/:id, which is the same bargain handleDelete and
+  // handleReorder already make; the difference is that this one is a
+  // deliberate, visible action, so it says so rather than only warning to the
+  // console.
+  function handleAssignStagedPlace(placeId: string, dayId: string) {
+    const place = (trip!.stagedPlaces ?? []).find((p) => p.id === placeId);
+    if (!place || pendingStagedPlaceId) return;
+
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const stagedPlaces = (prev.stagedPlaces ?? []).filter((p) => p.id !== placeId);
+      // Appended, matching where the backend puts it with no orderIndex.
+      const days = prev.days.map((d) =>
+        d.id === dayId ? { ...d, activities: [...d.activities, place] } : d
+      );
+      updateGeneratedTrip(prev.id, { stagedPlaces, days });
+      return { ...prev, stagedPlaces, days };
+    });
+
+    if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(placeId)) return;
+
+    setPendingStagedPlaceId(placeId);
+    assignTripItemOnServer(placeId, dayId, undefined, autoTravelCalculationEnabled)
+      .then(() => {
+        if (autoTravelCalculationEnabled) return refreshDayTravelSegments(dayId);
+      })
+      .catch((err: unknown) => {
+        console.warn("ลงวันให้สถานที่ไม่สำเร็จ", err);
+        showToast("ลงวันให้สถานที่ไม่สำเร็จ ลองใหม่อีกครั้ง", "error");
+      })
+      .finally(() => setPendingStagedPlaceId(null));
+  }
+
+  // Same delete as a stop on a day — DELETE /items/:itemId does not care which
+  // bucket the stop was in — minus the media cleanup, which a shelved place
+  // cannot have: photos are attached from AddActivityDialog, and that only
+  // opens on a day.
+  function handleDeleteStagedPlace(placeId: string) {
+    setTrip((prev) => {
+      if (!prev) return prev;
+      const stagedPlaces = (prev.stagedPlaces ?? []).filter((p) => p.id !== placeId);
+      updateGeneratedTrip(prev.id, { stagedPlaces });
+      return { ...prev, stagedPlaces };
+    });
+
+    if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(placeId)) return;
+
+    deleteTripItemOnServer(placeId, false).catch((err) =>
+      console.warn("ลบสถานที่ที่ยังไม่ได้ลงวันไม่สำเร็จ", err)
+    );
+  }
+
   // Drag-reordered stop order — PATCH /days/:dayId/items/order (see
   // reorderTripItemsOnServer's doc comment). The backend 400s unless itemIds
   // matches every item under that day exactly, so this only fires once the
@@ -1486,6 +1558,9 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
               trip={trip}
               isConfirmed={isConfirmed}
               canEdit={canEdit}
+              pendingStagedPlaceId={pendingStagedPlaceId}
+              onAssignStagedPlace={handleAssignStagedPlace}
+              onDeleteStagedPlace={handleDeleteStagedPlace}
               bannerDismissed={bannerDismissed}
               onDismissBanner={() => setBannerDismissed(true)}
               onAddActivity={(dayId) => setActivityDialogRequest({ dayId })}
@@ -2649,6 +2724,9 @@ function OverviewTab({
   onSaveAccommodation,
   onAddDay,
   onGoToPlanTab,
+  pendingStagedPlaceId,
+  onAssignStagedPlace,
+  onDeleteStagedPlace,
   onUpdateActivityTravel,
   onDeleteActivityTravel,
   onReorderActivities,
@@ -2678,6 +2756,10 @@ function OverviewTab({
   onUpdateActivityTravel: (dayId: string, activityId: string, travel: TravelFromPrevious) => void;
   onDeleteActivityTravel: (dayId: string, activityId: string, estimatedSegmentId?: string) => Promise<void>;
   onReorderActivities: (dayId: string, activities: Activity[]) => void;
+  // The staging shelf, rendered inside ตารางแพลน — see StagedPlacesShelf.
+  pendingStagedPlaceId: string | null;
+  onAssignStagedPlace: (placeId: string, dayId: string) => void;
+  onDeleteStagedPlace: (placeId: string) => void;
   autoTravelCalculationEnabled: boolean;
   onAutoTravelCalculationChange: (enabled: boolean) => void;
 }) {
@@ -2713,6 +2795,9 @@ function OverviewTab({
       <ItineraryAccordion
         trip={trip}
         canEdit={canEdit}
+        pendingStagedPlaceId={pendingStagedPlaceId}
+        onAssignStagedPlace={onAssignStagedPlace}
+        onDeleteStagedPlace={onDeleteStagedPlace}
         onAddActivity={onAddActivity}
         onExploreRecommended={onExploreRecommended}
         onEditActivity={onEditActivity}
@@ -2753,6 +2838,9 @@ function dayDateLabel(day: Day): string {
 function ItineraryAccordion({
   trip,
   canEdit,
+  pendingStagedPlaceId,
+  onAssignStagedPlace,
+  onDeleteStagedPlace,
   onAddActivity,
   onExploreRecommended,
   onEditActivity,
@@ -2767,6 +2855,9 @@ function ItineraryAccordion({
 }: {
   trip: GeneratedTrip;
   canEdit: boolean;
+  pendingStagedPlaceId: string | null;
+  onAssignStagedPlace: (placeId: string, dayId: string) => void;
+  onDeleteStagedPlace: (placeId: string) => void;
   onAddActivity: (dayId: string) => void;
   onExploreRecommended: () => void;
   onEditActivity: (dayId: string, activity: Activity) => void;
@@ -2861,6 +2952,18 @@ function ItineraryAccordion({
               <ChevronRight size={12} />
             </span>
           </button>
+
+          {/* Above the days, below the "สำรวจสถานที่แนะนำ" banner: these are
+              places already collected and waiting on a decision, which is more
+              urgent than finding more. Renders nothing when the shelf is
+              empty. */}
+          <StagedPlacesShelf
+            places={trip.stagedPlaces ?? []}
+            days={trip.days}
+            pendingPlaceId={pendingStagedPlaceId}
+            onAssign={onAssignStagedPlace}
+            onDelete={onDeleteStagedPlace}
+          />
 
           <div className="flex flex-col gap-4">
             {trip.days.map((day) => {

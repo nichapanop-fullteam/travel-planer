@@ -1,18 +1,21 @@
-// "เพิ่มสถานที่นี้เข้าทริปของฉัน" — copying one place into a trip you own,
-// without remixing a whole plan. Reached from a stop on /view-trip and from a
+// "เพิ่มสถานที่ลงทริป" — copying one place into a trip you own, without
+// remixing a whole plan. Reached from a stop on /view-trip and from a
 // bookmarked place on /saved, which is why it speaks AddablePlace rather than
 // Activity: the two callers hold different shapes of the same idea.
 //
-// The only write is POST /days/:dayId/items, which needs a day of the TARGET
-// trip and, for the copy to arrive as a real place (photo, category,
-// coordinates for its travel leg) rather than a hand-typed label, a `places`
-// row uuid. So the menu asks in two steps — which trip (getMyTrips), then
-// which day (getTripDayOptions) — and addPlaceToTripDay makes sure a place id
-// is in hand before it posts the stop.
+// The write is POST /trips/:tripId/staged-items: the place lands on the
+// trip's staging shelf, and which day it belongs on is decided later, in the
+// plan builder. That is why the menu asks one question — which trip — where it
+// used to ask two. Choosing a day from inside a menu attached to somebody
+// else's itinerary meant choosing it with nothing to go on but a stop count;
+// the plan builder has the whole plan on screen.
+//
+// For the copy to arrive as a real place (photo, category, coordinates for its
+// travel leg) rather than a hand-typed label, it needs a `places` row uuid, so
+// addPlaceToTripShelf makes sure one is in hand before it posts.
 import type { Activity, ActivityCategory } from "@/types";
 import { searchExternalPlaces, type ExternalSearchPlace } from "@/lib/external-places-api";
-import { getTrip } from "@/lib/trips-api";
-import { createTripItemOnServer } from "@/lib/trips-update-api";
+import { createStagedItemOnServer } from "@/lib/trips-update-api";
 import type { CreateTripActivity } from "@/lib/trips-create-api";
 
 // Everything this module needs about the place being copied. Kept minimal on
@@ -34,36 +37,10 @@ export interface AddablePlace {
 }
 
 export interface AddPlaceToTripResult {
-  // Which day the stop landed on, for the confirmation dialog.
-  dayNumber: number;
   // False when no place id was available and none could be resolved, so the
   // stop was created from its name alone. It still saves; it just has no place
   // behind it, so no photo and no automatic travel leg.
   linkedToPlace: boolean;
-}
-
-// One row of the "ลงวันที่ N" step in the add menu. `activityCount` is what
-// lets that step say how full a day already is, which is the only thing the
-// traveler has to go on when choosing.
-export interface TripDayOption {
-  id: string;
-  dayNumber: number;
-  date?: string;
-  activityCount: number;
-}
-
-// The days of a trip the traveler owns, for the day step of the add menu.
-// Reuses getTrip rather than a leaner endpoint because GET /trips/:id is the
-// only read that returns days at all.
-export async function getTripDayOptions(tripId: string): Promise<TripDayOption[]> {
-  const trip = await getTrip(tripId);
-  if (!trip) throw new Error("ไม่พบทริปที่เลือก อาจถูกลบไปแล้ว");
-  return trip.days.map((day) => ({
-    id: day.id,
-    dayNumber: day.dayNumber,
-    date: day.date,
-    activityCount: day.activities.length,
-  }));
 }
 
 // An itinerary stop, as the read-only trip pages hold it, in the shape this
@@ -132,15 +109,19 @@ async function resolvePlaceId(place: AddablePlace): Promise<string | undefined> 
 }
 
 /**
- * Copies one place onto a specific day of a trip the signed-in user owns,
- * appended after that day's existing stops. The day comes from the menu's
- * "ลงวันที่ N" step (see getTripDayOptions), so nothing here guesses.
+ * Copies one place onto the staging shelf of a trip the signed-in user owns.
+ * No day is chosen here — that happens in the plan builder, where the whole
+ * plan is visible.
+ *
+ * Works on a trip with no days at all, which is what makes "สร้างทริปใหม่" in
+ * the same menu possible: the trip is created empty and the place goes onto
+ * its shelf immediately.
  *
  * Throws when the write fails; the message is user-facing Thai, same
  * convention as the rest of lib/trips-*.
  */
-export async function addPlaceToTripDay(
-  day: TripDayOption,
+export async function addPlaceToTripShelf(
+  tripId: string,
   place: AddablePlace
 ): Promise<AddPlaceToTripResult> {
   const placeId = place.placeId ?? (await resolvePlaceId(place));
@@ -163,14 +144,15 @@ export async function addPlaceToTripDay(
     // travelNote is often just the derived "~45 นาที · 30 กม." string
     // (ActivityResponseDto.buildTravelNote). Carrying either over would assert
     // a travel time this trip never had. The real leg gets calculated below.
-    // orderIndex is left off too: the backend appends to the day by default.
+    // orderIndex is left off too: the backend appends to the shelf by default.
   };
 
-  // crypto.randomUUID(), not a key derived from the place: the backend's
-  // ledger row for (day, key) is permanent, so a derived key would make a
-  // deliberate second copy of the same place impossible forever. A fresh key
-  // per click still covers the double-tap it exists for.
-  await createTripItemOnServer(day.id, item, crypto.randomUUID());
+  // No Idempotency-Key: the shelf dedupes by place server-side, so adding one
+  // it already holds answers with the stop that is already there. A shelf is a
+  // set of places to fit in somewhere, and the same place twice is never what
+  // the button meant — unlike a day, where two visits to one café is a real
+  // itinerary.
+  await createStagedItemOnServer(tripId, item);
 
-  return { dayNumber: day.dayNumber, linkedToPlace: Boolean(placeId) };
+  return { linkedToPlace: Boolean(placeId) };
 }

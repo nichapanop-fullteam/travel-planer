@@ -513,9 +513,22 @@ export function buildGeneratedTripFromBackendTrip(
     styles,
     status: trip.status === "confirmed" ? "confirmed" : "generated",
     days: hydrateTravelNotes(trip.days),
+    // Passed through as-is, NOT defaulted to []. An owner with an empty shelf
+    // gets [] from the server and that must win over a stale local copy; a
+    // backend that predates the shelf omits the field entirely, and undefined
+    // is what lets the caller keep whatever it already had (see the ??= block
+    // in generated-plan/[id]) instead of wiping it on every reload.
+    stagedPlaces: trip.stagedItems,
     backendSynced: true,
     backendDayIds: trip.days.map((d) => d.id),
-    backendItemIds: trip.days.flatMap((d) => d.activities.map((a) => a.id)),
+    // Shelved stops are backend rows too, so they belong here: every gate in
+    // the plan builder that asks "does the server know this stop?" before
+    // writing (delete, assign, reorder) reads this list, and a shelf stop can
+    // be all three.
+    backendItemIds: [
+      ...trip.days.flatMap((d) => d.activities.map((a) => a.id)),
+      ...(trip.stagedItems ?? []).map((a) => a.id),
+    ],
     ownerId: trip.ownerId,
     creator: trip.customer
       ? {

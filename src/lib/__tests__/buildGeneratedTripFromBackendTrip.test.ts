@@ -85,3 +85,45 @@ describe("buildGeneratedTripFromBackendTrip — destinationPlace", () => {
     expect(trip.destination).toBe("กรุงเทพมหานคร");
   });
 });
+
+// The distinction that keeps a reload from wiping the shelf: [] is an answer
+// (an owner whose shelf is genuinely empty), undefined is silence (a backend
+// that has no shelf to report). Only the second may be overridden by the
+// local copy — see the ??= block in generated-plan/[id].
+describe("buildGeneratedTripFromBackendTrip — the staging shelf", () => {
+  const shelved = {
+    id: "item-1",
+    time: "",
+    title: "ร้านมาลองเต๊อะ เชียงราย",
+    category: "food",
+    cost: 0,
+  };
+
+  it("carries shelved places through", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trip = buildGeneratedTripFromBackendTrip(backendTrip({ stagedItems: [shelved] as any }));
+
+    expect(trip.stagedPlaces).toEqual([shelved]);
+  });
+
+  // Every gate on the plan page that asks "does the server know this stop?"
+  // reads backendItemIds, and a shelved stop can be deleted and assigned.
+  it("counts them as stops the server knows about", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trip = buildGeneratedTripFromBackendTrip(backendTrip({ stagedItems: [shelved] as any }));
+
+    expect(trip.backendItemIds).toContain("item-1");
+  });
+
+  it("reports an empty shelf as empty, not as unknown", () => {
+    const trip = buildGeneratedTripFromBackendTrip(backendTrip({ stagedItems: [] }));
+
+    expect(trip.stagedPlaces).toEqual([]);
+  });
+
+  it("stays undefined when the backend does not report a shelf at all", () => {
+    const trip = buildGeneratedTripFromBackendTrip(backendTrip());
+
+    expect(trip.stagedPlaces).toBeUndefined();
+  });
+});

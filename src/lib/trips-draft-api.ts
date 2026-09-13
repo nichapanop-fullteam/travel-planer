@@ -68,6 +68,32 @@ export function buildCreateDraftTripRequest(draft: TripDraft): CreateDraftTripRe
   };
 }
 
+// "สร้างทริปใหม่" from the "+" menu on a place: an empty trip with nothing in
+// it but a destination, so the place has somewhere to land on its shelf right
+// away. The wizard at /create-trip is the fuller path — dates, group size,
+// styles — and this exists because opening it would mean leaving the trip the
+// traveller is reading, losing the place that prompted them.
+//
+// No days are created: a shelf needs none, and inventing a Day 1 for a trip
+// with no dates would be a guess the plan builder then has to talk them out
+// of.
+export async function createEmptyTripForPlace(destination: string): Promise<BackendTrip> {
+  const body: CreateDraftTripRequest = {
+    title: destination,
+    destination,
+    // The API's floor. The traveller can change it in "แก้ไขทริป".
+    guestCount: 1,
+    planMode: "manual",
+  };
+  const response = await authenticatedFetch(`${BACKEND_URL}/trips`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await throwOnError(response, "สร้างทริป");
+  return response.json();
+}
+
 // Never send `status` here — the backend always creates `draft`, and
 // rejects the field entirely on this endpoint.
 export async function createDraftTripOnServer(draft: TripDraft): Promise<BackendTrip> {

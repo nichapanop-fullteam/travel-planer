@@ -49,6 +49,7 @@ import { HotelBookingButton } from "@/components/plan/HotelBookingButton";
 import { RemixSetupDialog } from "@/components/plan/RemixSetupDialog";
 import { RemixTripMenu } from "@/components/plan/RemixTripMenu";
 import { AddToTripDialog } from "@/components/plan/AddToTripDialog";
+import { AddPlaceCoachMark } from "@/components/plan/AddPlaceCoachMark";
 import { AddPlaceToTripMenu } from "@/components/plan/AddPlaceToTripMenu";
 import { SavePlaceButton } from "@/components/place/SavePlaceButton";
 import { addablePlaceFromActivity } from "@/lib/add-place-to-trip";
@@ -484,6 +485,8 @@ export default function ViewTripPage() {
         className="trip-compact-bottom-bar fixed inset-x-0 bottom-0 z-40 bg-white"
         style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
       >
+        {/* Above the action rows, not over them — see AddPlaceCoachMark. */}
+        <AddPlaceCoachMark />
         {actionBar && <MobileActionBar {...actionBar} />}
         <TripSocialBar
           likeCount={likeCount}
@@ -1035,6 +1038,7 @@ function PlanTab({
                   activity={a}
                   index={i + 1}
                   sourceTripId={trip.id}
+                  destination={trip.destination}
                   signedIn={signedIn}
                   onRequireLogin={onRequireLogin}
                 />
@@ -1061,12 +1065,16 @@ function ReadOnlyPlanActivityCard({
   activity,
   index,
   sourceTripId,
+  destination,
   signedIn,
   onRequireLogin,
 }: {
   activity: Activity;
   index: number;
   sourceTripId: string;
+  // Only for the per-stop "+" menu's "สร้างทริปใหม่" row — a trip started from
+  // a stop of this plan is a trip to the same place.
+  destination: string;
   signedIn: boolean;
   onRequireLogin: () => void;
 }) {
@@ -1121,6 +1129,7 @@ function ReadOnlyPlanActivityCard({
             <AddPlaceToTripMenu
               place={addablePlaceFromActivity(activity)}
               excludeTripId={sourceTripId}
+              destinationHint={destination}
               signedIn={signedIn}
               onRequireLogin={onRequireLogin}
             />

@@ -3,7 +3,10 @@
 // The confirmation after a single place is remixed into one of your trips.
 // A modal rather than the toast this used to show, because the useful next
 // action — going to the trip that just changed — is not something a toast that
-// disappears in four seconds can offer.
+// disappears in four seconds can offer. That next action carries more weight
+// now than it did: the place lands on the trip's shelf with no day yet, so
+// "ไปดูทริป" is where the traveller finishes the job, not just where they
+// admire it.
 //
 // Same overlay convention as RemixSetupDialog: conditionally mounted by the
 // caller, fixed inset-0 backdrop, click-outside and X both close.
@@ -12,7 +15,6 @@ import { Check, X } from "lucide-react";
 export function PlaceAddedToTripDialog({
   placeTitle,
   tripTitle,
-  dayNumber,
   // False when the place could not be resolved to a `places` row and the stop
   // was saved from its name alone — worth admitting here rather than letting
   // the traveler discover a stop with no photo later.
@@ -22,7 +24,6 @@ export function PlaceAddedToTripDialog({
 }: {
   placeTitle: string;
   tripTitle: string;
-  dayNumber: number;
   linkedToPlace?: boolean;
   onStay: () => void;
   onViewTrip: () => void;
@@ -31,7 +32,7 @@ export function PlaceAddedToTripDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Remix สถานที่ลงทริปแล้ว"
+      aria-label="เก็บสถานที่ไว้ในทริปแล้ว"
       onClick={onStay}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
     >
@@ -61,9 +62,9 @@ export function PlaceAddedToTripDialog({
           <Check size={32} strokeWidth={3} style={{ color: "var(--color-brand-green)" }} />
         </div>
 
-        <h2 className="mt-5 text-xl font-bold">Remix สถานที่ลงทริปแล้ว</h2>
+        <h2 className="mt-5 text-xl font-bold">เก็บสถานที่ไว้ในทริปแล้ว</h2>
         <p className="mt-2 text-sm text-[var(--color-muted)]">
-          เพิ่ม &ldquo;{placeTitle}&rdquo; ลงในทริป {tripTitle} วันที่ {dayNumber} สำเร็จแล้ว
+          เพิ่ม &ldquo;{placeTitle}&rdquo; ไว้ในทริป {tripTitle} แล้ว — ไปเลือกวันให้ได้ในแพลน
         </p>
         {!linkedToPlace && (
           <p className="mt-2 text-xs text-[var(--color-muted)]">
@@ -86,7 +87,7 @@ export function PlaceAddedToTripDialog({
             className="flex-1 rounded-full px-4 py-3 text-sm font-bold text-white"
             style={{ backgroundColor: "var(--color-accent-violet)" }}
           >
-            ไปดูทริป
+            ไปจัดวัน
           </button>
         </div>
       </div>
