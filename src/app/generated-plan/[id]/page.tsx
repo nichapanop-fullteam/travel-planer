@@ -1232,6 +1232,8 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
   // cannot have: photos are attached from AddActivityDialog, and that only
   // opens on a day.
   function handleDeleteStagedPlace(placeId: string) {
+    const tripId = trip!.id;
+
     setTrip((prev) => {
       if (!prev) return prev;
       const stagedPlaces = (prev.stagedPlaces ?? []).filter((p) => p.id !== placeId);
@@ -1241,9 +1243,23 @@ export default function GeneratedPlanPage({ readOnly = false }: { readOnly?: boo
 
     if (!trip!.backendSynced || !(trip!.backendItemIds ?? []).includes(placeId)) return;
 
-    deleteTripItemOnServer(placeId, false).catch((err) =>
-      console.warn("ลบสถานที่ที่ยังไม่ได้ลงวันไม่สำเร็จ", err)
-    );
+    // The same media cleanup handleDeleteActivity does, and for the same
+    // reason: media rows still pointing at this stop (sourceActivityId) make
+    // DELETE /items/:id 500 rather than succeed, because the backend does not
+    // cascade it.
+    //
+    // A shelved place looked like it could never have photos — they are
+    // attached from AddActivityDialog, which only opens on a day — but a stop
+    // CAN now be dragged off a day and back onto the shelf, photos and all.
+    // calculateTravelSegments false: a stop with no day has no legs to
+    // reconcile.
+    deleteTripMediaForActivity(tripId, placeId)
+      .catch((err) => console.warn("ลบรูปภาพของกิจกรรมไม่สำเร็จ", err))
+      .then(() =>
+        deleteTripItemOnServer(placeId, false).catch((err) =>
+          console.warn("ลบสถานที่ที่ยังไม่ได้ลงวันไม่สำเร็จ", err)
+        )
+      );
   }
 
   // Drag-reordered stop order — PATCH /days/:dayId/items/order (see
@@ -3044,60 +3060,60 @@ function ItineraryAccordion({
               onDelete={onDeleteStagedPlace}
             />
 
-          <div className="mt-4 flex flex-col gap-4">
-            {trip.days.map((day) => {
-              const hasActivities = day.activities.length > 0;
-              return (
-                <div
-                  key={day.id}
-                  // Warm cream rather than --color-border (#a3a0a0): that grey
-                  // read as a hard black outline against the card's white fill
-                  // and the accordion's #FAF8F5 ground. Same literal style as
-                  // the other warm surfaces on this panel (#FAF8F5, #FDF0E7);
-                  // --color-border-tag happens to hold this value too, but it
-                  // belongs to the tag chips, so it isn't reused here.
-                  className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
-                  style={{ borderColor: "#E6D9B8" }}
-                >
+            <div className="flex flex-col gap-4">
+              {trip.days.map((day) => {
+                const hasActivities = day.activities.length > 0;
+                return (
                   <div
-                    className={hasActivities ? "flex items-center justify-between gap-3 border-b pb-2.5" : "flex items-center justify-between gap-3"}
-                    style={hasActivities ? { borderColor: "#E6D9B8" } : undefined}
+                    key={day.id}
+                    // Warm cream rather than --color-border (#a3a0a0): that grey
+                    // read as a hard black outline against the card's white fill
+                    // and the accordion's #FAF8F5 ground. Same literal style as
+                    // the other warm surfaces on this panel (#FAF8F5, #FDF0E7);
+                    // --color-border-tag happens to hold this value too, but it
+                    // belongs to the tag chips, so it isn't reused here.
+                    className="flex flex-col gap-2.5 rounded-2xl border bg-white p-4"
+                    style={{ borderColor: "#E6D9B8" }}
                   >
-                    <div className="flex items-baseline gap-2">
-                      <h4 className="text-sm font-bold" style={{ color: "var(--color-brand-green)" }}>
-                        วันที่ {day.dayNumber}
-                      </h4>
-                      <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onAddActivity(day.id)}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full border-2 border-dashed px-3.5 py-1.5 text-xs font-bold"
-                      style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                    <div
+                      className={hasActivities ? "flex items-center justify-between gap-3 border-b pb-2.5" : "flex items-center justify-between gap-3"}
+                      style={hasActivities ? { borderColor: "#E6D9B8" } : undefined}
                     >
-                      <Plus size={12} />
-                      สถานที่
-                    </button>
+                      <div className="flex items-baseline gap-2">
+                        <h4 className="text-sm font-bold" style={{ color: "var(--color-brand-green)" }}>
+                          วันที่ {day.dayNumber}
+                        </h4>
+                        <span className="text-xs font-semibold text-[var(--color-muted)]">{dayDateLabel(day)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onAddActivity(day.id)}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border-2 border-dashed px-3.5 py-1.5 text-xs font-bold"
+                        style={{ borderColor: "var(--color-accent-orange)", color: "var(--color-accent-orange)", backgroundColor: "white" }}
+                      >
+                        <Plus size={12} />
+                        สถานที่
+                      </button>
+                    </div>
+                    {/* Always rendered, empty or not: a day with no stops still
+                        has to be somewhere a card can be dropped, and it used to
+                        render nothing at all. */}
+                    <SortableItineraryList
+                      dayId={day.id}
+                      activities={day.activities}
+                      travelSegments={day.travelSegments}
+                      showAutomaticTravel={autoTravelCalculationEnabled}
+                      onEdit={(a) => onEditActivity(day.id, a)}
+                      onDelete={(a) => onDeleteActivity(day.id, a.id)}
+                      onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
+                      onDeleteTravel={(activityId, segmentId) =>
+                        onDeleteActivityTravel(day.id, activityId, segmentId)
+                      }
+                    />
                   </div>
-                  {/* Always rendered, empty or not: a day with no stops still
-                      has to be somewhere a card can be dropped, and it used to
-                      render nothing at all. */}
-                  <SortableItineraryList
-                    dayId={day.id}
-                    activities={day.activities}
-                    travelSegments={day.travelSegments}
-                    showAutomaticTravel={autoTravelCalculationEnabled}
-                    onEdit={(a) => onEditActivity(day.id, a)}
-                    onDelete={(a) => onDeleteActivity(day.id, a.id)}
-                    onSaveTravel={(activityId, travel) => onUpdateActivityTravel(day.id, activityId, travel)}
-                    onDeleteTravel={(activityId, segmentId) =>
-                      onDeleteActivityTravel(day.id, activityId, segmentId)
-                    }
-                  />
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
 
             {/* Follows the cursor across bucket boundaries. Without it the
                 dragged card is clipped by whichever day card it started in. */}
